@@ -6,15 +6,11 @@ WORKDIR /app
 # 复制 pom.xml
 COPY pom.xml .
 
-# 先复制所有需要的 pom 文件（如果有子模块）
-COPY tui-client/pom.xml tui-client/ 2>/dev/null || true
-
 # 下载依赖（忽略失败）
 RUN mvn dependency:go-offline -B || true
 
 # 复制源代码
 COPY src src/
-COPY tui-client/src tui-client/ 2>/dev/null || true
 
 # 构建主项目
 RUN mvn clean package -DskipTests -B -e
@@ -25,7 +21,7 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
 # 复制构建产物
-COPY --from=builder /app/target/*.jar app.jar || COPY --from=builder /app/target/minimal-k8s-agent-demo-*.jar app.jar
+COPY --from=builder /app/target/minimal-k8s-agent-demo-*.jar app.jar
 
 # 暴露端口
 EXPOSE 8080
