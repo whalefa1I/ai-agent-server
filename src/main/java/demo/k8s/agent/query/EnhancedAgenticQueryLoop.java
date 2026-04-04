@@ -18,6 +18,11 @@ import demo.k8s.agent.observability.logging.StructuredLogger;
 import demo.k8s.agent.observability.tracing.TraceContext;
 import demo.k8s.agent.observability.metrics.MetricsCollector;
 import demo.k8s.agent.toolsystem.*;
+import demo.k8s.agent.toolstate.ToolStateService;
+import demo.k8s.agent.toolstate.ToolStatus;
+import demo.k8s.agent.toolstate.ToolArtifact;
+import org.springframework.web.socket.WebSocketSession;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -42,6 +47,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * 增强版 Agentic Query Loop，与 Claude Code {@code query.ts} / {@code QueryEngine.ts} 对齐。
@@ -52,6 +59,7 @@ import java.util.function.Function;
 public class EnhancedAgenticQueryLoop {
 
     private static final Logger log = LoggerFactory.getLogger(EnhancedAgenticQueryLoop.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ChatModel chatModel;
     private final CompactionPipeline compactionPipeline;
@@ -68,9 +76,12 @@ public class EnhancedAgenticQueryLoop {
     private final MetricsCollector metricsCollector;
     private final MemorySearchService memorySearchService;
     private final HookService hookService;
+    private final ToolStateService toolStateService;
 
     // 权限确认回调（用于 WebSocket TUI）
     private Function<PermissionRequest, CompletableFuture<PermissionResult>> permissionCallback;
+    // 当前 WebSocket 会话（用于 ToolState 广播跳过发送者）
+    private WebSocketSession currentWebSocketSession;
 
     public EnhancedAgenticQueryLoop(
             ChatModel chatModel,
@@ -87,7 +98,8 @@ public class EnhancedAgenticQueryLoop {
             EventBus eventBus,
             MetricsCollector metricsCollector,
             MemorySearchService memorySearchService,
-            HookService hookService) {
+            HookService hookService,
+            ToolStateService toolStateService) {
         this.chatModel = chatModel;
         this.compactionPipeline = compactionPipeline;
         this.retryPolicy = retryPolicy;
@@ -103,6 +115,7 @@ public class EnhancedAgenticQueryLoop {
         this.metricsCollector = metricsCollector;
         this.memorySearchService = memorySearchService;
         this.hookService = hookService;
+        this.toolStateService = toolStateService;
     }
 
     /**
@@ -110,6 +123,13 @@ public class EnhancedAgenticQueryLoop {
      */
     public void setPermissionCallback(Function<PermissionRequest, CompletableFuture<PermissionResult>> callback) {
         this.permissionCallback = callback;
+    }
+
+    /**
+     * 设置当前 WebSocket 会话（用于 ToolState 广播时跳过发送者）
+     */
+    public void setCurrentWebSocketSession(WebSocketSession session) {
+        this.currentWebSocketSession = session;
     }
 
     /**
@@ -292,10 +312,42 @@ public class EnhancedAgenticQueryLoop {
             String sessionId = TraceContext.getSessionId();
             String userId = TraceContext.getUserId();
 
-            // 执行 BEFORE Hook（ Hook 可以阻止工具调用）
+            // 创建 ToolArtifact（TODO 状态）
+            String artifactId = null;
+            if (toolStateService != null && sessionId != null && userId != null) {
+                try {
+                    Map<String, Object> initialBody = new HashMap<>();
+                    initialBody.put("todo", "执行工具：" + tc.name());
+                    initialBody.put("input", objectMapper.valueToTree(input));
+                    initialBody.put("version", 1);
+
+                    ToolArtifact artifact = toolStateService.createToolArtifact(
+                        sessionId, userId, tc.name(), tc.name(),
+                        ToolStatus.TODO, initialBody, currentWebSocketSession);
+                    artifactId = artifact.getId();
+                    log.info("创建 ToolArtifact: artifactId={}, toolName={}", artifactId, tc.name());
+                } catch (Exception e) {
+                    log.warn("创建 ToolArtifact 失败：{}", e.getMessage());
+                }
+            }
+
+            // 执行 BEFORE Hook（Hook 可以阻止工具调用）
             if (hookService != null && !hookService.beforeToolCall(sessionId, userId, tc.name(), input)) {
                 log.info("Hook blocked tool call: {}", tc.name());
-                continue; // 跳过此工具调用
+
+                // 更新 ToolArtifact 为 FAILED
+                if (toolStateService != null && artifactId != null) {
+                    try {
+                        Map<String, Object> failedBody = new HashMap<>();
+                        failedBody.put("error", "被 Before Hook 阻止");
+                        failedBody.put("version", 2);
+                        toolStateService.updateToolArtifact(
+                            artifactId, userId, ToolStatus.FAILED, failedBody, 1, currentWebSocketSession);
+                    } catch (Exception e) {
+                        log.warn("更新 ToolArtifact 失败：{}", e.getMessage());
+                    }
+                }
+                continue;
             }
 
             // 权限检查
@@ -305,16 +357,65 @@ public class EnhancedAgenticQueryLoop {
                 // 需要用户确认
                 log.info("工具 {} 需要用户确认", tc.name());
 
+                // 更新 ToolArtifact 为 PENDING_CONFIRMATION
+                if (toolStateService != null && artifactId != null) {
+                    try {
+                        Map<String, Object> pendingBody = new HashMap<>();
+                        pendingBody.put("confirmation", Map.of("requested", true));
+                        pendingBody.put("version", 2);
+                        toolStateService.updateToolArtifact(
+                            artifactId, userId, ToolStatus.PENDING_CONFIRMATION, pendingBody, 1, currentWebSocketSession);
+                    } catch (Exception e) {
+                        log.warn("更新 ToolArtifact 失败：{}", e.getMessage());
+                    }
+                }
+
                 // 同步等待用户确认
                 PermissionResult result = waitForUserConfirmation(request);
 
                 if (result.isDenied()) {
+                    // 更新 ToolArtifact 为 FAILED
+                    if (toolStateService != null && artifactId != null) {
+                        try {
+                            Map<String, Object> failedBody = new HashMap<>();
+                            failedBody.put("error", "用户拒绝：" + result.getDenyReason());
+                            failedBody.put("version", 3);
+                            toolStateService.updateToolArtifact(
+                                artifactId, userId, ToolStatus.FAILED, failedBody, 2, currentWebSocketSession);
+                        } catch (Exception e) {
+                            log.warn("更新 ToolArtifact 失败：{}", e.getMessage());
+                        }
+                    }
                     throw new PermissionDeniedException(tc.name(), result.getDenyReason());
                 }
 
                 if (result.needsConfirmation()) {
                     // 超时未确认
+                    if (toolStateService != null && artifactId != null) {
+                        try {
+                            Map<String, Object> failedBody = new HashMap<>();
+                            failedBody.put("error", "等待用户确认超时");
+                            failedBody.put("version", 3);
+                            toolStateService.updateToolArtifact(
+                                artifactId, userId, ToolStatus.FAILED, failedBody, 2, currentWebSocketSession);
+                        } catch (Exception e) {
+                            log.warn("更新 ToolArtifact 失败：{}", e.getMessage());
+                        }
+                    }
                     throw new PermissionDeniedException(tc.name(), "等待用户确认超时");
+                }
+            }
+
+            // 更新 ToolArtifact 为 EXECUTING
+            if (toolStateService != null && artifactId != null) {
+                try {
+                    Map<String, Object> executingBody = new HashMap<>();
+                    executingBody.put("progress", "执行中...");
+                    executingBody.put("version", 3);
+                    toolStateService.updateToolArtifact(
+                        artifactId, userId, ToolStatus.EXECUTING, executingBody, 2, currentWebSocketSession);
+                } catch (Exception e) {
+                    log.warn("更新 ToolArtifact 失败：{}", e.getMessage());
                 }
             }
 
@@ -344,6 +445,20 @@ public class EnhancedAgenticQueryLoop {
                     hookService.afterToolCall(sessionId, userId, tc.name(), input, toolOutput, true, toolLatencyMs);
                 }
 
+                // 更新 ToolArtifact 为 COMPLETED
+                if (toolStateService != null && artifactId != null) {
+                    try {
+                        Map<String, Object> completedBody = new HashMap<>();
+                        completedBody.put("output", toolOutput);
+                        completedBody.put("progress", "已完成");
+                        completedBody.put("version", 4);
+                        toolStateService.updateToolArtifact(
+                            artifactId, userId, ToolStatus.COMPLETED, completedBody, 3, currentWebSocketSession);
+                    } catch (Exception e) {
+                        log.warn("更新 ToolArtifact 失败：{}", e.getMessage());
+                    }
+                }
+
                 log.debug("工具调用成功：{} ({} chars)", tc.name(), toolOutput.length());
 
             } catch (Exception e) {
@@ -357,6 +472,19 @@ public class EnhancedAgenticQueryLoop {
                 eventBus.publish(new ToolCalledEvent(sessionId, userId, tc.name(),
                     tc.arguments(), e.getMessage(), toolLatencyMs, false));
                 metricsCollector.recordToolCall(userId, tc.name(), false, toolMetrics.latency());
+
+                // 更新 ToolArtifact 为 FAILED
+                if (toolStateService != null && artifactId != null) {
+                    try {
+                        Map<String, Object> failedBody = new HashMap<>();
+                        failedBody.put("error", e.getMessage());
+                        failedBody.put("version", 4);
+                        toolStateService.updateToolArtifact(
+                            artifactId, userId, ToolStatus.FAILED, failedBody, 3, currentWebSocketSession);
+                    } catch (Exception ex) {
+                        log.warn("更新 ToolArtifact 失败：{}", ex.getMessage());
+                    }
+                }
 
                 // 执行 AFTER Hook（错误情况）
                 if (hookService != null) {
