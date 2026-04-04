@@ -75,6 +75,8 @@ public class StreamingChatController {
         if (!StringUtils.hasText(text)) {
             return;
         }
+        // 记录日志用于调试：查看每次收到的文本长度
+        System.out.println("[StreamingChatController] emitMainDeltas: text length = " + text.length());
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("layer", "main");
         payload.put("type", "delta");
