@@ -15,8 +15,8 @@ COPY src src/
 # 构建主项目
 RUN mvn clean package -DskipTests -B -e
 
-# 运行阶段
-FROM eclipse-temurin:21-jre-alpine
+# 运行阶段 - 使用 Debian 基础镜像（包含 libgcc，避免 QUIC 原生库加载失败）
+FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
