@@ -13,10 +13,14 @@ import demo.k8s.agent.toolsystem.PermissionResult;
 import demo.k8s.agent.ws.protocol.WsProtocol.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.scheduler.Schedulers;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -75,6 +79,7 @@ public class HttpApiV2Controller {
     private final PermissionManager permissionManager;
     private final ConversationManager conversationManager;
     private final PermissionBroadcastService broadcastService;
+    private final ChatClient chatClient;
 
     // 会话级 SSE 发射器管理
     private final ConcurrentHashMap<String, List<SseEmitter>> permissionEmitters = new ConcurrentHashMap<>();
@@ -83,11 +88,13 @@ public class HttpApiV2Controller {
             EnhancedAgenticQueryLoop queryLoop,
             PermissionManager permissionManager,
             ConversationManager conversationManager,
-            PermissionBroadcastService broadcastService) {
+            PermissionBroadcastService broadcastService,
+            ChatClient chatClient) {
         this.queryLoop = queryLoop;
         this.permissionManager = permissionManager;
         this.conversationManager = conversationManager;
         this.broadcastService = broadcastService;
+        this.chatClient = chatClient;
     }
 
     // ==================== 聊天 API ====================
@@ -154,82 +161,93 @@ public class HttpApiV2Controller {
 
         SseEmitter emitter = new SseEmitter(5 * 60 * 1000L); // 5 分钟超时
 
-        // 异步执行 query loop
-        CompletableFuture.runAsync(() -> {
-            try {
-                // 开始回合
-                ConversationManager.TurnContext turnCtx = conversationManager.startTurn(message);
+        // 发送开始事件
+        try {
+            emitter.send(SseEmitter.event()
+                    .name("response_start")
+                    .data(Map.of("type", "RESPONSE_START", "turnId", "stream_" + System.currentTimeMillis())));
+        } catch (IOException e) {
+            emitter.completeWithError(e);
+            return emitter;
+        }
 
-                // 发送开始事件
-                emitter.send(SseEmitter.event()
-                        .name("response_start")
-                        .data(Map.of("type", "RESPONSE_START", "turnId", turnCtx.turnId())));
+        // 使用 ChatClient.stream() 实现真正的流式输出
+        reactor.core.publisher.Flux<ChatResponse> flux = chatClient.prompt()
+                .user(message)
+                .stream()
+                .chatResponse();
 
-                StringBuilder fullResponse = new StringBuilder();
-                long startTime = System.currentTimeMillis();
-                int[] toolCallCount = { 0 };  // 使用数组以在 lambda 中修改
+        StringBuilder fullContent = new StringBuilder();
+        long startTime = System.currentTimeMillis();
+        int[] toolCallCount = {0};
 
-                // 执行 enhanced query loop
-                AgenticTurnResult result = queryLoop.runWithCallbacks(
-                        message,
-                        // 工具调用回调
-                        (toolName, input) -> {
+        flux.subscribeOn(Schedulers.boundedElastic())
+                .subscribe(
+                        response -> {
+                            // 每次回调收到一个流式 chunk
                             try {
-                                emitter.send(SseEmitter.event()
-                                        .name("tool_call")
-                                        .data(Map.of(
-                                                "type", "TOOL_CALL",
-                                                "toolName", toolName,
-                                                "input", input,
-                                                "status", "started"
-                                        )));
-                                toolCallCount[0]++;
+                                Generation gen = response.getResult();
+                                if (gen != null && gen.getOutput() != null) {
+                                    String text = gen.getOutput().getText();
+                                    if (text != null && !text.isEmpty()) {
+                                        // 发送 TEXT_DELTA 事件
+                                        emitter.send(SseEmitter.event()
+                                                .name("text_delta")
+                                                .data(Map.of("type", "TEXT_DELTA", "delta", text)));
+                                        fullContent.append(text);
+                                    }
+
+                                    // 检查是否有工具调用
+                                    var toolCalls = gen.getOutput().getToolCalls();
+                                    if (toolCalls != null && !toolCalls.isEmpty()) {
+                                        for (var tc : toolCalls) {
+                                            emitter.send(SseEmitter.event()
+                                                    .name("tool_call")
+                                                    .data(Map.of(
+                                                            "type", "TOOL_CALL",
+                                                            "toolName", tc.name(),
+                                                            "input", tc.arguments(),
+                                                            "status", "started"
+                                                    )));
+                                            toolCallCount[0]++;
+                                        }
+                                    }
+                                }
                             } catch (IOException e) {
-                                log.debug("发送工具调用事件失败", e);
+                                log.debug("发送流式数据失败", e);
                             }
                         },
-                        // 文本增量回调
-                        delta -> {
-                            if (delta != null && !delta.isEmpty()) {
-                                try {
-                                    fullResponse.append(delta);
-                                    emitter.send(SseEmitter.event()
-                                            .name("text_delta")
-                                            .data(Map.of("type", "TEXT_DELTA", "delta", delta)));
-                                } catch (IOException e) {
-                                    log.debug("发送文本增量事件失败", e);
-                                }
+                        error -> {
+                            log.error("流式聊天出错", error);
+                            try {
+                                emitter.send(SseEmitter.event()
+                                        .name("error")
+                                        .data(Map.of("type", "ERROR", "message", error.getMessage())));
+                                emitter.completeWithError(error);
+                            } catch (IOException ex) {
+                                log.debug("发送错误事件失败", ex);
+                            }
+                        },
+                        () -> {
+                            // 流式完成
+                            try {
+                                long durationMs = System.currentTimeMillis() - startTime;
+                                emitter.send(SseEmitter.event()
+                                        .name("response_complete")
+                                        .data(Map.of(
+                                                "type", "RESPONSE_COMPLETE",
+                                                "content", fullContent.toString(),
+                                                "inputTokens", 0,
+                                                "outputTokens", 0,
+                                                "durationMs", durationMs,
+                                                "toolCalls", toolCallCount[0]
+                                        )));
+                                emitter.complete();
+                            } catch (IOException e) {
+                                log.debug("发送完成事件失败", e);
                             }
                         }
                 );
-
-                // 发送完成事件
-                long durationMs = System.currentTimeMillis() - startTime;
-                emitter.send(SseEmitter.event()
-                        .name("response_complete")
-                        .data(Map.of(
-                                "type", "RESPONSE_COMPLETE",
-                                "content", result.replyText(),
-                                "inputTokens", 0,
-                                "outputTokens", 0,
-                                "durationMs", durationMs,
-                                "toolCalls", toolCallCount[0]
-                        )));
-
-                emitter.complete();
-
-            } catch (Exception e) {
-                log.error("流式聊天执行失败", e);
-                try {
-                    emitter.send(SseEmitter.event()
-                            .name("error")
-                            .data(Map.of("type", "ERROR", "message", e.getMessage())));
-                    emitter.completeWithError(e);
-                } catch (IOException ex) {
-                    log.debug("发送错误事件失败", ex);
-                }
-            }
-        });
 
         return emitter;
     }

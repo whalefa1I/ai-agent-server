@@ -53,6 +53,11 @@ public class StreamingChatController {
                 .subscribe(
                         response -> {
                             try {
+                                Generation gen = response.getResult();
+                                if (gen != null && gen.getOutput() != null) {
+                                    String text = gen.getOutput().getText();
+                                    System.out.println("[StreamingChatController] Flux callback: text length = " + (text != null ? text.length() : 0) + ", text = " + (text != null && text.length() > 50 ? text.substring(0, 50) + "..." : text));
+                                }
                                 emitMainDeltas(emitter, response);
                                 emitOrchestration(emitter, response);
                             } catch (IOException e) {
