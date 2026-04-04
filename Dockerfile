@@ -1,5 +1,5 @@
 # 构建阶段
-FROM maven:3.9.6-eclipse-temurin-21 AS builder
+FROM maven:3.9.9-eclipse-temurin-21 AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ COPY src src/
 RUN mvn clean package -DskipTests -B
 
 # 运行阶段
-FROM eclipse-temurin-21-jre-alpine
+FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 
