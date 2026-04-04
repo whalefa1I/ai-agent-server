@@ -1,6 +1,5 @@
 package demo.k8s.agent.quota;
 
-import demo.k8s.agent.quota.QuotaService.QuotaLimit;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -33,30 +32,20 @@ public class QuotaConfig {
      */
     private QuotaLimitConfig service = new QuotaLimitConfig();
 
-    public QuotaLimit getDefaultQuota() {
-        return toQuotaLimit(defaultQuota);
+    public QuotaLimitConfig getDefaultQuota() {
+        return defaultQuota;
     }
 
-    public QuotaLimit getPremium() {
-        return toQuotaLimit(premium);
+    public QuotaLimitConfig getPremium() {
+        return premium;
     }
 
-    public QuotaLimit getAdmin() {
-        return toQuotaLimit(admin);
+    public QuotaLimitConfig getAdmin() {
+        return admin;
     }
 
-    public QuotaLimit getService() {
-        return toQuotaLimit(service);
-    }
-
-    private QuotaLimit toQuotaLimit(QuotaLimitConfig config) {
-        return new QuotaLimit(
-                config.getMaxRequestsPerHour(),
-                config.getMaxTokensPerHour(),
-                config.getMaxTokensPerRequest(),
-                config.getMaxConcurrentSessions(),
-                Duration.ofSeconds(config.getSessionTimeoutSeconds())
-        );
+    public QuotaLimitConfig getService() {
+        return service;
     }
 
     public void setDefaultQuota(QuotaLimitConfig defaultQuota) {

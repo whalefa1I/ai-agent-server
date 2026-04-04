@@ -4,7 +4,19 @@ spring:
   main:
     # 允许自定义 Bean 覆盖 Spring AI 自动配置
     allow-bean-definition-overriding: true
-  # Spring AI 配置已移至 OpenAiClientConfig.java - 使用环境变量配置
+  # Spring AI 配置 - 使用 Alibaba DashScope (百炼) API
+  ai:
+    openai:
+      api-key: ${DASHSCOPE_API_KEY:sk-sp-ab63f62c8df3494a8763982b1a741081}
+      base-url: ${DASHSCOPE_BASE_URL:https://coding.dashscope.aliyuncs.com}
+      chat:
+        options:
+          model: ${DASHSCOPE_MODEL:qwen3.5-plus}
+        api-key: ${DASHSCOPE_API_KEY:sk-sp-ab63f62c8df3494a8763982b1a741081}
+      embedding:
+        api-key: ${DASHSCOPE_API_KEY:sk-sp-ab63f62c8df3494a8763982b1a741081}
+        options:
+          model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v3}
 
 # 日志配置 - 详细 HTTP 级别日志
 logging:

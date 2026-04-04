@@ -99,12 +99,19 @@ public class QuotaService {
      * 获取用户的配额限制
      */
     public QuotaLimit getQuotaLimit(UserRole role) {
-        return switch (role) {
+        QuotaConfig.QuotaLimitConfig config = switch (role) {
             case PREMIUM -> quotaConfig.getPremium();
             case ADMIN -> quotaConfig.getAdmin();
             case SERVICE -> quotaConfig.getService();
             default -> quotaConfig.getDefaultQuota();
         };
+        return new QuotaLimit(
+                config.getMaxRequestsPerHour(),
+                config.getMaxTokensPerHour(),
+                config.getMaxTokensPerRequest(),
+                config.getMaxConcurrentSessions(),
+                Duration.ofSeconds(config.getSessionTimeoutSeconds())
+        );
     }
 
     /**
