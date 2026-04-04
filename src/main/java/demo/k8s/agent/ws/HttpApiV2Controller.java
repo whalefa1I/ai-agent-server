@@ -189,6 +189,9 @@ public class HttpApiV2Controller {
                                 Generation gen = response.getResult();
                                 if (gen != null && gen.getOutput() != null) {
                                     String text = gen.getOutput().getText();
+                                    log.info("[STREAM] chunk received: text length = {}, toolCalls = {}",
+                                        text != null ? text.length() : 0,
+                                        gen.getOutput().getToolCalls() != null ? gen.getOutput().getToolCalls().size() : 0);
                                     if (text != null && !text.isEmpty()) {
                                         // 发送 TEXT_DELTA 事件
                                         emitter.send(SseEmitter.event()
@@ -200,6 +203,7 @@ public class HttpApiV2Controller {
                                     // 检查是否有工具调用
                                     var toolCalls = gen.getOutput().getToolCalls();
                                     if (toolCalls != null && !toolCalls.isEmpty()) {
+                                        log.info("[STREAM] Tool calls detected: {}", toolCalls.size());
                                         for (var tc : toolCalls) {
                                             emitter.send(SseEmitter.event()
                                                     .name("tool_call")
