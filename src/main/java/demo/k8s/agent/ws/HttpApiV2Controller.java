@@ -104,7 +104,7 @@ public class HttpApiV2Controller {
      * 发送消息并获取响应（阻塞模式，适用于简单客户端）
      */
     @PostMapping(value = "/chat", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ChatResponse> chat(@RequestBody ChatRequest request) {
+    public ResponseEntity<SimpleChatResponse> chat(@RequestBody ChatRequest request) {
         log.info("收到聊天请求：sessionId={}, message={}",
                 request.sessionId, truncate(request.message, 50));
 
@@ -122,7 +122,7 @@ public class HttpApiV2Controller {
             );
 
             if (result.reason() == LoopTerminalReason.COMPLETED) {
-                return ResponseEntity.ok(new ChatResponse(
+                return ResponseEntity.ok(new SimpleChatResponse(
                         result.replyText(),
                         0,  // inputTokens 需要从会话统计中获取
                         0,  // outputTokens
@@ -130,13 +130,13 @@ public class HttpApiV2Controller {
                 ));
             } else {
                 return ResponseEntity.internalServerError()
-                        .body(new ChatResponse("Error: " + result.reason(), 0, 0, 0));
+                        .body(new SimpleChatResponse("Error: " + result.reason(), 0, 0, 0));
             }
 
         } catch (Exception e) {
             log.error("处理聊天请求失败", e);
             return ResponseEntity.internalServerError()
-                    .body(new ChatResponse("Error: " + e.getMessage(), 0, 0, 0));
+                    .body(new SimpleChatResponse("Error: " + e.getMessage(), 0, 0, 0));
         }
     }
 
@@ -408,15 +408,15 @@ public class HttpApiV2Controller {
     /**
      * 聊天响应
      */
-    public static class ChatResponse {
+    public static class SimpleChatResponse {
         public String content;
         public long inputTokens;
         public long outputTokens;
         public int toolCalls;
 
-        public ChatResponse() {}
+        public SimpleChatResponse() {}
 
-        public ChatResponse(String content, long inputTokens, long outputTokens, int toolCalls) {
+        public SimpleChatResponse(String content, long inputTokens, long outputTokens, int toolCalls) {
             this.content = content;
             this.inputTokens = inputTokens;
             this.outputTokens = outputTokens;
