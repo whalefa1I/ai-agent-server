@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -79,7 +80,9 @@ public class HttpApiV2Controller {
     private final PermissionManager permissionManager;
     private final ConversationManager conversationManager;
     private final PermissionBroadcastService broadcastService;
-    private final ChatClient chatClient;
+
+    @Autowired
+    private ChatClient chatClient;
 
     // 会话级 SSE 发射器管理
     private final ConcurrentHashMap<String, List<SseEmitter>> permissionEmitters = new ConcurrentHashMap<>();
@@ -88,13 +91,11 @@ public class HttpApiV2Controller {
             EnhancedAgenticQueryLoop queryLoop,
             PermissionManager permissionManager,
             ConversationManager conversationManager,
-            PermissionBroadcastService broadcastService,
-            ChatClient chatClient) {
+            PermissionBroadcastService broadcastService) {
         this.queryLoop = queryLoop;
         this.permissionManager = permissionManager;
         this.conversationManager = conversationManager;
         this.broadcastService = broadcastService;
-        this.chatClient = chatClient;
     }
 
     // ==================== 聊天 API ====================
