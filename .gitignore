@@ -1,0 +1,33 @@
+# Compiled class files
+target/
+classes/
+test-classes/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Maven
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# Local config
+application-local.yml
+application-local.properties
+
+# Test output
+test-output/

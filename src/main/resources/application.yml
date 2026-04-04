@@ -1,0 +1,84 @@
+spring:
+  application:
+    name: minimal-k8s-agent-demo
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:changeme}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      chat:
+        options:
+          model: ${OPENAI_MODEL:gpt-4o-mini}
+
+# 禁用 actuator 数据库健康检查
+management:
+  health:
+    db:
+      enabled: false
+    datasource:
+      enabled: false
+
+demo:
+  coordinator:
+    # true 时主会话仅 Task + SendMessage + TaskStop（占位），对齐 Claude Code Coordinator 工具分区思路
+    enabled: ${DEMO_COORDINATOR_MODE:false}
+  tools:
+    # default | read_only | bypass — 与 ToolPermissionContext 对齐；read_only 时仅保留只读类工具（如 Skill）
+    permission-mode: ${DEMO_TOOLS_PERMISSION_MODE:default}
+    # 对齐 CLAUDE_CODE_SIMPLE：为 true 时仅保留 simple-tool-names 中的工具
+    simple-mode: ${DEMO_TOOLS_SIMPLE_MODE:false}
+    simple-tool-names:
+      - Skill
+    deny-tool-names: []
+    feature:
+      agent-swarms: ${DEMO_TOOLS_FEATURE_AGENT_SWARMS:true}
+      experimental: ${DEMO_TOOLS_FEATURE_EXPERIMENTAL:false}
+    internal-ant-tools: ${DEMO_TOOLS_INTERNAL_ANT:false}
+  agent:
+    # 可选：Brave Search，供 ClaudeSubagentType 内置子 Agent 使用；不配则不含网页搜索工具
+    brave-api-key: ${BRAVE_API_KEY:}
+  query:
+    # 对齐 query.ts 外层 maxTurns（模型调用轮次上限）
+    max-turns: ${DEMO_QUERY_MAX_TURNS:32}
+    microcompact-max-chars-per-tool-response: 24000
+    full-compact-threshold-chars: 120000
+    full-compact-enabled: ${DEMO_QUERY_FULL_COMPACT:false}
+    retry:
+      max-attempts: 5
+      base-delay-ms: 500
+  k8s:
+    # 本地联调 LLM 时保持 false；连接集群时改为 true，并配置 kubeconfig（默认 ~/.kube/config）
+    enabled: ${DEMO_K8S_ENABLED:false}
+    namespace: ${DEMO_K8S_NAMESPACE:default}
+    runner-image: ${DEMO_K8S_RUNNER_IMAGE:busybox:1.36}
+    ttl-seconds-after-finished: 120
+    timeout: 3m
+  ws:
+    auth:
+      enabled: ${DEMO_WS_AUTH_ENABLED:false}
+      token-validity-seconds: ${DEMO_WS_AUTH_TOKEN_VALIDITY:86400}
+      psk: ${DEMO_WS_AUTH_PSK:}  # 预共享密钥，用于简单部署
+  hooks:
+    # Hook 系统开关
+    enabled: ${DEMO_HOOKS_ENABLED:true}
+    # 工作区 Hook 目录（默认 .openclaw/hooks/）
+    workspace-dir: ${DEMO_HOOKS_WORKSPACE_DIR:}
+    # 允许执行的 Hook 类型列表（空表示允许所有）
+    allowed-hooks: []
+    # Hook 执行超时时间（毫秒）
+    timeout-ms: 5000
+    # 是否异步执行 Hook
+    async: false
+  channels:
+    feishu:
+      # 飞书频道开关
+      enabled: ${DEMO_FEISHU_ENABLED:false}
+      # 飞书应用 App ID
+      app-id: ${DEMO_FEISHU_APP_ID:}
+      # 飞书应用 App Secret
+      app-secret: ${DEMO_FEISHU_APP_SECRET:}
+      # 飞书验证 Token
+      verification-token: ${DEMO_FEISHU_VERIFICATION_TOKEN:}
+      # 飞书加密 Key（可选）
+      encrypt-key: ${DEMO_FEISHU_ENCRYPT_KEY:}
+      # 飞书 API 基础 URL
+      api-base-url: ${DEMO_FEISHU_API_BASE_URL:https://open.feishu.cn/open-apis}

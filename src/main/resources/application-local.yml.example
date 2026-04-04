@@ -1,0 +1,63 @@
+# =====================================================
+# 本地开发配置文件 (示例模板)
+# 复制此文件为 application-local.yml 并填入你的配置
+# =====================================================
+spring:
+  application:
+    name: minimal-k8s-agent-demo
+  main:
+    # 允许循环引用（临时方案）
+    allow-circular-references: true
+  ai:
+    openai:
+      # 你的 API Key (百炼平台/OpenAI/其他兼容 API)
+      api-key: ${OPENAI_API_KEY:your-api-key-here}
+      # API 基础 URL
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      chat:
+        options:
+          # 模型名称
+          model: ${OPENAI_MODEL:gpt-4o-mini}
+
+logging:
+  level:
+    demo.k8s.agent: DEBUG
+    io.fabric8: WARN
+    org.springframework.web.socket: DEBUG
+
+# 完整配置
+demo:
+  coordinator:
+    # false 时使用完整工具集
+    enabled: false
+  tools:
+    # default | read_only | bypass
+    permission-mode: default
+    simple-mode: false
+    feature:
+      agent-swarms: true
+      experimental: false
+    internal-ant-tools: false
+  agent:
+    # Brave Search API Key (可选)
+    brave-api-key: ""
+  query:
+    max-turns: 32
+    microcompact-max-chars-per-tool-response: 24000
+    full-compact-threshold-chars: 120000
+    full-compact-enabled: false
+    retry:
+      max-attempts: 5
+      base-delay-ms: 500
+  k8s:
+    # K8s 功能开关
+    enabled: false
+    namespace: default
+    runner-image: busybox:1.36
+    ttl-seconds-after-finished: 120
+    timeout: 3m
+  ws:
+    auth:
+      enabled: false
+      token-validity-seconds: 86400
+      psk: ""

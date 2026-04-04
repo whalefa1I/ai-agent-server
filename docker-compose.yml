@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # Spring Boot 服务端
+  agent-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: minimal-k8s-agent-demo:latest
+    container_name: minimal-k8s-agent-server
+    ports:
+      - "8080:8080"
+    environment:
+      # LLM 配置
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-changeme}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      # K8s 配置
+      - DEMO_K8S_ENABLED=${DEMO_K8S_ENABLED:-false}
+      - DEMO_K8S_NAMESPACE=${DEMO_K8S_NAMESPACE:-default}
+      #  Coordinator 模式
+      - DEMO_COORDINATOR_MODE=${DEMO_COORDINATOR_MODE:-false}
+      # WebSocket 认证配置（生产环境）
+      - DEMO_WS_AUTH_ENABLED=${DEMO_WS_AUTH_ENABLED:-false}
+      - DEMO_WS_AUTH_TOKEN_VALIDITY=${DEMO_WS_AUTH_TOKEN_VALIDITY:-86400}
+      - DEMO_WS_AUTH_PSK=${DEMO_WS_AUTH_PSK:-}
+      # 日志级别
+      - LOG_LEVEL_DEMO_K8S_AGENT=INFO
+    volumes:
+      # 持久化配置
+      - claude-config:/root/.claude
+      # 如果需要访问 K8s，挂载 kubeconfig
+      # - ~/.kube/config:/root/.kube/config:ro
+    restart: unless-stopped
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
+
+  # TUI 客户端（可选，用于测试）
+  tui-client:
+    image: minimal-k8s-agent-demo:latest
+    container_name: minimal-k8s-agent-tui
+    profiles:
+      - tui  # 仅在使用 docker-compose --profile tui 时启动
+    entrypoint: ["java", "-jar", "tui-client.jar"]
+    command: ["--server", "ws://agent-server:8080/ws/agent"]
+    stdin_open: true
+    tty: true
+    depends_on:
+      - agent-server
+    networks:
+      - agent-network
+
+volumes:
+  claude-config:
+    driver: local
+
+networks:
+  agent-network:
+    driver: bridge

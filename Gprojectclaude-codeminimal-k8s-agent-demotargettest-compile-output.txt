@@ -1,0 +1,387 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ---------------< demo.k8s.agent:minimal-k8s-agent-demo >----------------
+[INFO] Building minimal-k8s-agent-demo 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ minimal-k8s-agent-demo ---
+[INFO] Copying 2 resources from src\main\resources to target\classes
+[INFO] Copying 2 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.14.1:compile (default-compile) @ minimal-k8s-agent-demo ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 225 source files with javac [debug parameters release 21] to target\classes
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/plugin/hook/examples/ToolCallLoggingHook.java:[4,34] 找不到符号
+  符号:   类 HookContext
+  位置: 程序包 demo.k8s.agent.plugin.hook
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/skills/SkillController.java:[28,36] 找不到符号
+  符号:   类 ClawhubSkill
+  位置: 类 demo.k8s.agent.skills.clawhub.ClawhubSkillService
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/skills/SkillService.java:[94,36] 找不到符号
+  符号:   类 ClawhubSkill
+  位置: 类 demo.k8s.agent.skills.clawhub.ClawhubSkillService
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/channels/feishu/FeishuChannelService.java:[112,41] 找不到符号
+  符号:   方法 response()
+  位置: 类型为demo.k8s.agent.query.AgenticTurnResult的变量 result
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/query/EnhancedAgenticQueryLoop.java:[206,28] 已在方法 runWithCallbacks(java.lang.String,java.util.function.BiConsumer<java.lang.String,com.fasterxml.jackson.databind.JsonNode>,java.util.function.Consumer<java.lang.String>)中定义了变量 sessionId
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/query/EnhancedAgenticQueryLoop.java:[207,28] 已在方法 runWithCallbacks(java.lang.String,java.util.function.BiConsumer<java.lang.String,com.fasterxml.jackson.databind.JsonNode>,java.util.function.Consumer<java.lang.String>)中定义了变量 userId
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/query/EnhancedAgenticQueryLoop.java:[210,43] 不兼容的类型: 从long转换到int可能会有损失
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/query/EnhancedAgenticQueryLoop.java:[223,20] 已在方法 runWithCallbacks(java.lang.String,java.util.function.BiConsumer<java.lang.String,com.fasterxml.jackson.databind.JsonNode>,java.util.function.Consumer<java.lang.String>)中定义了变量 sessionId
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/query/EnhancedAgenticQueryLoop.java:[224,20] 已在方法 runWithCallbacks(java.lang.String,java.util.function.BiConsumer<java.lang.String,com.fasterxml.jackson.databind.JsonNode>,java.util.function.Consumer<java.lang.String>)中定义了变量 userId
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/query/EnhancedAgenticQueryLoop.java:[226,17] 找不到符号
+  符号:   变量 e
+  位置: 类 demo.k8s.agent.query.EnhancedAgenticQueryLoop
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/query/EnhancedAgenticQueryLoop.java:[226,33] 找不到符号
+  符号:   变量 e
+  位置: 类 demo.k8s.agent.query.EnhancedAgenticQueryLoop
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/query/EnhancedAgenticQueryLoop.java:[226,61] 找不到符号
+  符号:   变量 e
+  位置: 类 demo.k8s.agent.query.EnhancedAgenticQueryLoop
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/query/EnhancedAgenticQueryLoop.java:[332,49] 找不到符号
+  符号:   方法 latencyMs()
+  位置: 类型为demo.k8s.agent.observability.ToolCallMetrics的变量 toolMetrics
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/query/EnhancedAgenticQueryLoop.java:[351,49] 找不到符号
+  符号:   方法 latencyMs()
+  位置: 类型为demo.k8s.agent.observability.ToolCallMetrics的变量 toolMetrics
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/observability/metrics/MetricsCollector.java:[96,45] 找不到符号
+  符号:   方法 increment()
+  位置: 类型为java.util.concurrent.atomic.AtomicLong的变量 requestsTotal
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/observability/metrics/MetricsCollector.java:[118,46] 找不到符号
+  符号:   方法 increment()
+  位置: 类型为java.util.concurrent.atomic.AtomicLong的变量 toolCallsTotal
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/observability/metrics/MetricsCollector.java:[145,50] 找不到符号
+  符号:   方法 increment()
+  位置: 类型为java.util.concurrent.atomic.AtomicLong的变量 quotaExceededCount
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/memory/embedding/EmbeddingService.java:[90,35] 无法取消引用double
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/export/ExportService.java:[188,72] 找不到符号
+  符号:   方法 findAllByUserId(java.lang.String)
+  位置: 类型为demo.k8s.agent.state.ConversationRepository的变量 conversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/export/ExportService.java:[196,75] 找不到符号
+  符号:   方法 findAll()
+  位置: 类型为demo.k8s.agent.state.ConversationRepository的变量 conversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/export/ExportService.java:[233,30] 找不到符号
+  符号:   方法 role()
+  位置: 类型为demo.k8s.agent.state.ChatMessage的变量 msg
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/export/ExportService.java:[249,34] 无法将类 demo.k8s.agent.state.ConversationSession中的方法 getMetadata应用到给定类型;
+  需要: java.lang.String
+  找到:    没有参数
+  原因: 无法推断类型变量 T
+    (实际参数列表和形式参数列表长度不同)
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/query/DefaultCompactionPipeline.java:[78,16] 无法将类 org.springframework.ai.chat.messages.ToolResponseMessage中的构造器 ToolResponseMessage应用到给定类型;
+  需要: java.util.List<org.springframework.ai.chat.messages.ToolResponseMessage.ToolResponse>,java.util.Map<java.lang.String,java.lang.Object>
+  找到:    java.util.List<org.springframework.ai.chat.messages.ToolResponseMessage.ToolResponse>
+  原因: 实际参数列表和形式参数列表长度不同
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/skills/clawhub/ClawhubSkillService.java:[102,17] 一元运算符 '!' 的操作数类型demo.k8s.agent.skills.packaging.SkillValidator.ValidationResult错误
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/skills/clawhub/ClawhubClient.java:[121,21] 不兼容的类型: 无法推断类型变量 R
+    (参数不匹配; 方法引用无效
+      对success的引用不明确
+        demo.k8s.agent.skills.clawhub.ClawhubResponse 中的方法 <T>success(T) 和 demo.k8s.agent.skills.clawhub.ClawhubResponse 中的方法 success() 都匹配)
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/skills/clawhub/ClawhubClient.java:[136,21] 不兼容的类型: 无法推断类型变量 R
+    (参数不匹配; 方法引用无效
+      对success的引用不明确
+        demo.k8s.agent.skills.clawhub.ClawhubResponse 中的方法 <T>success(T) 和 demo.k8s.agent.skills.clawhub.ClawhubResponse 中的方法 success() 都匹配)
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/skills/packaging/SkillValidator.java:[103,40] 记录 demo.k8s.agent.skills.packaging.SkillValidator.ValidationResult 中的存取方法无效
+  (存取方法 success() 的返回类型必须与记录组件 success 的类型相匹配)
+[INFO] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/config/AgentConfiguration.java: 某些输入文件使用或覆盖了已过时的 API。
+[INFO] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/config/AgentConfiguration.java: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+[INFO] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/observability/events/EventBus.java: 某些输入文件使用了未经检查或不安全的操作。
+[INFO] /G:/project/claude-code/minimal-k8s-agent-demo/src/main/java/demo/k8s/agent/observability/events/EventBus.java: 有关详细信息, 请使用 -Xlint:unchecked 重新编译。
+[INFO] 某些消息已经过简化; 请使用 -Xdiags:verbose 重新编译以获得完整输出
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ minimal-k8s-agent-demo ---
+[INFO] skip non existing resourceDirectory G:\project\claude-code\minimal-k8s-agent-demo\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ minimal-k8s-agent-demo ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 37 source files with javac [debug parameters release 21] to target\test-classes
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/CoordinatorStateTest.java:[15,13] 找不到符号
+  符号:   类 CoordinatorState
+  位置: 类 demo.k8s.agent.coordinator.CoordinatorStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskStateTest.java:[19,13] 找不到符号
+  符号:   类 TaskState
+  位置: 类 demo.k8s.agent.coordinator.TaskStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[3,34] 找不到符号
+  符号:   类 CoordinatorState
+  位置: 程序包 demo.k8s.agent.coordinator
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[4,34] 找不到符号
+  符号:   类 TaskStatus
+  位置: 程序包 demo.k8s.agent.coordinator
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[27,13] 找不到符号
+  符号:   类 ConversationSession
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[448,60] 找不到符号
+  符号:   类 ConversationRepository
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[29,13] 找不到符号
+  符号:   类 ConversationManager
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[434,59] 程序包ConversationManager不存在
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[450,45] 找不到符号
+  符号:   类 ConversationSession
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[451,60] 找不到符号
+  符号:   类 FileSnapshot
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[454,33] 找不到符号
+  符号:   类 ConversationSession
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[459,35] 找不到符号
+  符号:   类 ConversationSession
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[469,51] 找不到符号
+  符号:   类 ChatMessage
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[474,88] 找不到符号
+  符号:   类 FileSnapshot
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[479,31] 找不到符号
+  符号:   类 FileSnapshot
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/memory/store/InMemoryVectorStoreTest.java:[3,35] 程序包demo.k8s.agent.memory.model不存在
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/memory/store/InMemoryVectorStoreTest.java:[16,13] 找不到符号
+  符号:   类 InMemoryVectorStore
+  位置: 类 demo.k8s.agent.memory.store.InMemoryVectorStoreTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/plugin/hook/HookRegistryTest.java:[15,13] 找不到符号
+  符号:   类 HookRegistry
+  位置: 类 demo.k8s.agent.plugin.hook.HookRegistryTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/plugin/hook/HookRegistryTest.java:[117,46] 找不到符号
+  符号:   类 Hook
+  位置: 类 demo.k8s.agent.plugin.hook.HookRegistryTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/plugin/hook/HookRegistryTest.java:[120,23] 找不到符号
+  符号:   类 HookType
+  位置: 类 demo.k8s.agent.plugin.hook.HookRegistryTest.TestHook
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/plugin/hook/HookRegistryTest.java:[121,23] 找不到符号
+  符号:   类 HookPhase
+  位置: 类 demo.k8s.agent.plugin.hook.HookRegistryTest.TestHook
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/plugin/hook/HookRegistryTest.java:[124,42] 找不到符号
+  符号:   类 HookType
+  位置: 类 demo.k8s.agent.plugin.hook.HookRegistryTest.TestHook
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/plugin/hook/HookRegistryTest.java:[124,57] 找不到符号
+  符号:   类 HookPhase
+  位置: 类 demo.k8s.agent.plugin.hook.HookRegistryTest.TestHook
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/plugin/hook/HookRegistryTest.java:[128,42] 找不到符号
+  符号:   类 HookType
+  位置: 类 demo.k8s.agent.plugin.hook.HookRegistryTest.TestHook
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/plugin/hook/HookRegistryTest.java:[128,57] 找不到符号
+  符号:   类 HookPhase
+  位置: 类 demo.k8s.agent.plugin.hook.HookRegistryTest.TestHook
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/plugin/hook/HookRegistryTest.java:[152,16] 找不到符号
+  符号:   类 HookType
+  位置: 类 demo.k8s.agent.plugin.hook.HookRegistryTest.TestHook
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/plugin/hook/HookRegistryTest.java:[157,16] 找不到符号
+  符号:   类 HookPhase
+  位置: 类 demo.k8s.agent.plugin.hook.HookRegistryTest.TestHook
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/plugin/hook/HookRegistryTest.java:[167,32] 找不到符号
+  符号:   类 HookContext
+  位置: 类 demo.k8s.agent.plugin.hook.HookRegistryTest.TestHook
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/state/ConversationManagerTest.java:[17,13] 找不到符号
+  符号:   类 ConversationSession
+  位置: 类 demo.k8s.agent.state.ConversationManagerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/state/ConversationManagerTest.java:[18,13] 找不到符号
+  符号:   类 ConversationRepository
+  位置: 类 demo.k8s.agent.state.ConversationManagerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/state/ConversationManagerTest.java:[19,13] 找不到符号
+  符号:   类 ConversationManager
+  位置: 类 demo.k8s.agent.state.ConversationManagerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/state/ConversationManagerTest.java:[307,60] 找不到符号
+  符号:   类 ConversationRepository
+  位置: 类 demo.k8s.agent.state.ConversationManagerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/state/ConversationManagerTest.java:[309,35] 找不到符号
+  符号:   类 ConversationSession
+  位置: 类 demo.k8s.agent.state.ConversationManagerTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/state/ConversationManagerTest.java:[310,40] 找不到符号
+  符号:   类 FileSnapshot
+  位置: 类 demo.k8s.agent.state.ConversationManagerTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/state/ConversationManagerTest.java:[313,33] 找不到符号
+  符号:   类 ConversationSession
+  位置: 类 demo.k8s.agent.state.ConversationManagerTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/state/ConversationManagerTest.java:[318,35] 找不到符号
+  符号:   类 ConversationSession
+  位置: 类 demo.k8s.agent.state.ConversationManagerTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/state/ConversationManagerTest.java:[328,51] 找不到符号
+  符号:   类 ChatMessage
+  位置: 类 demo.k8s.agent.state.ConversationManagerTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/state/ConversationManagerTest.java:[335,78] 找不到符号
+  符号:   类 FileSnapshot
+  位置: 类 demo.k8s.agent.state.ConversationManagerTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/state/ConversationManagerTest.java:[340,21] 找不到符号
+  符号:   类 FileSnapshot
+  位置: 类 demo.k8s.agent.state.ConversationManagerTest.InMemoryConversationRepository
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/tools/local/file/LocalFileEditToolTest.java:[3,34] 找不到符号
+  符号:   类 LocalToolResult
+  位置: 程序包 demo.k8s.agent.tools.local
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/tools/local/file/LocalFileEditToolTest.java:[4,33] 找不到符号
+  符号:   类 ToolCategory
+  位置: 程序包 demo.k8s.agent.toolsystem
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/tools/local/file/LocalFileWriteToolTest.java:[3,34] 找不到符号
+  符号:   类 LocalToolResult
+  位置: 程序包 demo.k8s.agent.tools.local
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/tools/local/git/LocalGitToolTest.java:[3,34] 找不到符号
+  符号:   类 LocalToolResult
+  位置: 程序包 demo.k8s.agent.tools.local
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/tools/local/planning/TodoWriteToolTest.java:[3,34] 找不到符号
+  符号:   类 LocalToolResult
+  位置: 程序包 demo.k8s.agent.tools.local
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/PermissionManagerTest.java:[18,13] 找不到符号
+  符号:   类 PermissionManager
+  位置: 类 demo.k8s.agent.toolsystem.PermissionManagerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/PermissionManagerTest.java:[395,56] 找不到符号
+  符号:   类 ToolCategory
+  位置: 类 demo.k8s.agent.toolsystem.PermissionManagerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/PermissionManagerTest.java:[395,13] 找不到符号
+  符号:   类 ClaudeLikeTool
+  位置: 类 demo.k8s.agent.toolsystem.PermissionManagerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/PermissionManagerTest.java:[410,60] 找不到符号
+  符号:   类 ToolCategory
+  位置: 类 demo.k8s.agent.toolsystem.PermissionManagerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/PermissionManagerTest.java:[410,13] 找不到符号
+  符号:   类 ClaudeLikeTool
+  位置: 类 demo.k8s.agent.toolsystem.PermissionManagerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/PermissionManagerTest.java:[425,57] 找不到符号
+  符号:   类 ToolCategory
+  位置: 类 demo.k8s.agent.toolsystem.PermissionManagerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/PermissionManagerTest.java:[425,13] 找不到符号
+  符号:   类 ClaudeLikeTool
+  位置: 类 demo.k8s.agent.toolsystem.PermissionManagerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolAssemblyTest.java:[215,50] 找不到符号
+  符号:   类 ToolCategory
+  位置: 类 demo.k8s.agent.toolsystem.ToolAssemblyTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolAssemblyTest.java:[215,13] 找不到符号
+  符号:   类 ToolModule
+  位置: 类 demo.k8s.agent.toolsystem.ToolAssemblyTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolModuleTest.java:[73,56] 找不到符号
+  符号:   类 ToolCategory
+  位置: 类 demo.k8s.agent.toolsystem.ToolModuleTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolModuleTest.java:[73,13] 找不到符号
+  符号:   类 ClaudeLikeTool
+  位置: 类 demo.k8s.agent.toolsystem.ToolModuleTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolRegistryTest.java:[19,13] 找不到符号
+  符号:   类 ToolRegistry
+  位置: 类 demo.k8s.agent.toolsystem.ToolRegistryTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolRegistryTest.java:[167,54] 找不到符号
+  符号:   类 ToolCategory
+  位置: 类 demo.k8s.agent.toolsystem.ToolRegistryTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolRegistryTest.java:[167,13] 找不到符号
+  符号:   类 ToolModule
+  位置: 类 demo.k8s.agent.toolsystem.ToolRegistryTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolRegistryTest.java:[185,56] 找不到符号
+  符号:   类 ToolCategory
+  位置: 类 demo.k8s.agent.toolsystem.ToolRegistryTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolRegistryTest.java:[185,13] 找不到符号
+  符号:   类 ToolModule
+  位置: 类 demo.k8s.agent.toolsystem.ToolRegistryTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolRegistryTest.java:[203,53] 找不到符号
+  符号:   类 ToolCategory
+  位置: 类 demo.k8s.agent.toolsystem.ToolRegistryTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolRegistryTest.java:[203,13] 找不到符号
+  符号:   类 ToolModule
+  位置: 类 demo.k8s.agent.toolsystem.ToolRegistryTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolRegistryTest.java:[221,56] 找不到符号
+  符号:   类 ToolCategory
+  位置: 类 demo.k8s.agent.toolsystem.ToolRegistryTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/toolsystem/ToolRegistryTest.java:[221,13] 找不到符号
+  符号:   类 ToolModule
+  位置: 类 demo.k8s.agent.toolsystem.ToolRegistryTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/web/PermissionControllerTest.java:[18,13] 找不到符号
+  符号:   类 PermissionManager
+  位置: 类 demo.k8s.agent.web.PermissionControllerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/web/PermissionControllerTest.java:[19,13] 找不到符号
+  符号:   类 PermissionController
+  位置: 类 demo.k8s.agent.web.PermissionControllerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/web/SlashCommandControllerTest.java:[3,36] 程序包demo.k8s.agent.commandsystem不存在
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/web/SlashCommandControllerTest.java:[4,36] 程序包demo.k8s.agent.commandsystem不存在
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/web/SlashCommandControllerTest.java:[18,13] 找不到符号
+  符号:   类 SlashCommandService
+  位置: 类 demo.k8s.agent.web.SlashCommandControllerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/web/SlashCommandControllerTest.java:[19,13] 找不到符号
+  符号:   类 SlashCommandController
+  位置: 类 demo.k8s.agent.web.SlashCommandControllerTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/CoordinatorStateTest.java:[19,21] 找不到符号
+  符号:   类 CoordinatorState
+  位置: 类 demo.k8s.agent.coordinator.CoordinatorStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/CoordinatorStateTest.java:[39,22] 找不到符号
+  符号:   变量 TaskStatus
+  位置: 类 demo.k8s.agent.coordinator.CoordinatorStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/CoordinatorStateTest.java:[52,22] 找不到符号
+  符号:   变量 TaskStatus
+  位置: 类 demo.k8s.agent.coordinator.CoordinatorStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskStateTest.java:[23,20] 找不到符号
+  符号:   类 TaskState
+  位置: 类 demo.k8s.agent.coordinator.TaskStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskStateTest.java:[28,17] 找不到符号
+  符号:   变量 TaskStatus
+  位置: 类 demo.k8s.agent.coordinator.TaskStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskStateTest.java:[39,22] 找不到符号
+  符号:   变量 TaskStatus
+  位置: 类 demo.k8s.agent.coordinator.TaskStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskStateTest.java:[49,20] 找不到符号
+  符号:   类 TaskState
+  位置: 类 demo.k8s.agent.coordinator.TaskStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskStateTest.java:[54,17] 找不到符号
+  符号:   变量 TaskStatus
+  位置: 类 demo.k8s.agent.coordinator.TaskStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskStateTest.java:[60,22] 找不到符号
+  符号:   变量 TaskStatus
+  位置: 类 demo.k8s.agent.coordinator.TaskStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskStateTest.java:[63,20] 找不到符号
+  符号:   类 TaskState
+  位置: 类 demo.k8s.agent.coordinator.TaskStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskStateTest.java:[68,17] 找不到符号
+  符号:   变量 TaskStatus
+  位置: 类 demo.k8s.agent.coordinator.TaskStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskStateTest.java:[74,22] 找不到符号
+  符号:   变量 TaskStatus
+  位置: 类 demo.k8s.agent.coordinator.TaskStateTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskToolOutputParserTest.java:[20,27] 找不到符号
+  符号:   变量 TaskToolOutputParser
+  位置: 类 demo.k8s.agent.coordinator.TaskToolOutputParserTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskToolOutputParserTest.java:[29,20] 找不到符号
+  符号:   变量 TaskToolOutputParser
+  位置: 类 demo.k8s.agent.coordinator.TaskToolOutputParserTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/coordinator/TaskToolOutputParserTest.java:[30,20] 找不到符号
+  符号:   变量 TaskToolOutputParser
+  位置: 类 demo.k8s.agent.coordinator.TaskToolOutputParserTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[33,23] 找不到符号
+  符号:   类 ConversationSession
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[35,23] 找不到符号
+  符号:   类 ConversationManager
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[44,28] 程序包ConversationManager不存在
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[50,28] 程序包ConversationManager不存在
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[61,28] 程序包ConversationManager不存在
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[73,14] 找不到符号
+  符号:   类 ChatMessage
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[81,22] 找不到符号
+  符号:   变量 MessageType
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[82,22] 找不到符号
+  符号:   变量 MessageType
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[83,22] 找不到符号
+  符号:   变量 MessageType
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[84,22] 找不到符号
+  符号:   变量 MessageType
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[85,22] 找不到符号
+  符号:   变量 MessageType
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[86,22] 找不到符号
+  符号:   变量 MessageType
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[95,28] 程序包ConversationManager不存在
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[98,9] 找不到符号
+  符号:   类 ToolCall
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[ERROR] /G:/project/claude-code/minimal-k8s-agent-demo/src/test/java/demo/k8s/agent/integration/EndToEndConversationIntegrationTest.java:[98,38] 找不到符号
+  符号:   类 ToolCall
+  位置: 类 demo.k8s.agent.integration.EndToEndConversationIntegrationTest
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  8.485 s
+[INFO] Finished at: 2026-04-04T09:57:35+08:00
+[INFO] ------------------------------------------------------------------------
