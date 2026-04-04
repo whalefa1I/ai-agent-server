@@ -1,13 +1,19 @@
 spring:
   application:
     name: minimal-k8s-agent-demo
-  ai:
-    openai:
-      api-key: ${OPENAI_API_KEY:changeme}
-      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
-      chat:
-        options:
-          model: ${OPENAI_MODEL:gpt-4o-mini}
+  main:
+    # 允许自定义 Bean 覆盖 Spring AI 自动配置
+    allow-bean-definition-overriding: true
+  # Spring AI 配置已移至 OpenAiClientConfig.java - 使用环境变量配置
+
+# 日志配置 - 详细 HTTP 级别日志
+logging:
+  level:
+    demo.k8s.agent: DEBUG
+    org.springframework.ai: DEBUG
+    org.springframework.web.client: TRACE
+    org.springframework.http: DEBUG
+    org.springframework.http.client: DEBUG
 
 # 禁用 actuator 数据库健康检查
 management:

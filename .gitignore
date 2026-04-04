@@ -29,5 +29,9 @@ release.properties
 application-local.yml
 application-local.properties
 
+# Environment variables
+.env
+.env.local
+
 # Test output
 test-output/

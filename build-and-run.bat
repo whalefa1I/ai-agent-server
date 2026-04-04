@@ -3,9 +3,9 @@ chcp 65001 >nul
 echo Building and running minimal-k8s-agent-demo...
 echo.
 
-REM 设置 JAVA_HOME 为 JDK 21 (如果已安装)
-if exist "D:\Program Files\Java\jdk-21.0.10" (
-    set JAVA_HOME=D:\Program Files\Java\jdk-21.0.10
+REM 设置 JAVA_HOME 为 JDK 21
+if exist "C:/Program Files/Eclipse Adoptium/jdk-21.0.10.7-hotspot" (
+    set JAVA_HOME=C:/Program Files/Eclipse Adoptium/jdk-21.0.10.7-hotspot
     set PATH=%JAVA_HOME%\bin;%PATH%
     echo Using JDK 21 from %JAVA_HOME%
 ) else (
@@ -14,13 +14,13 @@ if exist "D:\Program Files\Java\jdk-21.0.10" (
 
 echo.
 echo Step 1: Clean and compile...
-call mvn clean compile -DskipTests
+call mvn clean package -DskipTests
 if errorlevel 1 (
-    echo [ERROR] Compilation failed
+    echo [ERROR] Build failed
     exit /b 1
 )
-echo [OK] Compilation successful
+echo [OK] Build successful
 
 echo.
 echo Step 2: Run application...
-call mvn spring-boot:run -Dspring-boot.run.profiles=local
+java -jar target/minimal-k8s-agent-demo-0.1.0-SNAPSHOT.jar
