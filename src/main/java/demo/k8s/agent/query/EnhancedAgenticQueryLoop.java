@@ -226,6 +226,12 @@ public class EnhancedAgenticQueryLoop {
             if (!hasToolCalls(response)) {
                 String text = extractAssistantText(response);
                 log.info("Agentic loop 完成：turns={}, responseLength={}", state.turnCount(), text.length());
+
+                // 如果有文本增量回调，流式发送文本
+                if (onTextDelta != null && !text.isEmpty()) {
+                    streamText(text, onTextDelta);
+                }
+
                 return new AgenticTurnResult(LoopTerminalReason.COMPLETED, text, state);
             }
 
