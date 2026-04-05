@@ -1,14 +1,11 @@
 package demo.k8s.agent.happy;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import demo.k8s.agent.query.EnhancedAgenticQueryLoop;
 import demo.k8s.agent.query.AgenticTurnResult;
 import demo.k8s.agent.state.ConversationManager;
 import demo.k8s.agent.toolstate.ToolArtifact;
 import demo.k8s.agent.toolstate.ToolArtifactRepository;
-import demo.k8s.agent.toolstate.ToolStateService;
-import demo.k8s.agent.toolstate.ToolStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,7 +14,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -38,26 +34,9 @@ public class HappyChatService {
     private ConversationManager conversationManager;
 
     @Autowired
-    private ToolStateService toolStateService;
-
-    @Autowired
     private demo.k8s.agent.privacykit.PrivacyKitService privacyKitService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-
-    // 工具图标映射
-    private static final Map<String, String> TOOL_ICONS = Map.of(
-        "file_read", "📄", "file_write", "✏️", "file_edit", "📝",
-        "bash", "💻", "glob", "🔍", "grep", "🔎",
-        "Task", "🤖", "k8s_sandbox_run", "☸️"
-    );
-
-    // 工具显示名称映射
-    private static final Map<String, String> TOOL_DISPLAY_NAMES = Map.of(
-        "file_read", "读取文件", "file_write", "写入文件", "file_edit", "编辑文件",
-        "bash", "执行命令", "glob", "文件搜索", "grep", "文本搜索",
-        "Task", "委派任务", "k8s_sandbox_run", "K8s 沙盒"
-    );
 
     @Async
     public void processUserMessage(ToolArtifact artifact) {
@@ -110,7 +89,7 @@ public class HappyChatService {
                 content,
                 (toolName, input) -> {
                     log.info("工具调用：{} ({})", toolName, input);
-                    createToolCallArtifact(accountId, sessionId, toolName, input);
+                    // 注意：UnifiedToolExecutor 会自动创建 tool-call artifact，这里不需要重复创建
                 },
                 (delta) -> {}
             );
@@ -121,46 +100,6 @@ public class HappyChatService {
             return "抱歉，处理您的请求时出现错误：" + e.getMessage();
         } finally {
             demo.k8s.agent.observability.tracing.TraceContext.clear();
-        }
-    }
-
-    private void createToolCallArtifact(String accountId, String sessionId, String toolName, JsonNode input) {
-        try {
-            String icon = TOOL_ICONS.getOrDefault(toolName, "🔧");
-            String displayName = TOOL_DISPLAY_NAMES.getOrDefault(toolName, toolName);
-
-            Map<String, Object> body = new HashMap<>();
-            body.put("status", "started");
-            body.put("timestamp", System.currentTimeMillis());
-            if (input != null) {
-                body.put("input", input);
-            }
-
-            ToolArtifact artifact = toolStateService.createToolArtifact(
-                sessionId, accountId, toolName, "tool-call",
-                ToolStatus.TODO, body, null
-            );
-
-            Map<String, Object> header = new HashMap<>();
-            header.put("type", "tool-call");
-            header.put("subtype", toolName);
-            header.put("toolName", toolName);
-            header.put("toolDisplayName", displayName);
-            header.put("icon", icon);
-            header.put("status", "started");
-            header.put("inputSummary", input != null ? input.toString() : "");
-            header.put("timestamp", System.currentTimeMillis());
-
-            // 使用 base64 编码 header（与 Happy 兼容）
-            String headerJson = objectMapper.writeValueAsString(header);
-            String encryptedHeader = privacyKitService.encodeBase64(headerJson.getBytes());
-            artifact.setHeader(encryptedHeader);
-            repository.save(artifact);
-
-            log.info("创建工具调用 artifact: id={}, tool={}", artifact.getId(), toolName);
-
-        } catch (Exception e) {
-            log.error("创建工具调用 artifact 失败：tool={}", toolName, e);
         }
     }
 
