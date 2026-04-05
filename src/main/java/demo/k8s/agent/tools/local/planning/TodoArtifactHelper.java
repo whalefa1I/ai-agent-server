@@ -52,9 +52,12 @@ public class TodoArtifactHelper {
         String sessionId = TraceContext.getSessionId();
         String userId = TraceContext.getUserId();
 
-        if (sessionId == null || userId == null || toolStateService == null) {
-            log.debug("跳过创建 todo artifact：sessionId={}, userId={}, service={}",
-                sessionId, userId, toolStateService != null);
+        // 使用 sessionId 作为 accountId（支持匿名会话）
+        String accountId = sessionId;
+
+        if (sessionId == null || toolStateService == null) {
+            log.debug("跳过创建 todo artifact：sessionId={}, service={}",
+                sessionId, toolStateService != null);
             return null;
         }
 
@@ -94,7 +97,7 @@ public class TodoArtifactHelper {
             ToolArtifact artifact = new ToolArtifact();
             artifact.setId(artifactId);
             artifact.setSessionId(sessionId);
-            artifact.setAccountId(userId);
+            artifact.setAccountId(accountId);
             artifact.setHeader(encryptedHeader);
             artifact.setHeaderVersion(1);
             artifact.setBody(encryptedBody);
@@ -124,9 +127,11 @@ public class TodoArtifactHelper {
      */
     public static boolean updateTodoArtifact(String todoId, String status, String content) {
         String sessionId = TraceContext.getSessionId();
-        String userId = TraceContext.getUserId();
 
-        if (sessionId == null || userId == null || repository == null) {
+        // 使用 sessionId 作为 accountId（支持匿名会话）
+        String accountId = sessionId;
+
+        if (sessionId == null || repository == null) {
             return false;
         }
 
@@ -182,14 +187,16 @@ public class TodoArtifactHelper {
      */
     public static boolean deleteTodoArtifact(String artifactId) {
         String sessionId = TraceContext.getSessionId();
-        String userId = TraceContext.getUserId();
 
-        if (sessionId == null || userId == null || repository == null) {
+        // 使用 sessionId 作为 accountId（支持匿名会话）
+        String accountId = sessionId;
+
+        if (sessionId == null || repository == null) {
             return false;
         }
 
         try {
-            var optional = repository.findByIdAndAccountId(artifactId, userId);
+            var optional = repository.findByIdAndAccountId(artifactId, accountId);
             if (optional.isPresent()) {
                 repository.delete(optional.get());
                 log.info("删除 todo artifact: id={}", artifactId);
