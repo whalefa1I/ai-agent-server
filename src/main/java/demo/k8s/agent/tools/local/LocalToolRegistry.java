@@ -4,6 +4,9 @@ import demo.k8s.agent.tools.local.file.*;
 import demo.k8s.agent.tools.local.git.LocalGitTool;
 import demo.k8s.agent.tools.local.lsp.LspDiagnosticTool;
 import demo.k8s.agent.tools.local.memory.MemorySearchTool;
+import demo.k8s.agent.tools.local.interaction.AskUserQuestionTool;
+import demo.k8s.agent.tools.local.planning.ExitPlanModeTool;
+import demo.k8s.agent.tools.local.planning.TaskTools;
 import demo.k8s.agent.tools.local.planning.TodoWriteTool;
 import demo.k8s.agent.tools.local.search.LocalGrepTool;
 import demo.k8s.agent.tools.local.shell.LocalBashTool;
@@ -35,7 +38,10 @@ public class LocalToolRegistry {
         tools.add(LocalFileReadTool.createTool());
         tools.add(LocalFileWriteTool.createTool());
         tools.add(LocalFileEditTool.createTool());
+        tools.add(LocalFileDeleteTool.createTool());
         tools.add(LocalMkdirTool.createTool());
+        tools.add(LocalLSTool.createTool());
+        tools.add(LocalMultiEditTool.createTool());
         tools.add(LocalFileStatTool.createTool());
         tools.add(LocalFileCopyTool.createTool());
         tools.add(LocalFileMoveTool.createTool());
@@ -51,6 +57,14 @@ public class LocalToolRegistry {
 
         // 规划工具
         tools.add(TodoWriteTool.createTool());
+        tools.add(ExitPlanModeTool.createTool());
+        // Task 工具集
+        tools.add(TaskTools.createTaskCreateTool());
+        tools.add(TaskTools.createTaskListTool());
+        tools.add(TaskTools.createTaskGetTool());
+        tools.add(TaskTools.createTaskUpdateTool());
+        tools.add(TaskTools.createTaskStopTool());
+        tools.add(TaskTools.createTaskOutputTool());
 
         // LSP 工具
         tools.add(LspDiagnosticTool.createTool());
@@ -61,6 +75,9 @@ public class LocalToolRegistry {
 
         // 记忆工具
         tools.add(MemorySearchTool.createTool());
+
+        // 交互工具
+        tools.add(AskUserQuestionTool.createTool());
 
         return tools;
     }

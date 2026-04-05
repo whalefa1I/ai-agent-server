@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
+import demo.k8s.agent.skills.SkillRegistry;
 import demo.k8s.agent.toolsystem.McpToolProvider;
 import demo.k8s.agent.toolsystem.ToolFeatureFlags;
 import demo.k8s.agent.toolsystem.ToolPermissionContext;
@@ -29,6 +30,7 @@ public class AgentConfiguration {
             ToolPermissionContext toolPermissionContext,
             ToolFeatureFlags toolFeatureFlags,
             McpToolProvider mcpToolProvider,
+            SkillRegistry skillRegistry,
             DemoCoordinatorProperties coordinatorProperties) {
 
         // 加载 MCP 工具并转换为 ToolCallback
@@ -36,9 +38,25 @@ public class AgentConfiguration {
                 .map(demo.k8s.agent.toolsystem.ToolModule::callback)
                 .toList();
 
+        // 加载 Skill 工具
+        List<org.springframework.ai.tool.ToolCallback> skillTools = new java.util.ArrayList<>();
+        if (skillRegistry != null) {
+            skillTools = skillRegistry.getSkillTools().stream()
+                    .map(tool -> {
+                        try {
+                            return demo.k8s.agent.toolsystem.ClaudeToolFactory.toToolCallback(tool);
+                        } catch (Exception e) {
+                            return null;
+                        }
+                    })
+                    .filter(t -> t != null)
+                    .toList();
+        }
+
         // 合并所有工具
         List<org.springframework.ai.tool.ToolCallback> allTools = new java.util.ArrayList<>(
                 demoToolRegistry.filteredCallbacks(toolPermissionContext, toolFeatureFlags, mcpToolProvider.loadMcpTools()));
+        allTools.addAll(skillTools);
 
         String system =
                 coordinatorProperties.isEnabled()

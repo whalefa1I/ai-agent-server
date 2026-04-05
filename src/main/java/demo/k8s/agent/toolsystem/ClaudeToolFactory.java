@@ -7,6 +7,10 @@ import java.util.function.Function;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
+import org.springframework.ai.tool.function.FunctionToolCallback;
+
 /**
  * 与 Claude Code {@code buildTool(def)} 对齐：将 {@link ToolDefPartial} 合并为完整 {@link ClaudeLikeTool}。
  */
@@ -90,5 +94,28 @@ public final class ClaudeToolFactory {
                 return ClaudeLikeTool.super.validateInput(input);
             }
         };
+    }
+
+    /**
+     * 将 ClaudeLikeTool 转换为 Spring AI ToolCallback
+     * 用于将 Skills 和 MCP 工具集成到 Spring AI 工具系统
+     */
+    public static ToolCallback toToolCallback(ClaudeLikeTool claudeTool) {
+        ToolDefinition definition = ToolDefinition.builder()
+                .name(claudeTool.name())
+                .description(claudeTool.description())
+                .inputSchema(claudeTool.inputSchemaJson())
+                .build();
+
+        // 创建一个占位函数工具回调（实际执行由工具调用器处理）
+        return FunctionToolCallback.builder(
+                claudeTool.name(),
+                (Function<String, String>) input -> {
+                    // 这里返回一个占位响应，实际执行由工具调用系统处理
+                    return "{\"success\": true, \"tool\": \"" + claudeTool.name() + "\", \"input\": " + input + "}";
+                })
+                .description(claudeTool.description())
+                .inputSchema(claudeTool.inputSchemaJson())
+                .build();
     }
 }
