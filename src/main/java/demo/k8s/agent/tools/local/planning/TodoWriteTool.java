@@ -108,14 +108,20 @@ public class TodoWriteTool {
      * 执行工具
      */
     public static LocalToolResult execute(Map<String, Object> input) {
-        try {
-            log.info("todo_write 收到输入：input={}", input);
+        log.info("=== todo_write 开始执行 ===");
+        log.info("输入参数：{}", input);
+        log.info("input 类型：{}", input != null ? input.getClass().getName() : "null");
+        if (input != null) {
+            input.forEach((k, v) -> log.info("  key='{}' value='{}' type={}", k, v, v != null ? v.getClass().getName() : "null"));
+        }
 
+        try {
             String action = (String) input.get("action");
-            log.info("action={}", action);
+            log.info("action='{}'", action);
 
             if (action == null || action.isEmpty()) {
-                return LocalToolResult.error("action is required");
+                log.error("action 参数缺失或为空");
+                return LocalToolResult.error("action is required (received: " + action + ")");
             }
 
             switch (action.toLowerCase()) {
