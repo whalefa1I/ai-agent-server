@@ -11,6 +11,7 @@ import demo.k8s.agent.observability.SessionStats;
 import demo.k8s.agent.observability.TokenCounts;
 import demo.k8s.agent.observability.ToolCallMetrics;
 import demo.k8s.agent.observability.events.EventBus;
+import demo.k8s.agent.observability.events.Event;
 import demo.k8s.agent.observability.events.Event.ToolCalledEvent;
 import demo.k8s.agent.observability.events.Event.ModelCalledEvent;
 import demo.k8s.agent.observability.events.Event.ErrorEvent;
@@ -34,6 +35,7 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.model.tool.ToolExecutionResult;
+import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -77,6 +79,7 @@ public class EnhancedAgenticQueryLoop {
     private final MemorySearchService memorySearchService;
     private final HookService hookService;
     private final ToolStateService toolStateService;
+    private final ToolCallingManager toolCallingManager;
 
     // 权限确认回调（用于 WebSocket TUI）
     private Function<PermissionRequest, CompletableFuture<PermissionResult>> permissionCallback;
@@ -99,7 +102,8 @@ public class EnhancedAgenticQueryLoop {
             MetricsCollector metricsCollector,
             MemorySearchService memorySearchService,
             HookService hookService,
-            ToolStateService toolStateService) {
+            ToolStateService toolStateService,
+            ToolCallingManager toolCallingManager) {
         this.chatModel = chatModel;
         this.compactionPipeline = compactionPipeline;
         this.retryPolicy = retryPolicy;
@@ -116,6 +120,13 @@ public class EnhancedAgenticQueryLoop {
         this.memorySearchService = memorySearchService;
         this.hookService = hookService;
         this.toolStateService = toolStateService;
+        this.toolCallingManager = toolCallingManager;
+
+        // 订阅 ToolCalledEvent 事件，用于在工具执行时创建 artifact
+        // 注意：这是在工具执行之后，但可以用来记录工具调用历史
+        eventBus.subscribe(Event.ToolCalledEvent.class, event -> {
+            log.debug("捕获 ToolCalledEvent: sessionId={}", event.sessionId());
+        });
     }
 
     /**
@@ -209,12 +220,15 @@ public class EnhancedAgenticQueryLoop {
             // 开始模型调用指标追踪
             ModelCallMetrics modelCallMetrics = sessionStats.startModelCall("unknown");
 
+            // 注意：Spring AI 会在内部自动执行工具调用
+            // 为了在工具执行之前拦截，我们需要在调用 chatModel 之前设置回调
             Prompt prompt = new Prompt(messages, options);
 
             ChatResponse response;
             try {
                 response = retryPolicy.call(() -> {
                     Instant start = Instant.now();
+                    // Spring AI 会在内部自动执行工具调用
                     ChatResponse resp = chatModel.call(prompt);
                     Instant end = Instant.now();
 
@@ -231,6 +245,12 @@ public class EnhancedAgenticQueryLoop {
 
                     return resp;
                 });
+
+                // Spring AI 已经执行了工具，现在调用 onToolCall 回调
+                // 注意：这是在工具执行之后调用，仅用于记录目的
+                if (onToolCall != null) {
+                    logToolCallsFromResponse(response, onToolCall);
+                }
             } catch (Exception e) {
                 sessionStats.failModelCall(modelCallMetrics, e.getMessage());
                 log.error("模型调用失败", e);
@@ -243,21 +263,31 @@ public class EnhancedAgenticQueryLoop {
             }
 
             // 检查是否有工具调用
-            if (!hasToolCalls(response)) {
-                String text = extractAssistantText(response);
-                log.info("Agentic loop 完成：turns={}, responseLength={}", state.turnCount(), text.length());
+            // 注意：Spring AI 会在内部自动执行工具，所以 hasToolCalls 可能返回 false
+            // 但我们可以从响应中检查是否有工具执行结果
+            boolean hasTools = hasToolCalls(response);
+            String responseText = extractAssistantText(response);
+
+            log.info("模型响应检查：hasToolCalls={}, responseText={}", hasTools,
+                responseText != null ? responseText.substring(0, 50) : "null");
+
+            // 如果没有工具调用但有响应文本，直接返回
+            // 注意：Spring AI 可能已经执行了工具，但我们无法获取工具调用信息
+            if (!hasTools) {
+                log.info("Agentic loop 完成：turns={}, responseLength={}", state.turnCount(), responseText.length());
 
                 // 如果有文本增量回调，流式发送文本
-                if (onTextDelta != null && !text.isEmpty()) {
-                    streamText(text, onTextDelta);
+                if (onTextDelta != null && !responseText.isEmpty()) {
+                    streamText(responseText, onTextDelta);
                 }
 
-                return new AgenticTurnResult(LoopTerminalReason.COMPLETED, text, state);
+                return new AgenticTurnResult(LoopTerminalReason.COMPLETED, responseText, state);
             }
 
             // 处理工具调用（带权限检查）
             List<AssistantMessage.ToolCall> executedToolCalls;
             try {
+                log.info("开始执行工具调用检查，工具数量：{}", response.getResult().getOutput().getToolCalls() != null ? response.getResult().getOutput().getToolCalls().size() : 0);
                 executedToolCalls = executeToolsWithPermissionCheck(response, prompt, options, onToolCall);
             } catch (PermissionDeniedException e) {
                 log.warn("工具调用被拒绝：{}", e.getMessage());
@@ -657,6 +687,20 @@ public class EnhancedAgenticQueryLoop {
     private static String truncate(String s, int maxLen) {
         if (s == null) return "";
         return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
+    }
+
+    /**
+     * 从响应中提取工具调用信息并调用 onToolCall 回调
+     * 注意：这是在工具执行之后调用，仅用于记录目的
+     */
+    private void logToolCallsFromResponse(ChatResponse response, java.util.function.BiConsumer<String, JsonNode> onToolCall) {
+        // Spring AI 在内部执行工具后，响应中可能包含 TOOL 角色的消息
+        // 但这些消息不包含原始的工具调用参数
+        // 我们只能从日志中获取工具调用信息
+        log.info("检查响应中的工具调用信息 (Spring AI 已执行工具)");
+
+        // 注意：由于 Spring AI 已经在内部执行了工具，我们无法获取原始的工具调用参数
+        // 这里只是一个占位实现，用于记录工具执行的事实
     }
 
     /**

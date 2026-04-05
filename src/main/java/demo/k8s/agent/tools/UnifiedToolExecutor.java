@@ -5,9 +5,18 @@ import demo.k8s.agent.tools.local.LocalToolResult;
 import demo.k8s.agent.tools.remote.RemoteToolExecutor;
 import demo.k8s.agent.toolsystem.ClaudeLikeTool;
 import demo.k8s.agent.toolsystem.ToolPermissionContext;
+import demo.k8s.agent.toolstate.ToolArtifactRepository;
+import demo.k8s.agent.toolstate.ToolStateService;
+import demo.k8s.agent.toolstate.ToolStatus;
+import demo.k8s.agent.observability.tracing.TraceContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import demo.k8s.agent.privacykit.PrivacyKitService;
+import demo.k8s.agent.toolstate.ToolArtifact;
+
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -28,6 +37,24 @@ public class UnifiedToolExecutor {
     private final RemoteToolExecutor remoteExecutor;
     private final String remoteBaseUrl;
     private final String remoteAuthToken;
+    private final ToolStateService toolStateService;
+    private final ToolArtifactRepository repository;
+    private final PrivacyKitService privacyKitService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    // 工具图标映射
+    private static final Map<String, String> TOOL_ICONS = Map.of(
+        "file_read", "📄", "file_write", "✏️", "file_edit", "📝",
+        "bash", "💻", "glob", "🔍", "grep", "🔎",
+        "Task", "🤖", "k8s_sandbox_run", "☸️"
+    );
+
+    // 工具显示名称映射
+    private static final Map<String, String> TOOL_DISPLAY_NAMES = Map.of(
+        "file_read", "读取文件", "file_write", "写入文件", "file_edit", "编辑文件",
+        "bash", "执行命令", "glob", "文件搜索", "grep", "文本搜索",
+        "Task", "委派任务", "k8s_sandbox_run", "K8s 沙盒"
+    );
 
     public enum ExecutionMode {
         /** 仅在本地执行 */
@@ -44,6 +71,9 @@ public class UnifiedToolExecutor {
         this.remoteExecutor = builder.remoteExecutor;
         this.remoteBaseUrl = builder.remoteBaseUrl;
         this.remoteAuthToken = builder.remoteAuthToken;
+        this.toolStateService = builder.toolStateService;
+        this.repository = builder.repository;
+        this.privacyKitService = builder.privacyKitService;
     }
 
     /**
@@ -100,6 +130,51 @@ public class UnifiedToolExecutor {
             ClaudeLikeTool tool,
             Map<String, Object> input,
             ToolPermissionContext ctx) {
+
+        // 在工具执行之前创建 artifact（如果 TraceContext 中有会话信息）
+        String sessionId = TraceContext.getSessionId();
+        String userId = TraceContext.getUserId();
+        if (sessionId != null && userId != null && toolStateService != null) {
+            log.info("工具调用：{} (sessionId={}, userId={})", tool.name(), sessionId, userId);
+            try {
+                // 创建 tool-call artifact，使用与 HappyChatService 相同的 header 格式
+                String icon = getToolIcon(tool.name());
+                String displayName = getToolDisplayName(tool.name());
+
+                Map<String, Object> body = new HashMap<>();
+                body.put("status", "started");
+                body.put("timestamp", System.currentTimeMillis());
+                if (input != null) {
+                    body.put("input", input);
+                }
+
+                var artifact = toolStateService.createToolArtifact(
+                    sessionId, userId, tool.name(), "tool-call",
+                    ToolStatus.TODO, body, null);
+
+                // 更新 header 为 Happy 兼容格式
+                Map<String, Object> header = new HashMap<>();
+                header.put("type", "tool-call");
+                header.put("subtype", tool.name());
+                header.put("toolName", tool.name());
+                header.put("toolDisplayName", displayName);
+                header.put("icon", icon);
+                header.put("status", "started");
+                header.put("inputSummary", input != null ? input.toString() : "");
+                header.put("timestamp", System.currentTimeMillis());
+
+                // 使用 base64 编码 header（与 Happy 兼容）
+                String headerJson = objectMapper.writeValueAsString(header);
+                String encryptedHeader = privacyKitService.encodeBase64(headerJson.getBytes());
+                artifact.setHeader(encryptedHeader);
+                artifact = repository.save(artifact);
+
+                log.info("创建 tool-call artifact: id={}, tool={}", artifact.getId(), tool.name());
+            } catch (Exception e) {
+                log.warn("创建 tool-call artifact 失败：{}", e.getMessage());
+            }
+        }
+
         log.debug("Executing tool locally: {}", tool.name());
         return localExecutor.execute(tool, input, ctx);
     }
@@ -178,12 +253,23 @@ public class UnifiedToolExecutor {
         return new Builder();
     }
 
+    private String getToolIcon(String toolName) {
+        return TOOL_ICONS.getOrDefault(toolName, "🔧");
+    }
+
+    private String getToolDisplayName(String toolName) {
+        return TOOL_DISPLAY_NAMES.getOrDefault(toolName, toolName);
+    }
+
     public static class Builder {
         private ExecutionMode mode = ExecutionMode.LOCAL;
         private LocalToolExecutor localExecutor = new LocalToolExecutor();
         private RemoteToolExecutor remoteExecutor;
         private String remoteBaseUrl;
         private String remoteAuthToken;
+        private ToolStateService toolStateService;
+        private ToolArtifactRepository repository;
+        private PrivacyKitService privacyKitService;
 
         public Builder mode(ExecutionMode mode) {
             this.mode = mode;
@@ -203,6 +289,21 @@ public class UnifiedToolExecutor {
         public Builder remoteConfig(String baseUrl, String authToken) {
             this.remoteBaseUrl = baseUrl;
             this.remoteAuthToken = authToken;
+            return this;
+        }
+
+        public Builder toolStateService(ToolStateService service) {
+            this.toolStateService = service;
+            return this;
+        }
+
+        public Builder repository(ToolArtifactRepository repo) {
+            this.repository = repo;
+            return this;
+        }
+
+        public Builder privacyKitService(PrivacyKitService service) {
+            this.privacyKitService = service;
             return this;
         }
 

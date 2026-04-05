@@ -63,10 +63,17 @@ public class DemoToolRegistryConfiguration {
      * 统一工具执行器（默认本地模式）
      */
     @Bean
-    UnifiedToolExecutor unifiedToolExecutor(LocalToolExecutor localExecutor) {
+    UnifiedToolExecutor unifiedToolExecutor(
+            LocalToolExecutor localExecutor,
+            demo.k8s.agent.toolstate.ToolStateService toolStateService,
+            demo.k8s.agent.toolstate.ToolArtifactRepository repository,
+            demo.k8s.agent.privacykit.PrivacyKitService privacyKitService) {
         return UnifiedToolExecutor.builder()
                 .mode(UnifiedToolExecutor.ExecutionMode.LOCAL)
                 .localExecutor(localExecutor)
+                .toolStateService(toolStateService)
+                .repository(repository)
+                .privacyKitService(privacyKitService)
                 .build();
     }
 
