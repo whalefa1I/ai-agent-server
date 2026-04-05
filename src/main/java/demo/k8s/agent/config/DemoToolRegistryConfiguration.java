@@ -70,12 +70,17 @@ public class DemoToolRegistryConfiguration {
                         return Map.of("success", false, "error", "Tool not found: " + toolName);
                     }
                     var result = executor.execute(tool, input, null);
-                    return Map.of(
-                            "success", result.isSuccess(),
-                            "content", result.getContent(),
-                            "location", result.getExecutionLocation(),
-                            "duration", result.getDurationMs()
-                    );
+                    // 使用 HashMap 避免 Map.of() 不支持 null 值的问题
+                    var resultMap = new java.util.HashMap<String, Object>();
+                    resultMap.put("success", result.isSuccess());
+                    if (result.getContent() != null) {
+                        resultMap.put("content", result.getContent());
+                    }
+                    if (result.getExecutionLocation() != null) {
+                        resultMap.put("location", result.getExecutionLocation());
+                    }
+                    resultMap.put("duration", result.getDurationMs());
+                    return resultMap;
                 })
                 .description(toolName)
                 .inputType(Map.class)
