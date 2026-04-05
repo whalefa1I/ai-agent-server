@@ -116,6 +116,22 @@ public final class DemoToolSpecs {
                     }
                     """;
 
+    private static final String TODO_WRITE_SCHEMA =
+            """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "action": { "type": "string", "description": "Action: 'create', 'update', 'delete', 'list', 'clear'" },
+                        "id": { "type": "string", "description": "Todo item ID (required for update/delete)" },
+                        "content": { "type": "string", "description": "Todo content (required for create/update)" },
+                        "status": { "type": "string", "description": "Status: 'pending', 'in_progress', 'completed' (for update)" },
+                        "assignee": { "type": "string", "description": "Assignee name (optional)" },
+                        "filter": { "type": "string", "description": "Filter by status (for list action)" }
+                      },
+                      "required": ["action"]
+                    }
+                    """;
+
     private DemoToolSpecs() {}
 
     /** {@code k8s_sandbox_run} — 对应 K8s Job 沙盒 */
@@ -226,5 +242,17 @@ public final class DemoToolSpecs {
                         GREP_SCHEMA,
                         null,
                         true));
+    }
+
+    /** todo_write - 待办事项管理工具 */
+    public static ClaudeLikeTool todoWrite() {
+        return ClaudeToolFactory.buildTool(
+                new ToolDefPartial(
+                        "todo_write",
+                        ToolCategory.PLANNING,
+                        "管理待办事项（创建、更新、删除、列表、清除）",
+                        TODO_WRITE_SCHEMA,
+                        null,
+                        false));
     }
 }

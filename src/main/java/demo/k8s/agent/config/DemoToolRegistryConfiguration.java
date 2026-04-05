@@ -3,15 +3,19 @@ package demo.k8s.agent.config;
 import demo.k8s.agent.tools.UnifiedToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolRegistry;
+import demo.k8s.agent.tools.local.planning.TodoArtifactHelper;
 import demo.k8s.agent.toolsystem.DemoToolSpecs;
 import demo.k8s.agent.toolsystem.ToolModule;
 import demo.k8s.agent.toolsystem.ToolRegistry;
 
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.function.FunctionToolCallback;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
@@ -21,9 +25,27 @@ import java.util.Map;
 @Configuration
 public class DemoToolRegistryConfiguration {
 
+    private static final Logger log = LoggerFactory.getLogger(DemoToolRegistryConfiguration.class);
+
+    @Autowired
+    private demo.k8s.agent.toolstate.ToolStateService toolStateService;
+
+    @Autowired
+    private demo.k8s.agent.toolstate.ToolArtifactRepository repository;
+
+    @Autowired
+    private demo.k8s.agent.privacykit.PrivacyKitService privacyKitService;
+
+    @PostConstruct
+    public void init() {
+        // 初始化 TodoArtifactHelper 的依赖服务
+        TodoArtifactHelper.setServices(toolStateService, repository, privacyKitService);
+        log.info("TodoArtifactHelper 已初始化");
+    }
+
     @Bean
     ToolRegistry demoToolRegistry(UnifiedToolExecutor unifiedToolExecutor) {
-        // 只注册本地工具（6 个基本工具）
+        // 只注册本地工具（7 个基本工具 + todo_write）
         ToolRegistry full = new ToolRegistry();
         full.register(new ToolModule(DemoToolSpecs.glob(), createToolCallback(unifiedToolExecutor, "glob")));
         full.register(new ToolModule(DemoToolSpecs.fileRead(), createToolCallback(unifiedToolExecutor, "file_read")));
@@ -31,6 +53,7 @@ public class DemoToolRegistryConfiguration {
         full.register(new ToolModule(DemoToolSpecs.fileEdit(), createToolCallback(unifiedToolExecutor, "file_edit")));
         full.register(new ToolModule(DemoToolSpecs.bash(), createToolCallback(unifiedToolExecutor, "bash")));
         full.register(new ToolModule(DemoToolSpecs.grep(), createToolCallback(unifiedToolExecutor, "grep")));
+        full.register(new ToolModule(DemoToolSpecs.todoWrite(), createToolCallback(unifiedToolExecutor, "todo_write")));
 
         return full;
     }

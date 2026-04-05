@@ -81,14 +81,14 @@ public class ToolStateService {
         String encryptedHeader = privacyKitService.encodeBase64(headerJson.getBytes());
         String encryptedBody = bodyJson != null ? privacyKitService.encodeBase64(bodyJson.getBytes()) : null;
 
-        // 创建实体
+        // 创建实体（存储加密后的数据）
         ToolArtifact artifact = new ToolArtifact();
         artifact.setId(artifactId);
         artifact.setSessionId(sessionId);
         artifact.setAccountId(accountId);
-        artifact.setHeader(headerJson);
+        artifact.setHeader(encryptedHeader);  // 存储加密后的 header
         artifact.setHeaderVersion(1);
-        artifact.setBody(bodyJson);
+        artifact.setBody(encryptedBody);      // 存储加密后的 body
         artifact.setBodyVersion(1);
         artifact.setSeq(0);
         artifact.setCreatedAt(Instant.now());

@@ -151,6 +151,9 @@ public class TodoWriteTool {
 
         todos.put(id, item);
 
+        // 创建 todo artifact（用于前端显示）
+        String artifactId = TodoArtifactHelper.createTodoArtifact(content, id, item.assignee);
+
         StringBuilder output = new StringBuilder();
         output.append("Created todo item:\n");
         output.append("  ID: ").append(id).append("\n");
@@ -159,13 +162,16 @@ public class TodoWriteTool {
             output.append("  Assignee: ").append(item.assignee).append("\n");
         }
         output.append("  Status: pending\n");
+        if (artifactId != null) {
+            output.append("  Artifact ID: ").append(artifactId).append("\n");
+        }
 
         return LocalToolResult.builder()
                 .success(true)
                 .content(output.toString())
                 .executionLocation("local")
                 .metadata(new com.fasterxml.jackson.databind.ObjectMapper()
-                        .valueToTree(Map.of("id", id, "status", "pending")))
+                        .valueToTree(Map.of("id", id, "status", "pending", "artifactId", artifactId)))
                 .build();
     }
 
@@ -204,6 +210,9 @@ public class TodoWriteTool {
             } else if (item.status != TodoStatus.COMPLETED) {
                 item.completedAt = null;
             }
+
+            // 更新 todo artifact 状态
+            TodoArtifactHelper.updateTodoArtifact(id, item.status.name().toLowerCase(), item.content);
         }
 
         if (assignee != null) {
@@ -237,7 +246,11 @@ public class TodoWriteTool {
             return LocalToolResult.error("Todo item not found: " + id);
         }
 
-        return LocalToolResult.success("Deleted todo item: " + id + "\n  Content: " + removed.content);
+        // 删除 todo artifact
+        boolean artifactDeleted = TodoArtifactHelper.deleteTodoArtifact(id);
+
+        return LocalToolResult.success("Deleted todo item: " + id + "\n  Content: " + removed.content +
+            (artifactDeleted ? "\n  Artifact also deleted." : ""));
     }
 
     /**
