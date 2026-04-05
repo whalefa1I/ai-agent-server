@@ -35,3 +35,8 @@ application-local.properties
 
 # Test output
 test-output/
+
+# Runtime data
+.claude/
+data/
+compile_output.txt
