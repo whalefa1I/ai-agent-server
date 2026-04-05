@@ -134,6 +134,7 @@ public class UnifiedToolExecutor {
         // 在工具执行之前创建 artifact（如果 TraceContext 中有会话信息）
         String sessionId = TraceContext.getSessionId();
         String userId = TraceContext.getUserId();
+        String artifactId = null;
         if (sessionId != null && userId != null && toolStateService != null) {
             log.info("工具调用：{} (sessionId={}, userId={})", tool.name(), sessionId, userId);
             try {
@@ -151,6 +152,7 @@ public class UnifiedToolExecutor {
                 var artifact = toolStateService.createToolArtifact(
                     sessionId, userId, tool.name(), "tool-call",
                     ToolStatus.TODO, body, null);
+                artifactId = artifact.getId();
 
                 // 更新 header 为 Happy 兼容格式
                 Map<String, Object> header = new HashMap<>();
@@ -176,7 +178,30 @@ public class UnifiedToolExecutor {
         }
 
         log.debug("Executing tool locally: {}", tool.name());
-        return localExecutor.execute(tool, input, ctx);
+        LocalToolResult result = localExecutor.execute(tool, input, ctx);
+
+        // 工具执行完成后更新 artifact 状态
+        if (artifactId != null && toolStateService != null) {
+            try {
+                Map<String, Object> updatedBody = new HashMap<>();
+                if (result.isSuccess()) {
+                    updatedBody.put("status", "completed");
+                    updatedBody.put("output", result.getContent());
+                } else {
+                    updatedBody.put("status", "failed");
+                    updatedBody.put("error", result.getError());
+                }
+                updatedBody.put("timestamp", System.currentTimeMillis());
+                updatedBody.put("durationMs", result.getDurationMs());
+
+                toolStateService.updateToolArtifactBody(artifactId, userId, updatedBody);
+                log.info("更新 tool-call artifact 状态：id={}, status={}", artifactId, updatedBody.get("status"));
+            } catch (Exception e) {
+                log.warn("更新 tool-call artifact 状态失败：{}", e.getMessage());
+            }
+        }
+
+        return result;
     }
 
     /**

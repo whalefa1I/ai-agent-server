@@ -217,6 +217,41 @@ public class ToolStateService {
         return true;
     }
 
+    /**
+     * 更新工具状态的 body（简单版本，不需要版本号检查）
+     * 用于工具执行完成后更新状态
+     *
+     * @param artifactId 工具状态 ID
+     * @param accountId 账户 ID
+     * @param body 新 body 内容
+     * @return 是否更新成功
+     */
+    @Transactional
+    public boolean updateToolArtifactBody(String artifactId, String accountId, Map<String, Object> body) {
+        Optional<ToolArtifact> optional = repository.findByIdAndAccountId(artifactId, accountId);
+        if (optional.isEmpty()) {
+            log.warn("artifact 不存在：artifactId={}", artifactId);
+            return false;
+        }
+
+        ToolArtifact artifact = optional.get();
+        String bodyJson = toJson(body);
+        int newBodyVersion = artifact.getBodyVersion() + 1;
+        long newSeq = artifact.getSeq() + 1;
+
+        int updated = repository.updateBodyOptimistic(
+            artifactId, accountId, bodyJson, artifact.getBodyVersion(), newSeq
+        );
+
+        if (updated == 0) {
+            log.warn("更新 body 失败：artifactId={}", artifactId);
+            return false;
+        }
+
+        log.info("更新工具状态 body: artifactId={}, newVersion={}", artifactId, newBodyVersion);
+        return true;
+    }
+
     // ==================== 工具方法 ====================
 
     private String toJson(Object obj) {
