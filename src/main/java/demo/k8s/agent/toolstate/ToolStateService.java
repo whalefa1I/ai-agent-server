@@ -236,11 +236,13 @@ public class ToolStateService {
 
         ToolArtifact artifact = optional.get();
         String bodyJson = toJson(body);
+        // 加密存储（与 createToolArtifact 保持一致）
+        String encryptedBody = privacyKitService.encodeBase64(bodyJson.getBytes());
         int newBodyVersion = artifact.getBodyVersion() + 1;
         long newSeq = artifact.getSeq() + 1;
 
         int updated = repository.updateBodyOptimistic(
-            artifactId, accountId, bodyJson, artifact.getBodyVersion(), newSeq
+            artifactId, accountId, encryptedBody, artifact.getBodyVersion(), newSeq
         );
 
         if (updated == 0) {
