@@ -36,6 +36,12 @@ export OPENAI_API_KEY=your_key
 
 **Maven:** 使用项目内置的 Maven Wrapper（`./mvnw.cmd`）
 
+**Windows 上的 Claude Code：** 需要安装 [Git for Windows](https://git-scm.com/downloads/win)（内含 Git Bash）。若已安装但 `bash` 不在 `PATH` 中，请设置环境变量指向 `bash.exe`，例如：
+
+```text
+CLAUDE_CODE_GIT_BASH_PATH=C:\Program Files\Git\bin\bash.exe
+```
+
 详细说明见 `JAVA_ENV.md`
 
 ## 核心功能

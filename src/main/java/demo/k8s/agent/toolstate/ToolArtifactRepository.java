@@ -29,7 +29,7 @@ public interface ToolArtifactRepository extends JpaRepository<ToolArtifact, Stri
      */
     @Modifying
     @Query("UPDATE ToolArtifact a SET a.header = :header, a.headerVersion = a.headerVersion + 1, " +
-           "a.updatedAt = CURRENT_TIMESTAMP, a.seq = :seq " +
+           "a.updatedAt = FUNCTION('CURRENT_TIMESTAMP'), a.seq = :seq " +
            "WHERE a.id = :id AND a.accountId = :accountId AND a.headerVersion = :expectedVersion")
     int updateHeaderOptimistic(
         @Param("id") String id,
@@ -45,7 +45,7 @@ public interface ToolArtifactRepository extends JpaRepository<ToolArtifact, Stri
      */
     @Modifying
     @Query("UPDATE ToolArtifact a SET a.body = :body, a.bodyVersion = a.bodyVersion + 1, " +
-           "a.updatedAt = CURRENT_TIMESTAMP, a.seq = :seq " +
+           "a.updatedAt = FUNCTION('CURRENT_TIMESTAMP'), a.seq = :seq " +
            "WHERE a.id = :id AND a.accountId = :accountId AND a.bodyVersion = :expectedVersion")
     int updateBodyOptimistic(
         @Param("id") String id,
