@@ -201,9 +201,15 @@ public class LocalBashTool {
                 }
             }
 
-            // 检查注入
-            if (command.contains("\n") || command.contains(";") || command.contains("&")) {
-                return LocalToolResult.error("Command injection detected: " + command);
+            // 检查注入（允许多种合法 shell 语法，但阻止多行命令和后台执行）
+            // 允许：|, ||, &&, >, <, 2>&1, $(...) 等合法语法
+            // 阻止：换行符（多行命令）、&（后台执行，与后台模式冲突）
+            if (command.contains("\n")) {
+                return LocalToolResult.error("Multi-line commands are not supported. Please run commands separately.");
+            }
+            // 只阻止单独的 &（后台执行），允许 && 和 2>&1
+            if (command.matches(".*[^&]&([^=].*|$)") && !command.contains("&&") && !command.contains("2>&1")) {
+                return LocalToolResult.error("Background execution (&) is not supported in sync mode. Use background mode instead.");
             }
 
             ProcessBuilder processBuilder = new ProcessBuilder();

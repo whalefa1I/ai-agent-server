@@ -66,8 +66,15 @@ public class LocalFileWriteTool {
         long startTime = System.currentTimeMillis();
 
         try {
+            // 兼容 path 和 file_path 字段
             String pathStr = (String) input.get("path");
+            if (pathStr == null || pathStr.isEmpty()) {
+                pathStr = (String) input.get("file_path");
+            }
             String content = (String) input.get("content");
+            if (content == null) {
+                content = (String) input.get("content");
+            }
             String encoding = (String) input.getOrDefault("encoding", "UTF-8");
 
             if (pathStr == null || pathStr.isEmpty()) {
