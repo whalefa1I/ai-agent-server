@@ -292,6 +292,8 @@ public class HappyArtifactController {
         Map<String, Object> response = toHappyResponseHeaderOnly(artifact);
         response.put("body", artifact.getBody() != null ? artifact.getBody() : "");
         response.put("bodyVersion", artifact.getBodyVersion());
+        response.put("accountId", artifact.getAccountId());
+        response.put("sessionId", artifact.getSessionId());
         return response;
     }
 }
