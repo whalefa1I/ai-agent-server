@@ -294,6 +294,8 @@ public class HappyArtifactController {
         response.put("bodyVersion", artifact.getBodyVersion());
         response.put("accountId", artifact.getAccountId());
         response.put("sessionId", artifact.getSessionId());
+        // 添加 dataEncryptionKey 字段（前端需要）
+        response.put("dataEncryptionKey", "");
         return response;
     }
 }
