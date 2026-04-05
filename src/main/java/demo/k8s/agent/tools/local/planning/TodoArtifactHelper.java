@@ -49,33 +49,30 @@ public class TodoArtifactHelper {
      * @return 创建的 artifact ID，失败时返回 null
      */
     public static String createTodoArtifact(String todoContent, String todoId, String assignee) {
-        // 首先尝试从 TraceContext 获取 sessionId
-        String sessionId = TraceContext.getSessionId();
-        log.info("TraceContext.getSessionId() = {}", sessionId);
+        if (repository == null || privacyKitService == null) {
+            log.warn("依赖服务未初始化");
+            return null;
+        }
 
-        // 如果 TraceContext 中没有，尝试从最近的 artifact 获取 sessionId
-        if (sessionId == null && repository != null) {
-            var recent = repository.findByAccountIdOrderByUpdatedAtDesc("anonymous");
-            if (recent != null && !recent.isEmpty()) {
-                sessionId = recent.get(0).getSessionId();
-                log.info("从最近的 artifact 获取 sessionId: {}", sessionId);
+        // 从 TraceContext 获取 sessionId
+        String sessionId = TraceContext.getSessionId();
+
+        // 如果 TraceContext 中没有，尝试从最近的 artifact 获取
+        if (sessionId == null) {
+            var all = repository.findAll();
+            if (all != null && !all.isEmpty()) {
+                sessionId = all.get(all.size() - 1).getSessionId();
+                log.info("从最近 artifact 获取 sessionId: {}", sessionId);
             }
         }
 
-        // 使用 sessionId 作为 accountId（支持匿名会话）
-        String accountId = sessionId != null ? sessionId : "anonymous";
-
-        if (toolStateService == null) {
-            log.warn("跳过创建 todo artifact：toolStateService is null");
-            return null;
-        }
-
         if (sessionId == null) {
-            // 尝试使用当前会话的 artifact 来获取 sessionId
-            log.warn("TraceContext 中没有 sessionId，尝试使用工具调用创建 artifact");
-            // 无法创建 artifact，但允许工具继续执行
+            log.warn("无法获取 sessionId");
             return null;
         }
+
+        // 使用 sessionId 作为 accountId（支持匿名会话）
+        String accountId = sessionId;
 
         try {
             String artifactId = "todo-" + UUID.randomUUID().toString().substring(0, 8);

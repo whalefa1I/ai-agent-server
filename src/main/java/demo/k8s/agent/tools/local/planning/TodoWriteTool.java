@@ -155,8 +155,13 @@ public class TodoWriteTool {
 
         todos.put(id, item);
 
-        // 创建 todo artifact（用于前端显示）
-        String artifactId = TodoArtifactHelper.createTodoArtifact(content, id, item.assignee);
+        // 尝试创建 todo artifact（用于前端显示），失败不影响工具执行
+        String artifactId = null;
+        try {
+            artifactId = TodoArtifactHelper.createTodoArtifact(content, id, item.assignee);
+        } catch (Exception e) {
+            log.warn("创建 todo artifact 失败（不影响工具执行）: {}", e.getMessage());
+        }
 
         StringBuilder output = new StringBuilder();
         output.append("Created todo item:\n");
