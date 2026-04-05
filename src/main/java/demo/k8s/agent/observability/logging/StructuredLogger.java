@@ -76,16 +76,17 @@ public class StructuredLogger {
      * 记录用户输入事件
      */
     public static void logUserInput(String sessionId, String userId, String input, int tokenCount) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("input", truncate(input, 500));
+        data.put("inputLength", input != null ? input.length() : 0);
+        data.put("estimatedTokens", tokenCount);
+
         LogEntry entry = LogEntry.builder()
                 .event("user_input")
                 .sessionId(sessionId)
                 .userId(userId)
                 .timestamp(Instant.now())
-                .data(Map.of(
-                        "input", truncate(input, 500),
-                        "inputLength", input != null ? input.length() : 0,
-                        "estimatedTokens", tokenCount
-                ))
+                .data(data)
                 .build();
         log.info(encode(entry));
     }

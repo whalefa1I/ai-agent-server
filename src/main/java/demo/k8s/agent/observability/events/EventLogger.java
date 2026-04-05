@@ -43,14 +43,15 @@ public class EventLogger {
      */
     private void logEvent(Event event) {
         try {
-            String eventData = objectMapper.writeValueAsString(Map.of(
-                    "eventType", event.getEventType(),
-                    "eventId", event.id(),
-                    "sessionId", event.sessionId(),
-                    "userId", event.userId(),
-                    "timestamp", event.timestamp().toString(),
-                    "metadata", event.metadata()
-            ));
+            Map<String, Object> eventDataMap = new java.util.HashMap<>();
+            eventDataMap.put("eventType", event.getEventType());
+            eventDataMap.put("eventId", event.id());
+            eventDataMap.put("sessionId", event.sessionId());
+            eventDataMap.put("userId", event.userId());
+            eventDataMap.put("timestamp", event.timestamp().toString());
+            eventDataMap.put("metadata", event.metadata());
+
+            String eventData = objectMapper.writeValueAsString(eventDataMap);
 
             log.info("EVENT: {}", eventData);
 
