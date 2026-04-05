@@ -40,3 +40,4 @@ test-output/
 .claude/
 data/
 compile_output.txt
+test-data/
