@@ -1,6 +1,7 @@
 package demo.k8s.agent.config;
 
 import demo.k8s.agent.skills.ClawhubClient;
+import demo.k8s.agent.skills.GenericSkillExecutor;
 import demo.k8s.agent.skills.SkillExecutorRegistry;
 import demo.k8s.agent.skills.SkillRegistry;
 import demo.k8s.agent.skills.SkillService;
@@ -16,6 +17,11 @@ import org.springframework.context.annotation.Configuration;
 public class SkillsConfiguration {
 
     @Bean
+    public GenericSkillExecutor genericSkillExecutor() {
+        return new GenericSkillExecutor();
+    }
+
+    @Bean
     public SkillExecutorRegistry skillExecutorRegistry() {
         return new SkillExecutorRegistry();
     }
@@ -26,8 +32,11 @@ public class SkillsConfiguration {
     }
 
     @Bean
-    public SkillService skillService(SkillRegistry skillRegistry, SkillExecutorRegistry skillExecutorRegistry) {
-        return new SkillService(skillRegistry, skillExecutorRegistry);
+    public SkillService skillService(
+            SkillRegistry skillRegistry,
+            SkillExecutorRegistry skillExecutorRegistry,
+            GenericSkillExecutor genericSkillExecutor) {
+        return new SkillService(skillRegistry, skillExecutorRegistry, genericSkillExecutor);
     }
 
     @Bean

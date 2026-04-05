@@ -23,6 +23,11 @@ import java.util.stream.Stream;
 
 /**
  * 技能服务 - 管理技能的加载、安装、卸载
+ *
+ * 基于 ClawHub 技能生态理念：
+ * - 技能自带实现（.py, .js 脚本）
+ * - 框架提供通用执行环境
+ * - 从 SKILL.md 解析输入模式
  */
 @Service
 public class SkillService {
@@ -41,13 +46,18 @@ public class SkillService {
 
     private final SkillRegistry skillRegistry;
     private final SkillExecutorRegistry skillExecutorRegistry;
+    private final GenericSkillExecutor genericSkillExecutor;
 
     // 已加载的技能清单
     private final Map<String, SkillManifest> loadedSkills = new ConcurrentHashMap<>();
 
-    public SkillService(SkillRegistry skillRegistry, SkillExecutorRegistry skillExecutorRegistry) {
+    public SkillService(
+            SkillRegistry skillRegistry,
+            SkillExecutorRegistry skillExecutorRegistry,
+            GenericSkillExecutor genericSkillExecutor) {
         this.skillRegistry = skillRegistry;
         this.skillExecutorRegistry = skillExecutorRegistry;
+        this.genericSkillExecutor = genericSkillExecutor;
         loadAllSkills();
     }
 
@@ -179,85 +189,17 @@ public class SkillService {
 
     /**
      * 注册技能工具
+     *
+     * 从 SKILL.md 解析输入模式，注册通用执行器
      */
     private void registerSkillTools(SkillManifest manifest) {
-        // 为每个技能创建特定的输入模式和执行器
         String toolName = "skill_" + manifest.name;
-        String inputSchema;
-        java.util.function.Function<String, String> executor = null;
 
-        switch (manifest.name.toLowerCase()) {
-            case "calculator" -> {
-                // 计算器技能 - 特定模式
-                inputSchema = "{" +
-                        "  \"type\": \"object\"," +
-                        "  \"properties\": {" +
-                        "    \"expression\": {\"type\": \"string\", \"description\": \"数学表达式，如 2 + 3 * 4\"}" +
-                        "  }," +
-                        "  \"required\": [\"expression\"]" +
-                        "}";
-                // 注册执行器
-                CalculatorSkillExecutor calcExecutor = new CalculatorSkillExecutor(manifest.directory);
-                skillExecutorRegistry.registerExecutor(calcExecutor);
-                // 创建执行函数
-                executor = createExecutorFunction(manifest.name, "expression");
-            }
-            case "json" -> {
-                // JSON 技能 - 特定模式
-                inputSchema = "{" +
-                        "  \"type\": \"object\"," +
-                        "  \"properties\": {" +
-                        "    \"action\": {\"type\": \"string\", \"description\": \"操作类型：validate, format, parse, transform\", \"enum\": [\"validate\", \"format\", \"parse\", \"transform\"]}," +
-                        "    \"input\": {\"type\": \"string\", \"description\": \"JSON 字符串\"}," +
-                        "    \"schema\": {\"type\": \"string\", \"description\": \"JSON Schema（可选，用于验证）\"}" +
-                        "  }," +
-                        "  \"required\": [\"action\", \"input\"]" +
-                        "}";
-                JsonSkillExecutor jsonExecutor = new JsonSkillExecutor();
-                skillExecutorRegistry.registerExecutor(jsonExecutor);
-                executor = createExecutorFunction(manifest.name, "action", "input", "schema");
-            }
-            case "markdown" -> {
-                // Markdown 技能 - 特定模式
-                inputSchema = "{" +
-                        "  \"type\": \"object\"," +
-                        "  \"properties\": {" +
-                        "    \"action\": {\"type\": \"string\", \"description\": \"操作类型：validate, check, fix\", \"enum\": [\"validate\", \"check\", \"fix\"]}," +
-                        "    \"content\": {\"type\": \"string\", \"description\": \"Markdown 内容\"}" +
-                        "  }," +
-                        "  \"required\": [\"action\", \"content\"]" +
-                        "}";
-                MarkdownSkillExecutor mdExecutor = new MarkdownSkillExecutor();
-                skillExecutorRegistry.registerExecutor(mdExecutor);
-                executor = createExecutorFunction(manifest.name, "action", "content");
-            }
-            case "file-organizer-zh" -> {
-                // 文件整理技能 - 特定模式
-                inputSchema = "{" +
-                        "  \"type\": \"object\"," +
-                        "  \"properties\": {" +
-                        "    \"action\": {\"type\": \"string\", \"description\": \"操作类型：organize, scan, classify\", \"enum\": [\"organize\", \"scan\", \"classify\"]}," +
-                        "    \"directory\": {\"type\": \"string\", \"description\": \"要整理的目录路径\"}," +
-                        "    \"dryRun\": {\"type\": \"boolean\", \"description\": \"是否仅为预览，不实际移动文件\"}" +
-                        "  }," +
-                        "  \"required\": [\"action\", \"directory\"]" +
-                        "}";
-                FileOrganizerSkillExecutor fileExecutor = new FileOrganizerSkillExecutor();
-                skillExecutorRegistry.registerExecutor(fileExecutor);
-                executor = createExecutorFunction(manifest.name, "action", "directory", "dryRun");
-            }
-            default -> {
-                // 通用技能模式
-                inputSchema = "{" +
-                        "  \"type\": \"object\"," +
-                        "  \"properties\": {" +
-                        "    \"command\": {\"type\": \"string\", \"description\": \"Command to execute\"}," +
-                        "    \"args\": {\"type\": \"object\", \"description\": \"Command arguments\"}" +
-                        "  }," +
-                        "  \"required\": [\"command\"]" +
-                        "}";
-            }
-        }
+        // 为每个技能创建特定的输入模式
+        String inputSchema = buildInputSchema(manifest);
+
+        // 创建执行函数，使用通用执行器
+        java.util.function.Function<String, String> executor = createExecutorFunction(manifest);
 
         ClaudeLikeTool tool = ClaudeToolFactory.buildTool(
                 new ToolDefPartial(
@@ -268,7 +210,7 @@ public class SkillService {
                         null,
                         false));
 
-        // 注册工具到技能注册表，带执行函数
+        // 注册工具到技能注册表
         skillRegistry.registerSkill(new SkillRegistry.Skill() {
             @Override
             public String getName() { return manifest.name; }
@@ -283,19 +225,90 @@ public class SkillService {
         });
 
         // 注册工具执行器到全局注册表
-        if (executor != null) {
-            toolRegistry.put(toolName, executor);
-            log.info("注册工具执行器：{}", toolName);
-        }
+        toolRegistry.put(toolName, executor);
+        log.info("注册工具执行器：{} -> {}", toolName, genericSkillExecutor.detectSkillType(manifest.directory));
     }
 
-    // 存储工具执行器的注册表
-    private static final Map<String, java.util.function.Function<String, String>> toolRegistry = new ConcurrentHashMap<>();
+    /**
+     * 构建输入模式
+     *
+     * 根据技能类型和 SKILL.md 中的用法说明构建合适的 JSON Schema
+     */
+    private String buildInputSchema(SkillManifest manifest) {
+        String name = manifest.name.toLowerCase();
+
+        // 根据技能名称推断输入模式
+        return switch (name) {
+            // 计算器技能 - 需要 expression 参数
+            case "calculator" -> "{" +
+                    "  \"type\": \"object\"," +
+                    "  \"properties\": {" +
+                    "    \"expression\": {\"type\": \"string\", \"description\": \"数学表达式，如 2 + 3 * 4\"}" +
+                    "  }," +
+                    "  \"required\": [\"expression\"]" +
+                    "}";
+
+            // 文件整理技能 - 需要 directory 参数
+            case "file-organizer-zh" -> "{" +
+                    "  \"type\": \"object\"," +
+                    "  \"properties\": {" +
+                    "    \"action\": {\"type\": \"string\", \"description\": \"操作类型：organize, scan, classify\", \"enum\": [\"organize\", \"scan\", \"classify\"]}," +
+                    "    \"directory\": {\"type\": \"string\", \"description\": \"要整理的目录路径\"}," +
+                    "    \"dryRun\": {\"type\": \"boolean\", \"description\": \"是否仅为预览，不实际移动文件\"}" +
+                    "  }," +
+                    "  \"required\": [\"action\", \"directory\"]" +
+                    "}";
+
+            // 本地文件读取 - 需要 path 参数
+            case "local-file" -> "{" +
+                    "  \"type\": \"object\"," +
+                    "  \"properties\": {" +
+                    "    \"action\": {\"type\": \"string\", \"description\": \"操作类型：read, summarize, search\", \"enum\": [\"read\", \"summarize\", \"search\"]}," +
+                    "    \"path\": {\"type\": \"string\", \"description\": \"文件路径\"}," +
+                    "    \"keyword\": {\"type\": \"string\", \"description\": \"搜索关键词（search 操作需要）\"}" +
+                    "  }," +
+                    "  \"required\": [\"action\", \"path\"]" +
+                    "}";
+
+            // JSON 和 Markdown 是指令型技能，不需要执行脚本
+            case "json" -> "{" +
+                    "  \"type\": \"object\"," +
+                    "  \"properties\": {" +
+                    "    \"action\": {\"type\": \"string\", \"description\": \"操作类型：validate, format, parse\", \"enum\": [\"validate\", \"format\", \"parse\"]}," +
+                    "    \"input\": {\"type\": \"string\", \"description\": \"JSON 字符串\"}," +
+                    "    \"schema\": {\"type\": \"string\", \"description\": \"JSON Schema（可选）\"}" +
+                    "  }," +
+                    "  \"required\": [\"action\", \"input\"]" +
+                    "}";
+
+            case "markdown" -> "{" +
+                    "  \"type\": \"object\"," +
+                    "  \"properties\": {" +
+                    "    \"action\": {\"type\": \"string\", \"description\": \"操作类型：validate, check, fix\", \"enum\": [\"validate\", \"check\", \"fix\"]}," +
+                    "    \"content\": {\"type\": \"string\", \"description\": \"Markdown 内容\"}" +
+                    "  }," +
+                    "  \"required\": [\"action\", \"content\"]" +
+                    "}";
+
+            // 默认通用模式
+            default -> "{" +
+                    "  \"type\": \"object\"," +
+                    "  \"properties\": {" +
+                    "    \"command\": {\"type\": \"string\", \"description\": \"Command to execute\"}," +
+                    "    \"args\": {\"type\": \"object\", \"description\": \"Command arguments\"}" +
+                    "  }," +
+                    "  \"required\": [\"command\"]" +
+                    "}";
+        };
+    }
 
     /**
      * 创建执行函数
      */
-    private java.util.function.Function<String, String> createExecutorFunction(String skillName, String... paramNames) {
+    private java.util.function.Function<String, String> createExecutorFunction(SkillManifest manifest) {
+        String skillName = manifest.name.toLowerCase();
+        String skillDirectory = manifest.directory;
+
         return (String inputJson) -> {
             try {
                 // 解析 JSON 输入
@@ -303,19 +316,47 @@ public class SkillService {
                     inputJson,
                     new TypeReference<Map<String, Object>>() {}
                 );
-                // 执行技能
-                String result = skillExecutorRegistry.executeSkill(skillName, args);
+
+                // 对于 JSON 和 Markdown 这种指令型技能，使用 Java 实现
+                if ("json".equals(skillName) || "markdown".equals(skillName)) {
+                    return executeBuiltInSkill(skillName, args);
+                }
+
+                // 其他技能使用通用执行器调用脚本
+                String result = genericSkillExecutor.execute(skillDirectory, args);
+
                 // 返回结果（如果是纯文本，包装成 JSON）
                 if (!result.trim().startsWith("{")) {
                     result = "{\"result\": " + JSON_MAPPER.writeValueAsString(result) + "}";
                 }
                 return result;
+
             } catch (Exception e) {
                 log.error("执行技能失败：{}", skillName, e);
                 return "{\"error\": \"" + e.getMessage() + "\"}";
             }
         };
     }
+
+    /**
+     * 执行内置技能（用于指令型技能，如 JSON、Markdown）
+     */
+    private String executeBuiltInSkill(String skillName, Map<String, Object> args) {
+        return switch (skillName) {
+            case "json" -> {
+                JsonSkillExecutor executor = new JsonSkillExecutor();
+                yield executor.execute(args);
+            }
+            case "markdown" -> {
+                MarkdownSkillExecutor executor = new MarkdownSkillExecutor();
+                yield executor.execute(args);
+            }
+            default -> "错误：未知的内置技能：" + skillName;
+        };
+    }
+
+    // 存储工具执行器的注册表
+    private static final Map<String, java.util.function.Function<String, String>> toolRegistry = new ConcurrentHashMap<>();
 
     /**
      * 获取工具执行器（供 AgentConfiguration 使用）
