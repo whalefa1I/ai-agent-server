@@ -44,6 +44,9 @@ public class HappyArtifactController {
     @Autowired
     private PrivacyKitService privacyKitService;
 
+    @Autowired
+    private HappyChatService happyChatService;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -145,6 +148,9 @@ public class HappyArtifactController {
 
             ToolArtifact saved = repository.save(artifact);
             log.info("创建 artifact: id={}", id);
+
+            // 异步处理 user-message artifact（自动回复）
+            happyChatService.processUserMessage(saved);
 
             return ResponseEntity.ok(toHappyResponseFull(saved));
 
