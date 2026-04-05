@@ -13,13 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 待办事项管理工具。
- * <p>
- * 支持：
- * - 创建待办事项
- * - 更新事项状态
- * - 删除事项
- * - 获取事项列表
- * - 清除完成事项
+ * 与 claude-code 的 TodoWriteTool 协议保持一致 - 使用声明式 todos 列表。
  */
 public class TodoWriteTool {
 
@@ -43,12 +37,13 @@ public class TodoWriteTool {
         public TodoStatus status;
         public final long createdAt;
         public Long completedAt;
-        public String assignee;
+        public String activeForm;
 
-        public TodoItem(String id, String content) {
+        public TodoItem(String id, String content, String activeForm) {
             this.id = id;
             this.content = content;
             this.status = TodoStatus.PENDING;
+            this.activeForm = activeForm != null ? activeForm : content;
             this.createdAt = System.currentTimeMillis();
         }
     }
@@ -62,32 +57,21 @@ public class TodoWriteTool {
             "{" +
             "  \"type\": \"object\"," +
             "  \"properties\": {" +
-            "    \"action\": {" +
-            "      \"type\": \"string\"," +
-            "      \"description\": \"Action: 'create', 'update', 'delete', 'list', 'clear'\"" +
-            "    }," +
-            "    \"id\": {" +
-            "      \"type\": \"string\"," +
-            "      \"description\": \"Todo item ID (required for update/delete)\"" +
-            "    }," +
-            "    \"content\": {" +
-            "      \"type\": \"string\"," +
-            "      \"description\": \"Todo content (required for create/update)\"" +
-            "    }," +
-            "    \"status\": {" +
-            "      \"type\": \"string\"," +
-            "      \"description\": \"Status: 'pending', 'in_progress', 'completed' (for update)\"" +
-            "    }," +
-            "    \"assignee\": {" +
-            "      \"type\": \"string\"," +
-            "      \"description\": \"Assignee name (optional)\"" +
-            "    }," +
-            "    \"filter\": {" +
-            "      \"type\": \"string\"," +
-            "      \"description\": \"Filter by status (for list action)\"" +
+            "    \"todos\": {" +
+            "      \"type\": \"array\"," +
+            "      \"items\": {" +
+            "        \"type\": \"object\"," +
+            "        \"properties\": {" +
+            "          \"content\": {\"type\": \"string\"}," +
+            "          \"status\": {\"type\": \"string\", \"enum\": [\"pending\", \"in_progress\", \"completed\"]}," +
+            "          \"activeForm\": {\"type\": \"string\"}" +
+            "        }," +
+            "        \"required\": [\"content\", \"status\", \"activeForm\"]" +
+            "      }," +
+            "      \"description\": \"The updated todo list\"" +
             "    }" +
             "  }," +
-            "  \"required\": [\"action\"]" +
+            "  \"required\": [\"todos\"]" +
             "}";
 
     /**
@@ -98,7 +82,7 @@ public class TodoWriteTool {
                 new ToolDefPartial(
                         "todo_write",
                         ToolCategory.PLANNING,
-                        "Manage todo items for task tracking. Actions: create, update, delete, list, clear. Track progress on complex tasks.",
+                        "Manage todo items for task tracking. Pass the complete updated todo list.",
                         INPUT_SCHEMA,
                         null,
                         false));
@@ -110,246 +94,76 @@ public class TodoWriteTool {
     public static LocalToolResult execute(Map<String, Object> input) {
         log.info("=== todo_write 开始执行 ===");
         log.info("输入参数：{}", input);
-        log.info("input 类型：{}", input != null ? input.getClass().getName() : "null");
-        if (input != null) {
-            input.forEach((k, v) -> log.info("  key='{}' value='{}' type={}", k, v, v != null ? v.getClass().getName() : "null"));
-        }
 
         try {
-            String action = (String) input.get("action");
-            log.info("action='{}'", action);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> todosInput = (List<Map<String, Object>>) input.get("todos");
 
-            if (action == null || action.isEmpty()) {
-                log.error("action 参数缺失或为空");
-                return LocalToolResult.error("action is required (received: " + action + ")");
+            if (todosInput == null) {
+                return LocalToolResult.error("todos is required");
             }
 
-            switch (action.toLowerCase()) {
-                case "create":
-                    return createTodo(input);
-                case "update":
-                    return updateTodo(input);
-                case "delete":
-                    return deleteTodo(input);
-                case "list":
-                    return listTodos(input);
-                case "clear":
-                    return clearCompleted();
-                default:
-                    return LocalToolResult.error("Unknown action: " + action +
-                            ". Valid actions: create, update, delete, list, clear");
+            // 保存旧的 todos
+            List<Map<String, Object>> oldTodos = new ArrayList<>();
+            for (TodoItem item : todos.values()) {
+                Map<String, Object> todoMap = new LinkedHashMap<>();
+                todoMap.put("content", item.content);
+                todoMap.put("status", item.status.name().toLowerCase());
+                todoMap.put("activeForm", item.activeForm);
+                todoMap.put("id", item.id);
+                oldTodos.add(todoMap);
             }
+
+            // 清除旧的 todos
+            todos.clear();
+
+            // 添加新的 todos
+            List<Map<String, Object>> newTodos = new ArrayList<>();
+            for (Map<String, Object> todoData : todosInput) {
+                String content = (String) todoData.get("content");
+                String statusStr = (String) todoData.get("status");
+                String activeForm = (String) todoData.get("activeForm");
+
+                if (content == null || content.isEmpty()) {
+                    return LocalToolResult.error("Each todo must have non-empty 'content'");
+                }
+                if (statusStr == null) {
+                    return LocalToolResult.error("Each todo must have 'status'");
+                }
+
+                String id = "todo-" + UUID.randomUUID().toString().substring(0, 8);
+                TodoItem item = new TodoItem(id, content, activeForm);
+                item.status = parseStatus(statusStr);
+                if (item.status == TodoStatus.COMPLETED) {
+                    item.completedAt = System.currentTimeMillis();
+                }
+
+                todos.put(id, item);
+
+                Map<String, Object> todoMap = new LinkedHashMap<>();
+                todoMap.put("content", content);
+                todoMap.put("status", statusStr);
+                todoMap.put("activeForm", activeForm != null ? activeForm : content);
+                todoMap.put("id", id);
+                newTodos.add(todoMap);
+            }
+
+            // 构建输出
+            Map<String, Object> output = new LinkedHashMap<>();
+            output.put("oldTodos", oldTodos);
+            output.put("newTodos", newTodos);
+
+            return LocalToolResult.builder()
+                    .success(true)
+                    .content("Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress.")
+                    .executionLocation("local")
+                    .metadata(new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(output))
+                    .build();
 
         } catch (Exception e) {
             log.error("TodoWrite execution failed", e);
             return LocalToolResult.error("Error: " + e.getMessage());
         }
-    }
-
-    /**
-     * 创建待办事项
-     */
-    private static LocalToolResult createTodo(Map<String, Object> input) {
-        // 兼容 content 和 description 字段（AI 可能使用 description 而不是 content）
-        String content = (String) input.get("content");
-        if (content == null || content.isEmpty()) {
-            content = (String) input.get("description");
-        }
-        if (content == null || content.isEmpty()) {
-            return LocalToolResult.error("content is required for create action (also accepts 'description' field)");
-        }
-
-        String id = generateId();
-        TodoItem item = new TodoItem(id, content);
-        item.assignee = (String) input.get("assignee");
-
-        todos.put(id, item);
-
-        // 尝试创建 todo artifact（用于前端显示），失败不影响工具执行
-        String artifactId = null;
-        try {
-            artifactId = TodoArtifactHelper.createTodoArtifact(content, id, item.assignee);
-        } catch (Exception e) {
-            log.warn("创建 todo artifact 失败（不影响工具执行）: {}", e.getMessage());
-        }
-
-        StringBuilder output = new StringBuilder();
-        output.append("Created todo item:\n");
-        output.append("  ID: ").append(id).append("\n");
-        output.append("  Content: ").append(content).append("\n");
-        if (item.assignee != null) {
-            output.append("  Assignee: ").append(item.assignee).append("\n");
-        }
-        output.append("  Status: pending\n");
-        if (artifactId != null) {
-            output.append("  Artifact ID: ").append(artifactId).append("\n");
-        }
-
-        return LocalToolResult.builder()
-                .success(true)
-                .content(output.toString())
-                .executionLocation("local")
-                .metadata(new com.fasterxml.jackson.databind.ObjectMapper()
-                        .valueToTree(Map.of("id", id, "status", "pending", "artifactId", artifactId)))
-                .build();
-    }
-
-    /**
-     * 更新待办事项
-     */
-    private static LocalToolResult updateTodo(Map<String, Object> input) {
-        String id = (String) input.get("id");
-        if (id == null || id.isEmpty()) {
-            return LocalToolResult.error("id is required for update action");
-        }
-
-        TodoItem item = todos.get(id);
-        if (item == null) {
-            return LocalToolResult.error("Todo item not found: " + id);
-        }
-
-        String content = (String) input.get("content");
-        String statusStr = (String) input.get("status");
-        String assignee = (String) input.get("assignee");
-
-        StringBuilder changes = new StringBuilder();
-
-        if (content != null && !content.isEmpty()) {
-            item.content = content;
-            changes.append("content updated. ");
-        }
-
-        if (statusStr != null && !statusStr.isEmpty()) {
-            TodoStatus oldStatus = item.status;
-            item.status = parseStatus(statusStr);
-            changes.append("status: ").append(oldStatus).append(" -> ").append(item.status).append(". ");
-
-            if (item.status == TodoStatus.COMPLETED && item.completedAt == null) {
-                item.completedAt = System.currentTimeMillis();
-            } else if (item.status != TodoStatus.COMPLETED) {
-                item.completedAt = null;
-            }
-
-            // 更新 todo artifact 状态
-            TodoArtifactHelper.updateTodoArtifact(id, item.status.name().toLowerCase(), item.content);
-        }
-
-        if (assignee != null) {
-            item.assignee = assignee;
-            changes.append("assignee: ").append(assignee);
-        }
-
-        StringBuilder output = new StringBuilder();
-        output.append("Updated todo item: ").append(id).append("\n");
-        output.append("  Changes: ").append(changes).append("\n");
-        output.append("  Current status: ").append(item.status).append("\n");
-
-        return LocalToolResult.builder()
-                .success(true)
-                .content(output.toString())
-                .executionLocation("local")
-                .build();
-    }
-
-    /**
-     * 删除待办事项
-     */
-    private static LocalToolResult deleteTodo(Map<String, Object> input) {
-        String id = (String) input.get("id");
-        if (id == null || id.isEmpty()) {
-            return LocalToolResult.error("id is required for delete action");
-        }
-
-        TodoItem removed = todos.remove(id);
-        if (removed == null) {
-            return LocalToolResult.error("Todo item not found: " + id);
-        }
-
-        // 删除 todo artifact
-        boolean artifactDeleted = TodoArtifactHelper.deleteTodoArtifact(id);
-
-        return LocalToolResult.success("Deleted todo item: " + id + "\n  Content: " + removed.content +
-            (artifactDeleted ? "\n  Artifact also deleted." : ""));
-    }
-
-    /**
-     * 列出待办事项
-     */
-    private static LocalToolResult listTodos(Map<String, Object> input) {
-        String filter = (String) input.get("filter");
-
-        StringBuilder output = new StringBuilder();
-        output.append("Todo Items:\n");
-        output.append("===========\n\n");
-
-        int count = 0;
-        int completed = 0;
-
-        for (TodoItem item : todos.values()) {
-            // 应用过滤器
-            if (filter != null && !filter.isEmpty()) {
-                TodoStatus filterStatus = parseStatus(filter);
-                if (item.status != filterStatus) {
-                    continue;
-                }
-            }
-
-            count++;
-            if (item.status == TodoStatus.COMPLETED) {
-                completed++;
-            }
-
-            output.append("[").append(item.status.name().charAt(0)).append("] ")
-                    .append(item.id).append(": ").append(item.content).append("\n");
-            if (item.assignee != null) {
-                output.append("    Assignee: ").append(item.assignee).append("\n");
-            }
-        }
-
-        if (count == 0) {
-            output.append("(No items");
-            if (filter != null && !filter.isEmpty()) {
-                output.append(" matching filter: ").append(filter);
-            }
-            output.append(")\n");
-        }
-
-        output.append("\n===========\n");
-        output.append("Total: ").append(count).append(" items");
-        if (count > 0) {
-            output.append(" (").append(completed).append(" completed, ")
-                    .append(count - completed).append(" remaining)");
-        }
-
-        return LocalToolResult.builder()
-                .success(true)
-                .content(output.toString())
-                .executionLocation("local")
-                .metadata(new com.fasterxml.jackson.databind.ObjectMapper()
-                        .valueToTree(Map.of("total", count, "completed", completed)))
-                .build();
-    }
-
-    /**
-     * 清除已完成事项
-     */
-    private static LocalToolResult clearCompleted() {
-        int beforeCount = todos.size();
-
-        todos.entrySet().removeIf(entry -> entry.getValue().status == TodoStatus.COMPLETED);
-
-        int afterCount = todos.size();
-        int removed = beforeCount - afterCount;
-
-        return LocalToolResult.success("Cleared " + removed + " completed todo item(s).\n" +
-                "Remaining items: " + afterCount);
-    }
-
-    /**
-     * 生成唯一 ID
-     */
-    private static String generateId() {
-        return "todo-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
     /**

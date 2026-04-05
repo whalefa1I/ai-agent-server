@@ -29,20 +29,16 @@ public class LocalFileWriteTool {
             "{" +
             "  \"type\": \"object\"," +
             "  \"properties\": {" +
-            "    \"path\": {" +
+            "    \"file_path\": {" +
             "      \"type\": \"string\"," +
-            "      \"description\": \"Path to the file to write\"" +
+            "      \"description\": \"The absolute path to the file to write (must be absolute, not relative)\"" +
             "    }," +
             "    \"content\": {" +
             "      \"type\": \"string\"," +
-            "      \"description\": \"Content to write to the file\"" +
-            "    }," +
-            "    \"encoding\": {" +
-            "      \"type\": \"string\"," +
-            "      \"description\": \"File encoding, defaults to UTF-8\"" +
+            "      \"description\": \"The content to write to the file\"" +
             "    }" +
             "  }," +
-            "  \"required\": [\"path\", \"content\"]" +
+            "  \"required\": [\"file_path\", \"content\"]" +
             "}";
 
     /**
@@ -66,37 +62,24 @@ public class LocalFileWriteTool {
         long startTime = System.currentTimeMillis();
 
         try {
-            // 兼容 path 和 file_path 字段
-            String pathStr = (String) input.get("path");
-            if (pathStr == null || pathStr.isEmpty()) {
-                pathStr = (String) input.get("file_path");
-            }
+            String filePath = (String) input.get("file_path");
             String content = (String) input.get("content");
-            if (content == null) {
-                content = (String) input.get("content");
-            }
-            String encoding = (String) input.getOrDefault("encoding", "UTF-8");
 
-            if (pathStr == null || pathStr.isEmpty()) {
-                return LocalToolResult.error("path is required");
+            if (filePath == null || filePath.isEmpty()) {
+                return LocalToolResult.error("file_path is required");
             }
 
             if (content == null) {
                 return LocalToolResult.error("content is required");
             }
 
-            Path path = Paths.get(pathStr);
+            Path path = Paths.get(filePath);
             Path parent = path.getParent();
             if (parent != null && !Files.exists(parent)) {
                 Files.createDirectories(parent);
             }
 
-            Charset charset;
-            try {
-                charset = Charset.forName(encoding);
-            } catch (Exception e) {
-                charset = StandardCharsets.UTF_8;
-            }
+            Charset charset = StandardCharsets.UTF_8;
 
             // 原子写入：先写 temp 文件，再 move
             // 注意：path.getParent() 可能为 null（当路径没有父目录时），需要使用当前目录
@@ -122,7 +105,7 @@ public class LocalFileWriteTool {
 
             boolean overwritten = Files.exists(path) && Files.size(path) > 0;
             StringBuilder result = new StringBuilder();
-            result.append("Successfully wrote ").append(content.length()).append(" bytes to ").append(pathStr);
+            result.append("Successfully wrote ").append(content.length()).append(" bytes to ").append(filePath);
             if (overwritten) {
                 result.append(" (overwritten)");
             }

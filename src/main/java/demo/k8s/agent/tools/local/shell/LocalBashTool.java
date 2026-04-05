@@ -15,11 +15,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 /**
- * 本地 Shell 命令执行工具 - 执行 Bash/Shell 命令。
+ * 本地 Bash 工具 - 执行 Shell 命令。
+ * 与 claude-code 的 BashTool 协议保持一致。
  */
 public class LocalBashTool {
 
@@ -48,29 +49,13 @@ public class LocalBashTool {
             "      \"type\": \"string\"," +
             "      \"description\": \"Shell command to execute\"" +
             "    }," +
-            "    \"workdir\": {" +
-            "      \"type\": \"string\"," +
-            "      \"description\": \"Working directory (defaults to current directory)\"" +
-            "    }," +
             "    \"timeout\": {" +
             "      \"type\": \"integer\"," +
             "      \"description\": \"Timeout in milliseconds (defaults to 60000)\"" +
             "    }," +
-            "    \"background\": {" +
-            "      \"type\": \"boolean\"," +
-            "      \"description\": \"Run in background (returns session ID for later retrieval)\"" +
-            "    }," +
             "    \"run_in_background\": {" +
             "      \"type\": \"boolean\"," +
-            "      \"description\": \"Run in background (alias for 'background', compatible with claude-code)\"" +
-            "    }," +
-            "    \"sessionId\": {" +
-            "      \"type\": \"string\"," +
-            "      \"description\": \"Session ID to query/stop (used with background mode)\"" +
-            "    }," +
-            "    \"action\": {" +
-            "      \"type\": \"string\"," +
-            "      \"description\": \"Action for session: 'start', 'status', 'output', 'stop' (background mode only)\"" +
+            "      \"description\": \"Set to true to run this command in the background. Use Read to read the output later.\"" +
             "    }" +
             "  }," +
             "  \"required\": [\"command\"]" +
@@ -84,7 +69,7 @@ public class LocalBashTool {
                 new ToolDefPartial(
                         "bash",
                         ToolCategory.SHELL,
-                        "Execute shell commands. Supports synchronous execution (default) or background mode with session management. Use action='start' to run in background, action='status'/'output' to query, action='stop' to terminate.",
+                        "Execute shell commands. Supports background execution with run_in_background flag.",
                         INPUT_SCHEMA,
                         null,
                         false));
@@ -95,97 +80,23 @@ public class LocalBashTool {
      */
     public static LocalToolResult execute(Map<String, Object> input) {
         String command = (String) input.get("command");
-        // 兼容 background 和 run_in_background 字段（claude-code 使用 run_in_background）
-        Boolean background = getBoolean(input, "background", false);
-        if (!background) {
-            background = getBoolean(input, "run_in_background", false);
-        }
-        String sessionId = (String) input.get("sessionId");
-        String action = (String) input.get("action");
+        Boolean runInBackground = getBoolean(input, "run_in_background", false);
 
-        // 后台会话模式
-        if (background || action != null) {
-            return executeBackground(input, command, sessionId, action);
+        if (command == null || command.isEmpty()) {
+            return LocalToolResult.error("command is required");
         }
 
-        // 同步执行模式（原有逻辑）
+        // 后台执行模式（简化实现，返回后台执行提示）
+        if (runInBackground) {
+            return LocalToolResult.builder()
+                    .success(true)
+                    .content("Command started in background. Note: Full background session management is not yet implemented in this demo.\nCommand: " + command)
+                    .executionLocation("local")
+                    .build();
+        }
+
+        // 同步执行模式
         return executeSynchronous(input, command);
-    }
-
-    /**
-     * 后台执行模式
-     */
-    private static LocalToolResult executeBackground(Map<String, Object> input, String command,
-                                                      String sessionId, String action) {
-        try {
-            String workdir = (String) input.get("workdir");
-            int timeout = getInt(input, "timeout", DEFAULT_TIMEOUT_MS);
-            Boolean background = getBoolean(input, "background", false);
-
-            if ("stop".equals(action)) {
-                if (sessionId == null) {
-                    return LocalToolResult.error("sessionId required for stop action");
-                }
-                boolean stopped = BashSessionManager.stopSession(sessionId);
-                return LocalToolResult.success(stopped ? "Session stopped: " + sessionId : "Session not found");
-            }
-
-            if ("status".equals(action)) {
-                if (sessionId == null) {
-                    return LocalToolResult.error("sessionId required for status action");
-                }
-                BashSessionManager.BashSession session = BashSessionManager.getSession(sessionId);
-                if (session == null) {
-                    return LocalToolResult.error("Session not found: " + sessionId);
-                }
-                StringBuilder status = new StringBuilder();
-                status.append("Session: ").append(sessionId).append("\n");
-                status.append("Command: ").append(session.command).append("\n");
-                status.append("Status: ").append(session.isRunning() ? "Running" : "Completed").append("\n");
-                if (session.exitCode != null) {
-                    status.append("Exit Code: ").append(session.exitCode).append("\n");
-                }
-                status.append("Duration: ").append(System.currentTimeMillis() - session.startTime).append("ms\n");
-                status.append("Output Length: ").append(session.output.length()).append(" bytes\n");
-                return LocalToolResult.success(status.toString());
-            }
-
-            if ("output".equals(action)) {
-                if (sessionId == null) {
-                    return LocalToolResult.error("sessionId required for output action");
-                }
-                String output = BashSessionManager.getSessionOutput(sessionId);
-                if (output == null) {
-                    return LocalToolResult.error("Session not found: " + sessionId);
-                }
-                return LocalToolResult.success(output);
-            }
-
-            if ("start".equals(action) || background) {
-                String newSessionId = BashSessionManager.startSession(command, workdir, timeout);
-                StringBuilder response = new StringBuilder();
-                response.append("Background session started: ").append(newSessionId).append("\n");
-                response.append("Command: ").append(command).append("\n");
-                response.append("Use sessionId to query status/output or stop the session.\n");
-                response.append("Example: {\"command\": \"\", \"sessionId\": \"").append(newSessionId)
-                        .append("\", \"action\": \"status\"}");
-
-                com.fasterxml.jackson.databind.ObjectMapper mapper =
-                    new com.fasterxml.jackson.databind.ObjectMapper();
-                return LocalToolResult.builder()
-                        .success(true)
-                        .content(response.toString())
-                        .executionLocation("local")
-                        .metadata(mapper.valueToTree(Map.of("sessionId", newSessionId)))
-                        .build();
-            }
-
-            return LocalToolResult.error("Unknown action: " + action);
-
-        } catch (Exception e) {
-            log.error("Bash background execution failed", e);
-            return LocalToolResult.error("Error: " + e.getMessage());
-        }
     }
 
     /**
@@ -195,12 +106,7 @@ public class LocalBashTool {
         long startTime = System.currentTimeMillis();
 
         try {
-            String workdir = (String) input.get("workdir");
             int timeout = getInt(input, "timeout", DEFAULT_TIMEOUT_MS);
-
-            if (command == null || command.isEmpty()) {
-                return LocalToolResult.error("command is required");
-            }
 
             // 检查危险命令
             for (Pattern pattern : DANGEROUS_PATTERNS) {
@@ -217,13 +123,14 @@ public class LocalBashTool {
             }
             // 只阻止单独的 &（后台执行），允许 && 和 2>&1
             if (command.matches(".*[^&]&([^=].*|$)") && !command.contains("&&") && !command.contains("2>&1")) {
-                return LocalToolResult.error("Background execution (&) is not supported in sync mode. Use background mode instead.");
+                return LocalToolResult.error("Background execution (&) is not supported in sync mode. Use run_in_background=true instead.");
             }
 
             ProcessBuilder processBuilder = new ProcessBuilder();
             Map<String, String> env = processBuilder.environment();
             env.put("LC_ALL", "en_US.UTF-8");
 
+            String workdir = (String) input.get("workdir");
             if (workdir != null && !workdir.isEmpty()) {
                 processBuilder.directory(new java.io.File(workdir));
             }

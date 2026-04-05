@@ -30,24 +30,24 @@ public class LocalFileReadTool {
             "{" +
             "  \"type\": \"object\"," +
             "  \"properties\": {" +
-            "    \"path\": {" +
+            "    \"file_path\": {" +
             "      \"type\": \"string\"," +
-            "      \"description\": \"Path to the file to read\"" +
+            "      \"description\": \"The absolute path to the file to read\"" +
             "    }," +
             "    \"offset\": {" +
             "      \"type\": \"integer\"," +
-            "      \"description\": \"Starting line number (0-based), defaults to 0\"" +
+            "      \"description\": \"The line number to start reading from. Only provide if the file is too large to read at once\"" +
             "    }," +
             "    \"limit\": {" +
             "      \"type\": \"integer\"," +
-            "      \"description\": \"Number of lines to read, defaults to all\"" +
+            "      \"description\": \"The number of lines to read. Only provide if the file is too large to read at once\"" +
             "    }," +
-            "    \"encoding\": {" +
+            "    \"pages\": {" +
             "      \"type\": \"string\"," +
-            "      \"description\": \"File encoding, defaults to UTF-8\"" +
+            "      \"description\": \"Page range for PDF files (e.g., \\\"1-5\\\", \\\"3\\\", \\\"10-20\\\")\"" +
             "    }" +
             "  }," +
-            "  \"required\": [\"path\"]" +
+            "  \"required\": [\"file_path\"]" +
             "}";
 
     /**
@@ -71,22 +71,22 @@ public class LocalFileReadTool {
         long startTime = System.currentTimeMillis();
 
         try {
-            String pathStr = (String) input.get("path");
+            String filePath = (String) input.get("file_path");
             int offset = getInt(input, "offset", 0);
             int limit = getInt(input, "limit", Integer.MAX_VALUE);
-            String encoding = (String) input.getOrDefault("encoding", "UTF-8");
+            String pages = (String) input.get("pages");
 
-            if (pathStr == null || pathStr.isEmpty()) {
-                return LocalToolResult.error("path is required");
+            if (filePath == null || filePath.isEmpty()) {
+                return LocalToolResult.error("file_path is required");
             }
 
-            Path path = Paths.get(pathStr);
+            Path path = Paths.get(filePath);
             if (!Files.exists(path)) {
-                return LocalToolResult.error("File does not exist: " + pathStr);
+                return LocalToolResult.error("File does not exist: " + filePath);
             }
 
             if (Files.isDirectory(path)) {
-                return LocalToolResult.error("Path is a directory, not a file: " + pathStr);
+                return LocalToolResult.error("Path is a directory, not a file: " + filePath);
             }
 
             long fileSize = Files.size(path);
@@ -94,12 +94,7 @@ public class LocalFileReadTool {
                 return LocalToolResult.error("File too large to read: " + fileSize + " bytes");
             }
 
-            Charset charset;
-            try {
-                charset = Charset.forName(encoding);
-            } catch (Exception e) {
-                charset = StandardCharsets.UTF_8;
-            }
+            Charset charset = StandardCharsets.UTF_8;
 
             List<String> allLines = Files.readAllLines(path, charset);
             int end = Math.min(allLines.size(), offset + limit);
@@ -111,7 +106,7 @@ public class LocalFileReadTool {
             }
 
             StringBuilder content = new StringBuilder();
-            content.append("File: ").append(pathStr).append(" (").append(allLines.size()).append(" lines)\n");
+            content.append("File: ").append(filePath).append(" (").append(allLines.size()).append(" lines)\n");
             content.append("Lines ").append(offset).append("-").append(end - 1).append(":\n\n");
             for (String line : lines) {
                 content.append(line).append("\n");
