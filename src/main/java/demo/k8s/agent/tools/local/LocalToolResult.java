@@ -108,6 +108,15 @@ public class LocalToolResult {
         }
 
         public LocalToolResult build() {
+            // 如果 metadata 为 null，初始化为 empty object，避免 Spring AI 处理时出现 NullPointerException
+            if (this.metadata == null) {
+                try {
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    this.metadata = mapper.createObjectNode();
+                } catch (Exception e) {
+                    // 忽略转换错误
+                }
+            }
             return new LocalToolResult(success, content, error, metadata, durationMs, executionLocation);
         }
     }
@@ -125,6 +134,13 @@ public class LocalToolResult {
         result.content = content;
         result.executionLocation = "local";
         result.durationMs = 0;
+        // 初始化 metadata 为 empty object，避免 Spring AI 处理时出现 NullPointerException
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            result.metadata = mapper.createObjectNode();
+        } catch (Exception e) {
+            // 忽略转换错误
+        }
         return result;
     }
 

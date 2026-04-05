@@ -269,7 +269,7 @@ public class EnhancedAgenticQueryLoop {
             String responseText = extractAssistantText(response);
 
             log.info("模型响应检查：hasToolCalls={}, responseText={}", hasTools,
-                responseText != null ? responseText.substring(0, 50) : "null");
+                responseText != null ? (responseText.length() > 50 ? responseText.substring(0, 50) + "..." : responseText) : "null");
 
             // 如果没有工具调用但有响应文本，直接返回
             // 注意：Spring AI 可能已经执行了工具，但我们无法获取工具调用信息

@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -91,10 +92,22 @@ public class LocalFileWriteTool {
             }
 
             // 原子写入：先写 temp 文件，再 move
-            Path tempFile = Files.createTempFile(path.getParent(), ".tmp-", ".txt");
+            // 注意：path.getParent() 可能为 null（当路径没有父目录时），需要使用当前目录
+            Path parentDir = path.getParent();
+            if (parentDir == null) {
+                parentDir = Paths.get(System.getProperty("java.io.tmpdir"));
+            }
+            Path tempFile = Files.createTempFile(parentDir, ".tmp-", ".txt");
             try {
                 Files.writeString(tempFile, content, charset);
-                Files.move(tempFile, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                // 先尝试原子移动（同目录时有效）
+                try {
+                    Files.move(tempFile, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                } catch (AtomicMoveNotSupportedException e) {
+                    // 跨磁盘时，使用普通复制 + 删除
+                    Files.copy(tempFile, path, StandardCopyOption.REPLACE_EXISTING);
+                    Files.deleteIfExists(tempFile);
+                }
             } catch (IOException e) {
                 Files.deleteIfExists(tempFile);
                 throw e;
