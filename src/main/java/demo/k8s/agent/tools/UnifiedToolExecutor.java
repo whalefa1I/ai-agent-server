@@ -135,7 +135,9 @@ public class UnifiedToolExecutor {
         String sessionId = TraceContext.getSessionId();
         String userId = TraceContext.getUserId();
         String artifactId = null;
-        if (sessionId != null && userId != null && toolStateService != null) {
+        // 允许 userId 为 null（匿名会话），使用 sessionId 作为 accountId
+        if (sessionId != null && toolStateService != null) {
+            String accountId = userId != null ? userId : sessionId;
             log.info("工具调用：{} (sessionId={}, userId={})", tool.name(), sessionId, userId);
             try {
                 // 创建 tool-call artifact，使用与 HappyChatService 相同的 header 格式
@@ -183,6 +185,7 @@ public class UnifiedToolExecutor {
         // 工具执行完成后更新 artifact 状态
         if (artifactId != null && toolStateService != null) {
             try {
+                String accountId = userId != null ? userId : sessionId;
                 Map<String, Object> updatedBody = new HashMap<>();
                 if (result.isSuccess()) {
                     updatedBody.put("status", "completed");
@@ -194,7 +197,7 @@ public class UnifiedToolExecutor {
                 updatedBody.put("timestamp", System.currentTimeMillis());
                 updatedBody.put("durationMs", result.getDurationMs());
 
-                toolStateService.updateToolArtifactBody(artifactId, userId, updatedBody);
+                toolStateService.updateToolArtifactBody(artifactId, accountId, updatedBody);
                 log.info("更新 tool-call artifact 状态：id={}, status={}", artifactId, updatedBody.get("status"));
             } catch (Exception e) {
                 log.warn("更新 tool-call artifact 状态失败：{}", e.getMessage());
