@@ -109,7 +109,11 @@ public class TodoWriteTool {
      */
     public static LocalToolResult execute(Map<String, Object> input) {
         try {
+            log.info("todo_write 收到输入：input={}", input);
+
             String action = (String) input.get("action");
+            log.info("action={}", action);
+
             if (action == null || action.isEmpty()) {
                 return LocalToolResult.error("action is required");
             }
