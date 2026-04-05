@@ -186,7 +186,12 @@ public class UnifiedToolExecutor {
         if (artifactId != null && toolStateService != null) {
             try {
                 String accountId = userId != null ? userId : sessionId;
+                // 构建更新后的 body，保留原有的 input 字段
                 Map<String, Object> updatedBody = new HashMap<>();
+                // 保留 input 字段（用于前端显示工具调用详情）
+                if (input != null) {
+                    updatedBody.put("input", input);
+                }
                 if (result.isSuccess()) {
                     updatedBody.put("status", "completed");
                     updatedBody.put("output", result.getContent());
