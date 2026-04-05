@@ -1,16 +1,28 @@
 package demo.k8s.agent.toolsystem;
 
 /**
- * 简化版权限模式；完整版可参考 Claude Code 的 {@code PermissionMode}。
+ * 权限模式，与 Claude Code 的 {@code PermissionMode} 对齐。
  */
 public enum ToolPermissionMode {
 
-    /** 常规：走注册表 + 每工具 checkPermissions */
+    /** 默认模式：敏感工具需要用户确认 */
     DEFAULT,
 
-    /** 仅允许标记为只读的工具（结合 {@link ClaudeLikeTool#isReadOnly(com.fasterxml.jackson.databind.JsonNode)}） */
+    /** 只读模式：仅允许标记为只读的工具，禁止写操作 */
     READ_ONLY,
 
-    /** 开发调试用：跳过部分检查（仍建议在生产关闭） */
-    BYPASS
+    /** 跳过所有权限确认，开发调试使用 */
+    BYPASS,
+
+    /** 自动接受编辑类工具（file_edit, file_write 等） */
+    ACCEPT_EDITS,
+
+    /** 永久记住用户选择，不再询问 */
+    DONT_ASK,
+
+    /** 仅计划模式：不执行工具，仅做计划 */
+    PLAN,
+
+    /** AI 自动决策模式：由分类器决定 */
+    AUTO
 }

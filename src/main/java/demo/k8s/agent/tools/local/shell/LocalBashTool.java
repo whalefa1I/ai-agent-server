@@ -1,10 +1,8 @@
 package demo.k8s.agent.tools.local.shell;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import demo.k8s.agent.tools.local.LocalToolResult;
-import demo.k8s.agent.toolsystem.ClaudeLikeTool;
-import demo.k8s.agent.toolsystem.ClaudeToolFactory;
-import demo.k8s.agent.toolsystem.ToolCategory;
-import demo.k8s.agent.toolsystem.ToolDefPartial;
+import demo.k8s.agent.toolsystem.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,7 +60,7 @@ public class LocalBashTool {
             "}";
 
     /**
-     * 创建工具定义
+     * 创建工具定义（带权限检查）
      */
     public static ClaudeLikeTool createTool() {
         return ClaudeToolFactory.buildTool(
@@ -72,7 +70,86 @@ public class LocalBashTool {
                         "Execute shell commands. Supports background execution with run_in_background flag.",
                         INPUT_SCHEMA,
                         null,
-                        false));
+                        false),
+                // 权限检查器
+                LocalBashTool::checkPermissions,
+                // 输入验证器
+                LocalBashTool::validateInput);
+    }
+
+    /**
+     * 权限检查方法 - 与 Claude Code 的 bashToolHasPermission 对齐
+     */
+    public static PermissionResult checkPermissions(String argumentsJson, ToolPermissionContext ctx) {
+        try {
+            JsonNode input = new com.fasterxml.jackson.databind.ObjectMapper().readTree(argumentsJson);
+            String command = input.has("command") ? input.get("command").asText("") : "";
+
+            if (command.isBlank()) {
+                return PermissionResult.deny("command is required");
+            }
+
+            // 1. 检查危险命令模式（始终拒绝）
+            for (Pattern pattern : DANGEROUS_PATTERNS) {
+                if (pattern.matcher(command).find()) {
+                    return PermissionResult.deny("Dangerous command detected: " + command, PermissionLevel.DESTRUCTIVE);
+                }
+            }
+
+            // 2. 检查命令注入（多行命令、后台执行）
+            if (command.contains("\n")) {
+                return PermissionResult.deny("Multi-line commands are not supported", PermissionLevel.MODIFY_STATE);
+            }
+
+            // 3. 检查路径约束（可选：检查工作目录是否在允许范围内）
+            String workdir = input.has("workdir") ? input.get("workdir").asText("") : "";
+            if (!workdir.isBlank() && !isPathAllowed(workdir)) {
+                return PermissionResult.deny("Working directory is not allowed: " + workdir, PermissionLevel.MODIFY_STATE);
+            }
+
+            // 4. 提取命令前缀用于规则匹配（如 "git commit"）
+            String commandPrefix = ShellRuleMatcher.extractCommandPrefix(command);
+
+            // 5. 通过 PermissionManager 检查是否有匹配的规则或授权
+            // 注意：这里简化处理，实际应该在 PermissionManager 中统一检查
+
+            // 6. 默认需要用户确认
+            return PermissionResult.allow();
+
+        } catch (Exception e) {
+            log.error("Bash permission check failed", e);
+            return PermissionResult.deny("Permission check error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 输入验证方法
+     */
+    public static String validateInput(JsonNode input) {
+        String command = input.has("command") ? input.get("command").asText("") : "";
+
+        if (command.isBlank()) {
+            return "command is required";
+        }
+
+        // 验证 timeout
+        if (input.has("timeout")) {
+            int timeout = input.get("timeout").asInt(-1);
+            if (timeout <= 0 || timeout > 600000) {
+                return "timeout must be between 1 and 600000 ms";
+            }
+        }
+
+        return null; // 通过验证
+    }
+
+    /**
+     * 检查路径是否在允许范围内
+     */
+    private static boolean isPathAllowed(String path) {
+        // 简化实现：允许所有绝对路径
+        // 生产环境应该实现更严格的路径约束检查
+        return path.startsWith("/") || path.matches("^[A-Za-z]:\\\\.*");
     }
 
     /**

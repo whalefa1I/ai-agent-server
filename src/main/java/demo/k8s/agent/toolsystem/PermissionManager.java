@@ -14,7 +14,6 @@ import java.time.Duration;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -30,6 +29,7 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>管理会话级授权缓存（内存）</li>
  *   <li>管理持久化授权（文件系统）</li>
+ *   <li>管理基于规则的权限（精确/前缀/通配符）</li>
  *   <li>检查工具调用是否需要用户确认</li>
  *   <li>处理用户授权响应</li>
  * </ul>
@@ -53,6 +53,11 @@ public class PermissionManager {
     private final Set<String> alwaysAllowedTools = ConcurrentHashMap.newKeySet();
 
     /**
+     * 持久化权限规则列表（支持精确/前缀/通配符匹配）
+     */
+    private final CopyOnWriteArrayList<PermissionRule> permissionRules = new CopyOnWriteArrayList<>();
+
+    /**
      * 待确认的权限请求队列
      */
     private final CopyOnWriteArrayList<PermissionRequest> pendingRequests = new CopyOnWriteArrayList<>();
@@ -62,11 +67,16 @@ public class PermissionManager {
      */
     private final Path persistentGrantsFile;
 
+    /**
+     * 持久化规则文件路径
+     */
+    private final Path persistentRulesFile;
+
     public PermissionManager(EventBus eventBus, MetricsCollector metricsCollector) {
         this.eventBus = eventBus;
         this.metricsCollector = metricsCollector;
 
-        // 默认存储位置：用户主目录/.claude/permission-grants.json
+        // 默认存储位置：用户主目录/.claude/
         String userHome = System.getProperty("user.home");
         Path claudeDir = Path.of(userHome, ".claude");
         try {
@@ -75,7 +85,9 @@ public class PermissionManager {
             log.warn("创建配置目录失败：{}", claudeDir, e);
         }
         this.persistentGrantsFile = claudeDir.resolve("permission-grants.json");
+        this.persistentRulesFile = claudeDir.resolve("permission-rules.json");
         loadPersistentGrants();
+        loadPersistentRules();
     }
 
     /**
@@ -110,13 +122,51 @@ public class PermissionManager {
             return createConfirmationRequest(tool, input, "READ_ONLY 模式下需要确认");
         }
 
-        // 3. 检查是否始终允许（持久化授权）
+        // 3. PLAN 模式：不执行任何工具
+        if (ctx.mode() == ToolPermissionMode.PLAN) {
+            log.debug("权限模式为 PLAN，工具 {} 拒绝执行", tool.name());
+            return createConfirmationRequest(tool, input, "PLAN 模式下不执行工具");
+        }
+
+        // 4. ACCEPT_EDITS 模式：自动接受编辑类工具
+        if (ctx.mode() == ToolPermissionMode.ACCEPT_EDITS) {
+            if (isEditTool(tool.name())) {
+                log.debug("ACCEPT_EDITS 模式下工具 {} 为编辑类工具，自动放行", tool.name());
+                return null;
+            }
+        }
+
+        // 5. AUTO 模式：由工具自身的 checkPermissions 决定（后续可扩展为 AI 分类器）
+        if (ctx.mode() == ToolPermissionMode.AUTO) {
+            String validationResult = tool.validateInput(input);
+            if (validationResult != null) {
+                return createConfirmationRequest(tool, input, "AI 模式：输入验证失败 - " + validationResult);
+            }
+            // 工具自身的权限检查
+            PermissionResult permissionResult = tool.checkPermissions(input.toString(), ctx);
+            if (!permissionResult.isAllowed()) {
+                String reason = permissionResult.getDenyReason() != null ? permissionResult.getDenyReason() : "权限检查拒绝";
+                return createConfirmationRequest(tool, input, "AI 模式：" + reason);
+            }
+            return null;
+        }
+
+        // 6. DONT_ASK 模式：检查是否有历史授权记录
+        if (ctx.mode() == ToolPermissionMode.DONT_ASK) {
+            // 检查是否有该工具的授权记录
+            if (hasHistoryAuthorization(tool.name(), input)) {
+                log.debug("DONT_ASK 模式下工具 {} 有历史授权，放行", tool.name());
+                return null;
+            }
+        }
+
+        // 7. 检查是否始终允许（持久化授权）
         if (alwaysAllowedTools.contains(tool.name())) {
             log.debug("工具 {} 在始终允许列表中，放行", tool.name());
             return null;
         }
 
-        // 4. 检查会话授权
+        // 8. 检查会话授权
         List<PermissionGrant> grants = sessionGrants.get(tool.name());
         if (grants != null && !grants.isEmpty()) {
             // 获取最新的授权
@@ -130,14 +180,84 @@ public class PermissionManager {
             }
         }
 
-        // 5. 只读工具直接放行
+        // 9. 检查持久化规则匹配
+        if (matchesPermissionRules(tool.name(), input)) {
+            log.debug("工具 {} 的调用匹配持久化规则，放行", tool.name());
+            return null;
+        }
+
+        // 10. 只读工具直接放行
         if (tool.isReadOnly(input)) {
             log.debug("工具 {} 为只读操作，放行", tool.name());
             return null;
         }
 
-        // 6. 需要用户确认
+        // 11. 需要用户确认
         return createConfirmationRequest(tool, input, null);
+    }
+
+    /**
+     * 检查是否为编辑类工具
+     */
+    private boolean isEditTool(String toolName) {
+        return "file_edit".equals(toolName) || "file_write".equals(toolName) ||
+               "Edit".equals(toolName) || "Write".equals(toolName);
+    }
+
+    /**
+     * 检查是否有历史授权（用于 DONT_ASK 模式）
+     */
+    private boolean hasHistoryAuthorization(String toolName, JsonNode input) {
+        // 检查会话授权
+        List<PermissionGrant> grants = sessionGrants.get(toolName);
+        if (grants != null && !grants.isEmpty()) {
+            return true;
+        }
+
+        // 检查持久化规则
+        return matchesPermissionRules(toolName, input);
+    }
+
+    /**
+     * 检查工具调用是否匹配任何持久化规则
+     */
+    private boolean matchesPermissionRules(String toolName, JsonNode input) {
+        // 提取命令字符串（对于 bash 工具）
+        String command = extractCommandString(toolName, input);
+        if (command == null) {
+            return false;
+        }
+
+        for (PermissionRule rule : permissionRules) {
+            if (rule.matches(command)) {
+                log.debug("命令 '{}' 匹配规则 '{}'", command, rule.rule());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 从工具输入中提取命令字符串
+     */
+    private String extractCommandString(String toolName, JsonNode input) {
+        // Bash 工具：提取 command 字段
+        if ("bash".equals(toolName) || "Bash".equals(toolName)) {
+            JsonNode cmdNode = input.get("command");
+            if (cmdNode != null && cmdNode.isTextual()) {
+                return cmdNode.asText();
+            }
+        }
+
+        // 文件工具：提取 file_path 字段
+        if (toolName.contains("file") || toolName.contains("File")) {
+            JsonNode pathNode = input.get("file_path");
+            if (pathNode != null && pathNode.isTextual()) {
+                return "file:" + pathNode.asText();
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -433,5 +553,139 @@ public class PermissionManager {
         } catch (IOException e) {
             log.warn("保存持久化授权失败：{}", persistentGrantsFile, e);
         }
+    }
+
+    // ===== 持久化规则管理 =====
+
+    private void loadPersistentRules() {
+        if (!Files.exists(persistentRulesFile)) {
+            log.debug("持久化规则文件不存在：{}", persistentRulesFile);
+            return;
+        }
+
+        try {
+            String content = Files.readString(persistentRulesFile);
+            if (content.isBlank()) {
+                return;
+            }
+
+            // JSON 数组解析：["Bash(ls -la)", "Bash(npm:*)", "Bash(cd *)"]
+            com.fasterxml.jackson.databind.JsonNode node =
+                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(content);
+
+            if (node.isArray()) {
+                for (com.fasterxml.jackson.databind.JsonNode item : node) {
+                    String ruleStr = item.asText();
+                    // 解析规则：ToolName(pattern) 格式
+                    PermissionRule rule = parseToolRule(ruleStr);
+                    if (rule != null) {
+                        permissionRules.add(rule);
+                    }
+                }
+                log.info("已加载 {} 个持久化权限规则", permissionRules.size());
+            }
+        } catch (IOException e) {
+            log.warn("加载持久化规则失败：{}", persistentRulesFile, e);
+        }
+    }
+
+    /**
+     * 解析工具规则字符串，如 "Bash(ls -la)", "Bash(npm:*)", "Bash(cd *)"
+     */
+    private PermissionRule parseToolRule(String ruleStr) {
+        if (ruleStr == null || ruleStr.isBlank()) {
+            return null;
+        }
+
+        // 格式：ToolName(pattern)
+        int openParen = ruleStr.indexOf('(');
+        int closeParen = ruleStr.lastIndexOf(')');
+
+        if (openParen == -1 || closeParen == -1 || openParen >= closeParen) {
+            log.warn("无效的规则格式：{}", ruleStr);
+            return null;
+        }
+
+        String toolName = ruleStr.substring(0, openParen).trim();
+        String pattern = ruleStr.substring(openParen + 1, closeParen).trim();
+
+        // 使用 ShellRuleMatcher 解析规则
+        return ShellRuleMatcher.parseRule(pattern);
+    }
+
+    private void savePersistentRules() {
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            // 将规则转换为字符串列表
+            List<String> ruleStrings = permissionRules.stream()
+                    .map(r -> r.rule())
+                    .toList();
+            String json = mapper.writerWithDefaultPrettyPrinter()
+                    .writeValueAsString(ruleStrings);
+            Files.writeString(persistentRulesFile, json);
+            log.debug("已保存持久化规则到 {}", persistentRulesFile);
+        } catch (IOException e) {
+            log.warn("保存持久化规则失败：{}", persistentRulesFile, e);
+        }
+    }
+
+    /**
+     * 添加持久化规则
+     *
+     * @param ruleStr 规则字符串，如 "Bash(ls -la)"
+     * @return 是否添加成功
+     */
+    public boolean addPermissionRule(String ruleStr) {
+        PermissionRule rule = parseToolRule(ruleStr);
+        if (rule == null) {
+            return false;
+        }
+
+        // 检查是否已存在
+        for (PermissionRule existing : permissionRules) {
+            if (existing.rule().equals(ruleStr)) {
+                return false;
+            }
+        }
+
+        permissionRules.add(rule);
+        savePersistentRules();
+        log.info("已添加权限规则：{}", ruleStr);
+        return true;
+    }
+
+    /**
+     * 移除持久化规则
+     */
+    public boolean removePermissionRule(String ruleStr) {
+        boolean removed = permissionRules.removeIf(r -> r.rule().equals(ruleStr));
+        if (removed) {
+            savePersistentRules();
+            log.info("已移除权限规则：{}", ruleStr);
+        }
+        return removed;
+    }
+
+    /**
+     * 获取所有持久化规则
+     */
+    public List<PermissionRule> getPermissionRules() {
+        return List.copyOf(permissionRules);
+    }
+
+    /**
+     * 为工具调用生成建议的规则
+     */
+    public List<String> suggestRulesForCommand(String toolName, JsonNode input) {
+        String command = extractCommandString(toolName, input);
+        if (command == null) {
+            return List.of();
+        }
+
+        // 使用 ShellRuleMatcher 生成建议
+        List<PermissionRule> suggestions = ShellRuleMatcher.generateSuggestions(command, 3);
+        return suggestions.stream()
+                .map(r -> toolName + "(" + r.rule() + ")")
+                .toList();
     }
 }

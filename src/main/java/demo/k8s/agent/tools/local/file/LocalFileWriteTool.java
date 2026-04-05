@@ -1,10 +1,8 @@
 package demo.k8s.agent.tools.local.file;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import demo.k8s.agent.tools.local.LocalToolResult;
-import demo.k8s.agent.toolsystem.ClaudeLikeTool;
-import demo.k8s.agent.toolsystem.ClaudeToolFactory;
-import demo.k8s.agent.toolsystem.ToolCategory;
-import demo.k8s.agent.toolsystem.ToolDefPartial;
+import demo.k8s.agent.toolsystem.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +40,7 @@ public class LocalFileWriteTool {
             "}";
 
     /**
-     * 创建工具定义
+     * 创建工具定义（带权限检查）
      */
     public static ClaudeLikeTool createTool() {
         return ClaudeToolFactory.buildTool(
@@ -52,7 +50,101 @@ public class LocalFileWriteTool {
                         "Create a new file or overwrite an existing file",
                         INPUT_SCHEMA,
                         null,
-                        false));
+                        false),
+                // 权限检查器
+                LocalFileWriteTool::checkPermissions,
+                // 输入验证器
+                LocalFileWriteTool::validateInput);
+    }
+
+    /**
+     * 权限检查方法 - 与 Claude Code 的 checkWritePermissionForTool 对齐
+     */
+    public static PermissionResult checkPermissions(String argumentsJson, ToolPermissionContext ctx) {
+        try {
+            JsonNode input = new com.fasterxml.jackson.databind.ObjectMapper().readTree(argumentsJson);
+            String filePath = input.has("file_path") ? input.get("file_path").asText("") : "";
+
+            if (filePath.isBlank()) {
+                return PermissionResult.deny("file_path is required");
+            }
+
+            // 1. 检查路径约束
+            if (!isPathAllowed(filePath)) {
+                return PermissionResult.deny("File path is not allowed: " + filePath, PermissionLevel.MODIFY_STATE);
+            }
+
+            // 2. 检查是否在敏感目录
+            if (isSensitivePath(filePath)) {
+                return PermissionResult.deny("Cannot write to sensitive system file: " + filePath, PermissionLevel.DESTRUCTIVE);
+            }
+
+            // 3. 允许（需要用户确认，除非有规则匹配）
+            return PermissionResult.allow();
+
+        } catch (Exception e) {
+            log.error("FileWrite permission check failed", e);
+            return PermissionResult.deny("Permission check error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 输入验证方法
+     */
+    public static String validateInput(JsonNode input) {
+        String filePath = input.has("file_path") ? input.get("file_path").asText("") : "";
+        String content = input.has("content") ? input.get("content").asText("") : "";
+
+        if (filePath.isBlank()) {
+            return "file_path is required";
+        }
+
+        if (content.isBlank()) {
+            return "content is required";
+        }
+
+        return null; // 通过验证
+    }
+
+    /**
+     * 检查路径是否在允许范围内
+     */
+    private static boolean isPathAllowed(String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+
+        // 必须是绝对路径
+        if (!path.startsWith("/") && !path.matches("^[A-Za-z]:\\\\.*")) {
+            return false;
+        }
+
+        // 不允许在项目目录外
+        String cwd = System.getProperty("user.dir");
+        return path.startsWith(cwd);
+    }
+
+    /**
+     * 检查是否为敏感路径
+     */
+    private static boolean isSensitivePath(String path) {
+        String lower = path.toLowerCase();
+
+        // 系统敏感路径
+        String[] sensitivePatterns = {
+            "/etc/", "/usr/bin/", "/usr/sbin/", "/bin/", "/sbin/",
+            "c:\\\\windows\\\\", "c:\\\\system32\\\\",
+            "/.env", ".env.", "/.git/",
+            "/node_modules/", "/__pycache__/"
+        };
+
+        for (String pattern : sensitivePatterns) {
+            if (lower.contains(pattern.toLowerCase())) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
