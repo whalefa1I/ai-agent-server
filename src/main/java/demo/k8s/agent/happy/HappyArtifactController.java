@@ -51,7 +51,7 @@ public class HappyArtifactController {
 
     /**
      * GET /v1/artifacts - List all artifacts for the account
-     * 返回所有 artifact 的 header 信息（不包含 body）
+     * 返回所有 artifact 的完整信息（包含 header 和 body）
      */
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<List<Map<String, Object>>> getArtifacts(@RequestParam String accountId) {
@@ -59,7 +59,7 @@ public class HappyArtifactController {
             List<ToolArtifact> artifacts = repository.findByAccountIdOrderByUpdatedAtDesc(accountId);
 
             List<Map<String, Object>> response = artifacts.stream()
-                .map(this::toHappyResponseHeaderOnly)
+                .map(this::toHappyResponseFull)
                 .toList();
 
             return ResponseEntity.ok(response);
