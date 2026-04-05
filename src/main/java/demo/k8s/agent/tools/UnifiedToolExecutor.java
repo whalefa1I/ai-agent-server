@@ -152,7 +152,7 @@ public class UnifiedToolExecutor {
                 }
 
                 var artifact = toolStateService.createToolArtifact(
-                    sessionId, userId, tool.name(), "tool-call",
+                    sessionId, accountId, tool.name(), "tool-call",
                     ToolStatus.TODO, body, null);
                 artifactId = artifact.getId();
 
