@@ -101,19 +101,30 @@ public final class ClaudeToolFactory {
      * 用于将 Skills 和 MCP 工具集成到 Spring AI 工具系统
      */
     public static ToolCallback toToolCallback(ClaudeLikeTool claudeTool) {
+        return toToolCallback(claudeTool, null);
+    }
+
+    /**
+     * 将 ClaudeLikeTool 转换为 Spring AI ToolCallback，带自定义执行函数
+     * @param claudeTool 工具定义
+     * @param executor 执行函数 (inputJson) -> resultJson
+     */
+    public static ToolCallback toToolCallback(ClaudeLikeTool claudeTool, Function<String, String> executor) {
         ToolDefinition definition = ToolDefinition.builder()
                 .name(claudeTool.name())
                 .description(claudeTool.description())
                 .inputSchema(claudeTool.inputSchemaJson())
                 .build();
 
-        // 创建一个占位函数工具回调（实际执行由工具调用器处理）
+        Function<String, String> actualExecutor = executor != null ? executor :
+            (Function<String, String>) input -> {
+                // 占位响应
+                return "{\"success\": true, \"tool\": \"" + claudeTool.name() + "\", \"input\": " + input + "}";
+            };
+
         return FunctionToolCallback.builder(
                 claudeTool.name(),
-                (Function<String, String>) input -> {
-                    // 这里返回一个占位响应，实际执行由工具调用系统处理
-                    return "{\"success\": true, \"tool\": \"" + claudeTool.name() + "\", \"input\": " + input + "}";
-                })
+                actualExecutor)
                 .description(claudeTool.description())
                 .inputSchema(claudeTool.inputSchemaJson())
                 .build();
