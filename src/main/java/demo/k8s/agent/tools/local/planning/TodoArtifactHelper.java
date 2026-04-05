@@ -49,15 +49,31 @@ public class TodoArtifactHelper {
      * @return 创建的 artifact ID，失败时返回 null
      */
     public static String createTodoArtifact(String todoContent, String todoId, String assignee) {
+        // 首先尝试从 TraceContext 获取 sessionId
         String sessionId = TraceContext.getSessionId();
-        String userId = TraceContext.getUserId();
+        log.info("TraceContext.getSessionId() = {}", sessionId);
+
+        // 如果 TraceContext 中没有，尝试从最近的 artifact 获取 sessionId
+        if (sessionId == null && repository != null) {
+            var recent = repository.findByAccountIdOrderByUpdatedAtDesc("anonymous");
+            if (recent != null && !recent.isEmpty()) {
+                sessionId = recent.get(0).getSessionId();
+                log.info("从最近的 artifact 获取 sessionId: {}", sessionId);
+            }
+        }
 
         // 使用 sessionId 作为 accountId（支持匿名会话）
-        String accountId = sessionId;
+        String accountId = sessionId != null ? sessionId : "anonymous";
 
-        if (sessionId == null || toolStateService == null) {
-            log.debug("跳过创建 todo artifact：sessionId={}, service={}",
-                sessionId, toolStateService != null);
+        if (toolStateService == null) {
+            log.warn("跳过创建 todo artifact：toolStateService is null");
+            return null;
+        }
+
+        if (sessionId == null) {
+            // 尝试使用当前会话的 artifact 来获取 sessionId
+            log.warn("TraceContext 中没有 sessionId，尝试使用工具调用创建 artifact");
+            // 无法创建 artifact，但允许工具继续执行
             return null;
         }
 
