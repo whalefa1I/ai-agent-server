@@ -150,9 +150,13 @@ public class TodoWriteTool {
      * 创建待办事项
      */
     private static LocalToolResult createTodo(Map<String, Object> input) {
+        // 兼容 content 和 description 字段（AI 可能使用 description 而不是 content）
         String content = (String) input.get("content");
         if (content == null || content.isEmpty()) {
-            return LocalToolResult.error("content is required for create action");
+            content = (String) input.get("description");
+        }
+        if (content == null || content.isEmpty()) {
+            return LocalToolResult.error("content is required for create action (also accepts 'description' field)");
         }
 
         String id = generateId();
