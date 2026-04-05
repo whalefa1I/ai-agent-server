@@ -95,9 +95,13 @@ public class LocalFileEditTool {
         long startTime = System.currentTimeMillis();
 
         try {
+            // 兼容 path 和 file_path 字段
             String pathStr = (String) input.get("path");
             if (pathStr == null || pathStr.isEmpty()) {
-                return LocalToolResult.error("path is required");
+                pathStr = (String) input.get("file_path");
+            }
+            if (pathStr == null || pathStr.isEmpty()) {
+                return LocalToolResult.error("path or file_path is required");
             }
 
             Path path = Paths.get(pathStr);
@@ -120,11 +124,23 @@ public class LocalFileEditTool {
             } else if (input.containsKey("lineNumber")) {
                 // 行号定位模式
                 return applyLineBasedMode(path, lines, input, startTime);
-            } else if (input.containsKey("oldText") && input.containsKey("newText")) {
-                // 字符串替换模式
-                return applyStringReplacementMode(path, lines, input, startTime);
             } else {
-                return LocalToolResult.error("Must specify one of: (1) oldText+newText, (2) diff, or (3) lineNumber");
+                // 兼容 oldText/newText 和 old_string/new_string 字段
+                String oldText = (String) input.get("oldText");
+                if (oldText == null || oldText.isEmpty()) {
+                    oldText = (String) input.get("old_string");
+                }
+                String newText = (String) input.get("newText");
+                if (newText == null || newText.isEmpty()) {
+                    newText = (String) input.get("new_string");
+                }
+
+                if (oldText != null && newText != null) {
+                    // 字符串替换模式
+                    return applyStringReplacementMode(path, lines, oldText, newText, input, startTime);
+                } else {
+                    return LocalToolResult.error("Must specify one of: (1) oldText+newText or old_string+new_string, (2) diff, or (3) lineNumber");
+                }
             }
 
         } catch (Exception e) {
@@ -137,9 +153,8 @@ public class LocalFileEditTool {
      * 字符串替换模式
      */
     private static LocalToolResult applyStringReplacementMode(Path path, List<String> lines,
+                                                               String oldText, String newText,
                                                                Map<String, Object> input, long startTime) throws IOException {
-        String oldText = (String) input.get("oldText");
-        String newText = (String) input.get("newText");
         int expectedReplacements = getInt(input, "expectedReplacements", 1);
         boolean fuzzy = getBoolean(input, "fuzzy", false);
 

@@ -60,6 +60,10 @@ public class LocalBashTool {
             "      \"type\": \"boolean\"," +
             "      \"description\": \"Run in background (returns session ID for later retrieval)\"" +
             "    }," +
+            "    \"run_in_background\": {" +
+            "      \"type\": \"boolean\"," +
+            "      \"description\": \"Run in background (alias for 'background', compatible with claude-code)\"" +
+            "    }," +
             "    \"sessionId\": {" +
             "      \"type\": \"string\"," +
             "      \"description\": \"Session ID to query/stop (used with background mode)\"" +
@@ -91,7 +95,11 @@ public class LocalBashTool {
      */
     public static LocalToolResult execute(Map<String, Object> input) {
         String command = (String) input.get("command");
+        // 兼容 background 和 run_in_background 字段（claude-code 使用 run_in_background）
         Boolean background = getBoolean(input, "background", false);
+        if (!background) {
+            background = getBoolean(input, "run_in_background", false);
+        }
         String sessionId = (String) input.get("sessionId");
         String action = (String) input.get("action");
 
