@@ -3,6 +3,7 @@ package demo.k8s.agent.tools.remote;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import demo.k8s.agent.tools.local.LocalToolResult;
 import demo.k8s.agent.toolsystem.ClaudeLikeTool;
+import demo.k8s.agent.observability.tracing.TraceContext;
 
 import java.io.IOException;
 import java.net.URI;
@@ -76,9 +77,23 @@ public class PythonRemoteToolExecutor implements RemoteToolExecutor {
                         .header("Content-Type", "application/json")
                         .timeout(Duration.ofSeconds(timeoutSeconds));
 
-                // 添加认证头
+                // 添加认证头和用户标识头
                 if (effectiveAuthToken != null && !effectiveAuthToken.isEmpty()) {
                     requestBuilder.header("Authorization", "Bearer " + effectiveAuthToken);
+                }
+
+                // 添加用户标识（从 TraceContext 获取）
+                String userId = TraceContext.getUserId();
+                String sessionId = TraceContext.getSessionId();
+                if (userId != null) {
+                    requestBuilder.header("X-User-ID", userId);
+                } else {
+                    requestBuilder.header("X-User-ID", "anonymous");
+                }
+                if (sessionId != null) {
+                    requestBuilder.header("X-Session-ID", sessionId);
+                } else {
+                    requestBuilder.header("X-Session-ID", "default");
                 }
 
                 HttpRequest request = requestBuilder.build();

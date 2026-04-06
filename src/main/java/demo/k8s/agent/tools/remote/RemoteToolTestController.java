@@ -37,25 +37,26 @@ public class RemoteToolTestController {
     @PostMapping("/test/bash")
     public Map<String, Object> testBash(@RequestBody Map<String, String> request) throws Exception {
         String command = request.getOrDefault("command", "echo test");
+        String userId = request.getOrDefault("userId", "test-user");
+        String sessionId = request.getOrDefault("sessionId", "test-session");
 
-        var result = remoteToolExecutor.executeRemote(
-            new demo.k8s.agent.toolsystem.ClaudeLikeTool() {
-                @Override public String name() { return "bash"; }
-                @Override public demo.k8s.agent.toolsystem.ToolCategory category() {
-                    return demo.k8s.agent.toolsystem.ToolCategory.SHELL;
-                }
-                @Override public String description() { return "Test bash"; }
-                @Override public String inputSchemaJson() { return "{}"; }
-            },
-            Map.of("command", command),
-            baseUrl,
-            apiKey
-        ).join();
+        var tool = new demo.k8s.agent.toolsystem.ClaudeLikeTool() {
+            @Override public String name() { return "bash"; }
+            @Override public demo.k8s.agent.toolsystem.ToolCategory category() {
+                return demo.k8s.agent.toolsystem.ToolCategory.SHELL;
+            }
+            @Override public String description() { return "Test bash"; }
+            @Override public String inputSchemaJson() { return "{}"; }
+        };
+
+        var result = remoteToolExecutor.executeRemote(tool, Map.of("command", command), baseUrl, apiKey).join();
 
         return Map.of(
             "success", result.isSuccess() ? "true" : "false",
             "content", result.getContent() != null ? result.getContent() : "",
-            "error", result.getError() != null ? result.getError() : ""
+            "error", result.getError() != null ? result.getError() : "",
+            "userId", userId,
+            "sessionId", sessionId
         );
     }
 }
