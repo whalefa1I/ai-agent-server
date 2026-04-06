@@ -87,12 +87,19 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
 
         // 允许的源（生产环境应该限制为具体域名）
+        // 注意：当 allowCredentials 为 true 时，不能使用 "*"，必须指定具体域名
         configuration.setAllowedOrigins(Arrays.asList(
             "http://localhost:3000",
             "http://localhost:5173",
-            "https://*.vercel.app",
-            "*" // 开发环境允许所有源
+            "http://localhost:3333",
+            "https://ai-agent-server-psi.vercel.app",
+            "https://ai-agent-server.vercel.app",
+            "https://*.vercel.app"
         ));
+
+        // 允许所有源（不携带凭证时使用）
+        // 如果需要 allowCredentials(true)，请注释掉上面具体的 origins，改用 originPatterns
+        configuration.addAllowedOriginPattern("*");
 
         // 允许的方法
         configuration.setAllowedMethods(Arrays.asList(
@@ -116,8 +123,8 @@ public class SecurityConfig {
             "X-Page-Count"
         ));
 
-        // 允许携带凭证
-        configuration.setAllowCredentials(true);
+        // 允许携带凭证 - 注释掉因为使用了 * 通配符
+        // configuration.setAllowCredentials(true);
 
         // 预检请求缓存时间（秒）
         configuration.setMaxAge(3600L);
