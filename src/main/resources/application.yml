@@ -4,21 +4,28 @@ spring:
   main:
     # 允许自定义 Bean 覆盖 Spring AI 自动配置
     allow-bean-definition-overriding: true
-  # H2 Database Configuration (for development)
+  # Flyway Configuration
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: false
+  # Database Configuration
   datasource:
-    url: jdbc:h2:file:./data/toolstate;DB_CLOSE_ON_EXIT=FALSE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    # 开发环境使用 H2，生产环境使用 PostgreSQL (Railway)
+    url: ${DATABASE_URL:jdbc:h2:file:./data/agent;DB_CLOSE_ON_EXIT=FALSE}
+    driver-class-name: ${DATABASE_DRIVER:org.h2.Driver}
+    username: ${DATABASE_USERNAME:sa}
+    password: ${DATABASE_PASSWORD:}
   h2:
     console:
-      enabled: true
+      enabled: ${H2_CONSOLE_ENABLED:true}
       path: /h2-console
   # JPA Configuration
   jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
+    database-platform: ${DATABASE_DIALECT:org.hibernate.dialect.H2Dialect}
     hibernate:
-      ddl-auto: update
+      ddl-auto: ${JPA_DDL_AUTO:update} # 开发环境使用 update，生产环境使用 validate，由 Flyway 管理 DDL
     show-sql: false
     properties:
       hibernate:
@@ -45,6 +52,16 @@ logging:
     org.springframework.web.client: TRACE
     org.springframework.http: DEBUG
     org.springframework.http.client: DEBUG
+  # Grafana Loki 配置
+  loki:
+    url: ${LOKI_URL:http://localhost:3100/loki/api/v1/push}
+    username: ${LOKI_USERNAME:}
+    password: ${LOKI_PASSWORD:}
+  pattern:
+    # 日志格式，包含链路追踪信息
+    levelpattern: "%5p [${spring.application.name:-},%X{traceId:-},%X{spanId:-}]"
+    datepattern: "yyyy-MM-dd HH:mm:ss.SSS"
+    filepattern: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [${spring.application.name:-},%X{traceId:-},%X{spanId:-}] %m%n"
 
 # 禁用 actuator 数据库健康检查
 management:
@@ -119,3 +136,15 @@ demo:
       encrypt-key: ${DEMO_FEISHU_ENCRYPT_KEY:}
       # 飞书 API 基础 URL
       api-base-url: ${DEMO_FEISHU_API_BASE_URL:https://open.feishu.cn/open-apis}
+
+# Python 远程工具执行器配置
+remote:
+  tools:
+    # 是否启用远程工具执行
+    enabled: ${REMOTE_TOOLS_ENABLED:false}
+    # Python 服务基础 URL
+    base-url: ${REMOTE_TOOLS_BASE_URL:}
+    # API Key (可选)
+    api-key: ${REMOTE_TOOLS_API_KEY:}
+    # 超时时间（秒）
+    timeout-seconds: ${REMOTE_TOOLS_TIMEOUT:60}

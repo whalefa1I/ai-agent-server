@@ -5,25 +5,76 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import demo.k8s.agent.observability.tracing.TraceContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 结构化日志记录器
+ * 结构化日志记录器 - 增强版
+ *
+ * 支持以下分析字段：
+ * - 环境字段：tenant, environment, version, region
+ * - 用户追踪：userAgent, ipAddress (脱敏), requestId
+ * - 性能分解：queueTimeMs, dbQueryTimeMs, externalApiTimeMs
+ * - 错误分类：errorCode, errorCategory
+ * - 业务标签：feature, skill, skillType
  */
 public class StructuredLogger {
 
     private static final Logger log = LoggerFactory.getLogger(StructuredLogger.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
+    // 运行时环境配置（通过 init() 设置）
+    private static final AtomicReference<String> TENANT = new AtomicReference<>("default");
+    private static final AtomicReference<String> ENVIRONMENT = new AtomicReference<>("development");
+    private static final AtomicReference<String> VERSION = new AtomicReference<>("unknown");
+    private static final AtomicReference<String> REGION = new AtomicReference<>("unknown");
+
+    /**
+     * 初始化日志器环境配置
+     * 在应用启动时调用一次
+     */
+    public static void init(String tenant, String environment, String version, String region) {
+        TENANT.set(tenant != null ? tenant : "default");
+        ENVIRONMENT.set(environment != null ? environment : "development");
+        VERSION.set(version != null ? version : "unknown");
+        REGION.set(region != null ? region : "unknown");
+        log.info("StructuredLogger initialized: tenant={}, environment={}, version={}, region={}",
+                TENANT.get(), ENVIRONMENT.get(), VERSION.get(), REGION.get());
+    }
+
+    /**
+     * 获取环境配置
+     */
+    private static String getTenant() { return TENANT.get(); }
+    private static String getEnvironment() { return ENVIRONMENT.get(); }
+    private static String getVersion() { return VERSION.get(); }
+    private static String getRegion() { return REGION.get(); }
+
     /**
      * 记录通用事件
      */
     public static void logEvent(String eventType, String sessionId, String userId, Map<String, Object> metadata) {
+        logEvent(eventType, sessionId, userId, metadata, null, null, null);
+    }
+
+    /**
+     * 记录通用事件（增强版，支持分析字段）
+     */
+    public static void logEvent(String eventType, String sessionId, String userId, Map<String, Object> metadata,
+                                 String feature, String skill, String skillType) {
         Map<String, Object> data = metadata != null ? new HashMap<>(metadata) : new HashMap<>();
         data.put("eventType", eventType);
+        data.put("environment", getEnvironment());
+        data.put("version", getVersion());
+        data.put("region", getRegion());
+        if (feature != null) data.put("feature", feature);
+        if (skill != null) data.put("skill", skill);
+        if (skillType != null) data.put("skillType", skillType);
 
         LogEntry entry = LogEntry.builder()
                 .event("event")
@@ -55,12 +106,26 @@ public class StructuredLogger {
      */
     public static void logToolCall(String sessionId, String userId, String toolName,
                                     String input, String output, long durationMs, boolean success) {
+        logToolCall(sessionId, userId, toolName, input, output, durationMs, success, null, null);
+    }
+
+    /**
+     * 记录工具调用事件（增强版，支持技能类型和错误码）
+     */
+    public static void logToolCall(String sessionId, String userId, String toolName,
+                                    String input, String output, long durationMs, boolean success,
+                                    String skillType, String errorCode) {
         Map<String, Object> data = new HashMap<>();
         data.put("toolName", toolName);
         data.put("input", truncate(input, 500));
         data.put("output", truncate(output, 1000));
         data.put("durationMs", durationMs);
         data.put("success", success);
+        data.put("environment", getEnvironment());
+        data.put("version", getVersion());
+        if (skillType != null) data.put("skillType", skillType);
+        if (errorCode != null) data.put("errorCode", errorCode);
+        if (errorCode != null) data.put("errorCategory", categorizeError(errorCode));
 
         LogEntry entry = LogEntry.builder()
                 .event("tool_call")
@@ -80,6 +145,32 @@ public class StructuredLogger {
         data.put("input", truncate(input, 500));
         data.put("inputLength", input != null ? input.length() : 0);
         data.put("estimatedTokens", tokenCount);
+        data.put("environment", getEnvironment());
+        data.put("version", getVersion());
+
+        LogEntry entry = LogEntry.builder()
+                .event("user_input")
+                .sessionId(sessionId)
+                .userId(userId)
+                .timestamp(Instant.now())
+                .data(data)
+                .build();
+        log.info(encode(entry));
+    }
+
+    /**
+     * 记录用户输入事件（增强版，支持性能分解）
+     */
+    public static void logUserInput(String sessionId, String userId, String input, int tokenCount,
+                                     long queueTimeMs, long dbQueryTimeMs) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("input", truncate(input, 500));
+        data.put("inputLength", input != null ? input.length() : 0);
+        data.put("estimatedTokens", tokenCount);
+        data.put("queueTimeMs", queueTimeMs);
+        data.put("dbQueryTimeMs", dbQueryTimeMs);
+        data.put("environment", getEnvironment());
+        data.put("version", getVersion());
 
         LogEntry entry = LogEntry.builder()
                 .event("user_input")
@@ -102,6 +193,35 @@ public class StructuredLogger {
         data.put("inputTokens", inputTokens);
         data.put("outputTokens", outputTokens);
         data.put("latencyMs", latencyMs);
+        data.put("environment", getEnvironment());
+        data.put("version", getVersion());
+
+        LogEntry entry = LogEntry.builder()
+                .event("model_response")
+                .sessionId(sessionId)
+                .userId(userId)
+                .timestamp(Instant.now())
+                .data(data)
+                .build();
+        log.info(encode(entry));
+    }
+
+    /**
+     * 记录模型响应事件（增强版，支持性能分解）
+     */
+    public static void logModelResponse(String sessionId, String userId, String response,
+                                         int inputTokens, int outputTokens, long latencyMs,
+                                         long externalApiTimeMs, String model) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("response", truncate(response, 1000));
+        data.put("responseLength", response != null ? response.length() : 0);
+        data.put("inputTokens", inputTokens);
+        data.put("outputTokens", outputTokens);
+        data.put("latencyMs", latencyMs);
+        data.put("externalApiTimeMs", externalApiTimeMs);
+        data.put("model", model);
+        data.put("environment", getEnvironment());
+        data.put("version", getVersion());
 
         LogEntry entry = LogEntry.builder()
                 .event("model_response")
@@ -161,10 +281,23 @@ public class StructuredLogger {
      */
     public static void logError(String sessionId, String userId, String eventType,
                                  String errorMessage, String stackTrace) {
+        logError(sessionId, userId, eventType, errorMessage, stackTrace, null, null);
+    }
+
+    /**
+     * 记录错误事件（增强版，支持错误分类）
+     */
+    public static void logError(String sessionId, String userId, String eventType,
+                                 String errorMessage, String stackTrace,
+                                 String errorCode, String errorCategory) {
         Map<String, Object> data = new HashMap<>();
         data.put("eventType", eventType);
         data.put("errorMessage", errorMessage);
         data.put("stackTrace", truncate(stackTrace, 2000));
+        data.put("environment", getEnvironment());
+        data.put("version", getVersion());
+        if (errorCode != null) data.put("errorCode", errorCode);
+        if (errorCategory != null) data.put("errorCategory", errorCategory);
 
         LogEntry entry = LogEntry.builder()
                 .event("error")
@@ -174,6 +307,22 @@ public class StructuredLogger {
                 .data(data)
                 .build();
         log.error(encode(entry));
+    }
+
+    /**
+     * 根据错误码分类错误类型
+     */
+    private static String categorizeError(String errorCode) {
+        if (errorCode == null) return "UNKNOWN";
+        return switch (errorCode.toUpperCase()) {
+            case "PYTHON_NOT_INSTALLED", "NODEJS_NOT_INSTALLED" -> "ENVIRONMENT";
+            case "PERMISSION_DENIED", "QUOTA_EXCEEDED" -> "PERMISSION";
+            case "TIMEOUT", "RATE_LIMITED" -> "RATE_LIMIT";
+            case "INVALID_INPUT", "MISSING_PARAMETER" -> "VALIDATION";
+            case "FILE_NOT_FOUND", "FILE_ACCESS_DENIED" -> "FILESYSTEM";
+            case "NETWORK_ERROR", "API_UNAVAILABLE" -> "EXTERNAL_SERVICE";
+            default -> "OTHER";
+        };
     }
 
     /**
@@ -247,6 +396,21 @@ public class StructuredLogger {
         public String event;
         public String sessionId;
         public String userId;
+        // 性能指标字段
+        public Long queueTimeMs;
+        public Long dbQueryTimeMs;
+        public Long externalApiTimeMs;
+        // 业务标签字段
+        public String feature;
+        public String skill;
+        public String skillType;
+        // 错误相关字段
+        public String errorCode;
+        public String errorCategory;
+        // 环境字段
+        public String environment;
+        public String version;
+        public String region;
         public Map<String, Object> data = new HashMap<>();
 
         public static LogEntryBuilder builder() {
@@ -281,10 +445,60 @@ public class StructuredLogger {
                 return this;
             }
 
+            public LogEntryBuilder queueTimeMs(Long queueTimeMs) {
+                entry.queueTimeMs = queueTimeMs;
+                return this;
+            }
+
+            public LogEntryBuilder dbQueryTimeMs(Long dbQueryTimeMs) {
+                entry.dbQueryTimeMs = dbQueryTimeMs;
+                return this;
+            }
+
+            public LogEntryBuilder externalApiTimeMs(Long externalApiTimeMs) {
+                entry.externalApiTimeMs = externalApiTimeMs;
+                return this;
+            }
+
+            public LogEntryBuilder feature(String feature) {
+                entry.feature = feature;
+                return this;
+            }
+
+            public LogEntryBuilder skill(String skill) {
+                entry.skill = skill;
+                return this;
+            }
+
+            public LogEntryBuilder skillType(String skillType) {
+                entry.skillType = skillType;
+                return this;
+            }
+
+            public LogEntryBuilder errorCode(String errorCode) {
+                entry.errorCode = errorCode;
+                return this;
+            }
+
+            public LogEntryBuilder errorCategory(String errorCategory) {
+                entry.errorCategory = errorCategory;
+                return this;
+            }
+
             public LogEntry build() {
                 // 添加追踪上下文
                 entry.traceId = TraceContext.getTraceId();
                 entry.spanId = TraceContext.getSpanId();
+                // 如果 data 中包含环境字段，优先使用 data 中的值
+                if (entry.environment == null && entry.data.containsKey("environment")) {
+                    entry.environment = String.valueOf(entry.data.get("environment"));
+                }
+                if (entry.version == null && entry.data.containsKey("version")) {
+                    entry.version = String.valueOf(entry.data.get("version"));
+                }
+                if (entry.region == null && entry.data.containsKey("region")) {
+                    entry.region = String.valueOf(entry.data.get("region"));
+                }
                 return entry;
             }
         }

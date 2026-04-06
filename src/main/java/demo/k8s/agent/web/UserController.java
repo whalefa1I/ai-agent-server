@@ -1,7 +1,7 @@
 package demo.k8s.agent.web;
 
 import demo.k8s.agent.auth.ApiKeyGenerator;
-import demo.k8s.agent.quota.QuotaService;
+import demo.k8s.agent.user.QuotaService;
 import demo.k8s.agent.user.User;
 import demo.k8s.agent.user.UserRole;
 import demo.k8s.agent.user.UserService;
@@ -127,18 +127,16 @@ public class UserController {
             User user = userService.getUser(userId)
                     .orElseThrow(() -> new RuntimeException("用户不存在"));
 
-            var usage = quotaService.getQuotaUsage(user);
+            var status = quotaService.getQuotaStatus(userId);
 
             Map<String, Object> response = new HashMap<>();
             response.put("userId", userId);
             response.put("role", user.role().getCode());
-            response.put("requestsUsed", usage.requestsUsed());
-            response.put("requestsLimit", usage.requestsLimit());
-            response.put("tokensUsed", usage.tokensUsed());
-            response.put("tokensLimit", usage.tokensLimit());
-            response.put("totalTokensToday", usage.totalTokensToday());
-            response.put("concurrentSessions", usage.concurrentSessions());
-            response.put("maxConcurrentSessions", usage.maxConcurrentSessions());
+            response.put("requestsUsed", status.requestsUsed());
+            response.put("requestsLimit", status.maxRequests());
+            response.put("tokensUsed", status.tokensUsed());
+            response.put("tokensLimit", status.maxTokens());
+            response.put("nextReset", status.nextReset().toString());
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {

@@ -3,6 +3,7 @@ package demo.k8s.agent.tools;
 import demo.k8s.agent.tools.local.LocalToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolResult;
 import demo.k8s.agent.tools.remote.RemoteToolExecutor;
+import demo.k8s.agent.tools.remote.RemoteToolRouter;
 import demo.k8s.agent.toolsystem.ClaudeLikeTool;
 import demo.k8s.agent.toolsystem.ToolPermissionContext;
 import demo.k8s.agent.toolstate.ToolArtifactRepository;
@@ -19,6 +20,7 @@ import demo.k8s.agent.toolstate.ToolArtifact;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 /**
  * 统一工具执行器 - 支持本地执行和未来远程执行。
@@ -40,6 +42,7 @@ public class UnifiedToolExecutor {
     private final ToolStateService toolStateService;
     private final ToolArtifactRepository repository;
     private final PrivacyKitService privacyKitService;
+    private final RemoteToolRouter remoteRouter;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // 工具图标映射
@@ -74,6 +77,7 @@ public class UnifiedToolExecutor {
         this.toolStateService = builder.toolStateService;
         this.repository = builder.repository;
         this.privacyKitService = builder.privacyKitService;
+        this.remoteRouter = builder.remoteRouter;
     }
 
     /**
@@ -233,20 +237,25 @@ public class UnifiedToolExecutor {
     }
 
     /**
-     * 自动模式执行（本地优先）
+     * 自动模式执行（使用 RemoteToolRouter 路由）
      */
     private LocalToolResult executeAuto(
             ClaudeLikeTool tool,
             Map<String, Object> input,
             ToolPermissionContext ctx) {
-        // 首先尝试本地执行
+
+        // 如果配置了远程路由器，使用它来决定路由
+        if (remoteRouter != null) {
+            return remoteRouter.executeSync(tool, input, t -> executeLocal(t, input, ctx));
+        }
+
+        // 否则使用本地优先策略
         LocalToolResult localResult = executeLocal(tool, input, ctx);
 
         if (localResult.isSuccess()) {
             return localResult;
         }
 
-        // 本地失败且有远程配置时，尝试远程
         if (remoteBaseUrl != null && !remoteBaseUrl.isEmpty()) {
             log.warn("Local execution failed for {}, trying remote: {}",
                     tool.name(), localResult.getError());
@@ -303,6 +312,7 @@ public class UnifiedToolExecutor {
         private ToolStateService toolStateService;
         private ToolArtifactRepository repository;
         private PrivacyKitService privacyKitService;
+        private RemoteToolRouter remoteRouter;
 
         public Builder mode(ExecutionMode mode) {
             this.mode = mode;
@@ -337,6 +347,11 @@ public class UnifiedToolExecutor {
 
         public Builder privacyKitService(PrivacyKitService service) {
             this.privacyKitService = service;
+            return this;
+        }
+
+        public Builder remoteRouter(RemoteToolRouter router) {
+            this.remoteRouter = router;
             return this;
         }
 

@@ -101,18 +101,20 @@ public class DemoToolRegistryConfiguration {
             @Value("${remote.tools.base-url:}") String remoteBaseUrl,
             @Value("${remote.tools.api-key:}") String remoteApiKey) {
 
+        // 创建远程工具路由器
+        demo.k8s.agent.tools.remote.RemoteToolRouter router = null;
+        if (pythonRemoteToolExecutor != null && remoteBaseUrl != null && !remoteBaseUrl.isEmpty()) {
+            router = new demo.k8s.agent.tools.remote.RemoteToolRouter(
+                true, pythonRemoteToolExecutor, remoteBaseUrl, remoteApiKey);
+        }
+
         var builder = UnifiedToolExecutor.builder()
                 .mode(UnifiedToolExecutor.ExecutionMode.AUTO)
                 .localExecutor(localExecutor)
                 .toolStateService(toolStateService)
                 .repository(repository)
-                .privacyKitService(privacyKitService);
-
-        // 如果配置了远程工具执行器，支持远程执行
-        if (pythonRemoteToolExecutor != null && remoteBaseUrl != null && !remoteBaseUrl.isEmpty()) {
-            builder.remoteExecutor(pythonRemoteToolExecutor)
-                   .remoteConfig(remoteBaseUrl, remoteApiKey);
-        }
+                .privacyKitService(privacyKitService)
+                .remoteRouter(router);
 
         return builder.build();
     }
