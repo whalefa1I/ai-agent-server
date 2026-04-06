@@ -2,6 +2,7 @@ package demo.k8s.agent.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import demo.k8s.agent.tools.remote.PythonRemoteToolExecutor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -49,7 +50,7 @@ public class PythonRemoteToolConfig {
     public PythonRemoteToolExecutor pythonRemoteToolExecutor(
             HttpClient httpClient,
             ObjectMapper objectMapper,
-            ExecutorService executorService) {
+            @Qualifier("remoteExecutorService") ExecutorService executorService) {
         return new PythonRemoteToolExecutor(
                 baseUrl,
                 apiKey,
