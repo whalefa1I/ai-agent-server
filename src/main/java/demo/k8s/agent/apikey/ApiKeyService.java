@@ -60,13 +60,30 @@ public class ApiKeyService {
 
         // 设置配额计划
         String planId = request.getQuotaPlanId() != null ? request.getQuotaPlanId() : "default";
-        ApiKeyQuotaPlan plan = quotaPlanRepository.findById(planId)
-                .orElseThrow(() -> new RuntimeException("配额计划不存在：" + planId));
+        ApiKeyQuotaPlan plan = quotaPlanRepository.findById(planId).orElse(null);
+
+        // 如果配额计划不存在，使用 null（后续会应用默认值或自定义速率限制）
+        if (plan == null) {
+            log.warn("配额计划 [{}] 不存在，使用默认配置", planId);
+        }
 
         apiKey.setQuotaPlanId(planId);
 
-        // 应用配额计划限制
-        applyQuotaPlan(apiKey, plan);
+        // 应用配额计划限制（如果计划存在）
+        if (plan != null) {
+            applyQuotaPlan(apiKey, plan);
+        }
+
+        // 如果有自定义速率限制，覆盖配额计划（用于匿名 Key）
+        if (request.getRateLimitPerSecond() != null) {
+            apiKey.setRateLimitPerSecond(request.getRateLimitPerSecond());
+        }
+        if (request.getRateLimitPerMinute() != null) {
+            apiKey.setRateLimitPerMinute(request.getRateLimitPerMinute());
+        }
+        if (request.getRateLimitPerHour() != null) {
+            apiKey.setRateLimitPerHour(request.getRateLimitPerHour());
+        }
 
         // 设置过期时间
         if (request.getExpiresAt() != null) {
@@ -341,6 +358,14 @@ public class ApiKeyService {
     // ==================== 私有方法 ====================
 
     private void applyQuotaPlan(ApiKey apiKey, ApiKeyQuotaPlan plan) {
+        if (plan == null) {
+            // 使用默认配额
+            apiKey.setRateLimitPerSecond(10);
+            apiKey.setRateLimitPerMinute(100);
+            apiKey.setRateLimitPerHour(1000);
+            apiKey.setMaxConcurrentRequests(5);
+            return;
+        }
         apiKey.setRateLimitPerSecond(plan.getRateLimitPerSecond());
         apiKey.setRateLimitPerMinute(plan.getRateLimitPerMinute());
         apiKey.setRateLimitPerHour(plan.getRateLimitPerHour());
@@ -404,6 +429,11 @@ public class ApiKeyService {
         private Map<String, Object> blockedIpRanges;
         private Map<String, Object> metadata;
 
+        // 速率限制（用于匿名 Key）
+        private Integer rateLimitPerSecond;
+        private Integer rateLimitPerMinute;
+        private Integer rateLimitPerHour;
+
         // Getters and Setters
         public String getKeyName() { return keyName; }
         public void setKeyName(String keyName) { this.keyName = keyName; }
@@ -437,6 +467,22 @@ public class ApiKeyService {
 
         public Map<String, Object> getMetadata() { return metadata; }
         public void setMetadata(Map<String, Object> metadata) { this.metadata = metadata; }
+
+        // 速率限制设置器（用于匿名 Key）
+        public Integer getRateLimitPerSecond() { return rateLimitPerSecond; }
+        public void setRateLimitPerSecond(Integer rateLimitPerSecond) {
+            this.rateLimitPerSecond = rateLimitPerSecond;
+        }
+
+        public Integer getRateLimitPerMinute() { return rateLimitPerMinute; }
+        public void setRateLimitPerMinute(Integer rateLimitPerMinute) {
+            this.rateLimitPerMinute = rateLimitPerMinute;
+        }
+
+        public Integer getRateLimitPerHour() { return rateLimitPerHour; }
+        public void setRateLimitPerHour(Integer rateLimitPerHour) {
+            this.rateLimitPerHour = rateLimitPerHour;
+        }
     }
 
     public static class ApiKeyCreateResult {
