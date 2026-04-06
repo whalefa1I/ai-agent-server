@@ -15,7 +15,11 @@ import time
 import logging
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Agent Remote Tool Executor", version="0.1.0")
@@ -56,6 +60,7 @@ async def execute_tool(
     session_work_dir.mkdir(parents=True, exist_ok=True)
 
     start_time = time.time()
+    logger.info(f"[{x_user_id}/{x_session_id or 'default'}] Executing {request.tool_name}")
 
     try:
         # 直接使用 Spring Boot 工具命名（统一命名规范）
@@ -71,18 +76,24 @@ async def execute_tool(
             result = await execute_file_list(request.input, session_work_dir)
         elif tool_name == "glob" or tool_name == "grep":
             # glob/grep 不支持，返回错误
+            logger.warning(f"Tool {tool_name} not supported in remote mode")
             return ToolResponse(
                 success=False,
                 error=f"Tool {tool_name} is not supported in remote mode. Use local execution."
             )
         else:
+            logger.warning(f"Unknown tool: {tool_name}")
             return ToolResponse(
                 success=False,
                 error=f"Unknown tool: {tool_name}"
             )
+
+        duration = int((time.time() - start_time) * 1000)
+        result.duration_ms = duration
+        logger.info(f"[{x_user_id}/{x_session_id or 'default'}] {request.tool_name} completed in {duration}ms, success={result.success}")
         return result
     except Exception as e:
-        logger.exception("Tool execution failed")
+        logger.exception(f"[{x_user_id}/{x_session_id or 'default'}] Tool execution failed")
         return ToolResponse(
             success=False,
             error=str(e),
@@ -97,10 +108,13 @@ async def execute_bash(input_data: Dict[str, Any], work_dir: Path) -> ToolRespon
     if not command:
         return ToolResponse(success=False, error="Empty command")
 
+    logger.info(f"Executing bash command: {command[:100]}...")
+
     # 危险命令检测
     dangerous_patterns = ["rm -rf /", "dd if=/", "mkfs", "chmod -R 777 /"]
     for pattern in dangerous_patterns:
         if pattern in command:
+            logger.warning(f"Dangerous command detected: {pattern}")
             return ToolResponse(success=False, error=f"Dangerous command detected: {pattern}")
 
     try:
@@ -154,6 +168,8 @@ async def execute_file_write(input_data: Dict[str, Any], work_dir: Path) -> Tool
 
     if not file_path:
         return ToolResponse(success=False, error="Missing file path")
+
+    logger.info(f"Writing file: {file_path} ({len(content)} bytes)")
 
     try:
         full_path = Path(file_path) if file_path.startswith("/") else work_dir / file_path
