@@ -8,6 +8,10 @@ import demo.k8s.agent.toolsystem.ToolDefPartial;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Set;
+import java.util.Map;
+import java.util.function.Function;
+
 /**
  * 远程工具路由器 - 根据工具类型决定是否路由到远程服务执行
  */
