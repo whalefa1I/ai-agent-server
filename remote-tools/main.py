@@ -58,31 +58,27 @@ async def execute_tool(
     start_time = time.time()
 
     try:
-        # 工具名称别名映射（兼容 Spring Boot 工具命名）
+        # 直接使用 Spring Boot 工具命名（统一命名规范）
         tool_name = request.tool_name
-        if tool_name == "bash":
-            tool_name = "shell"
-        elif tool_name in ["file_read", "file_write"]:
-            pass  # 名称相同，不需要映射
-        elif tool_name == "glob" or tool_name == "grep":
-            # glob/grep 不支持，返回错误
-            return ToolResponse(
-                success=False,
-                error=f"Tool {request.tool_name} is not supported in remote mode. Use local execution."
-            )
 
-        if tool_name == "shell":
-            result = await execute_shell(request.input, session_work_dir)
+        if tool_name == "bash":
+            result = await execute_bash(request.input, session_work_dir)
         elif tool_name == "file_read":
             result = await execute_file_read(request.input, session_work_dir)
         elif tool_name == "file_write":
             result = await execute_file_write(request.input, session_work_dir)
         elif tool_name == "file_list":
             result = await execute_file_list(request.input, session_work_dir)
+        elif tool_name == "glob" or tool_name == "grep":
+            # glob/grep 不支持，返回错误
+            return ToolResponse(
+                success=False,
+                error=f"Tool {tool_name} is not supported in remote mode. Use local execution."
+            )
         else:
             return ToolResponse(
                 success=False,
-                error=f"Unknown tool: {request.tool_name}"
+                error=f"Unknown tool: {tool_name}"
             )
         return result
     except Exception as e:
@@ -94,8 +90,8 @@ async def execute_tool(
         )
 
 
-async def execute_shell(input_data: Dict[str, Any], work_dir: Path) -> ToolResponse:
-    """执行 Shell 命令"""
+async def execute_bash(input_data: Dict[str, Any], work_dir: Path) -> ToolResponse:
+    """执行 Bash 命令"""
     command = input_data.get("command", "")
 
     if not command:
