@@ -1,5 +1,6 @@
 package demo.k8s.agent.tools.remote;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,7 +20,7 @@ public class RemoteToolTestController {
     public RemoteToolTestController(
             @Value("${remote.tools.base-url:}") String baseUrl,
             @Value("${remote.tools.api-key:}") String apiKey,
-            PythonRemoteToolExecutor remoteToolExecutor) {
+            @Autowired(required = false) PythonRemoteToolExecutor remoteToolExecutor) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.remoteToolExecutor = remoteToolExecutor;
@@ -36,6 +37,15 @@ public class RemoteToolTestController {
 
     @PostMapping("/test/bash")
     public Map<String, Object> testBash(@RequestBody Map<String, String> request) throws Exception {
+        if (remoteToolExecutor == null) {
+            return Map.of(
+                "success", "false",
+                "error", "Remote tools not configured. Set remote.tools.enabled=true to enable.",
+                "userId", request.getOrDefault("userId", "test-user"),
+                "sessionId", request.getOrDefault("sessionId", "test-session")
+            );
+        }
+
         String command = request.getOrDefault("command", "echo test");
         String userId = request.getOrDefault("userId", "test-user");
         String sessionId = request.getOrDefault("sessionId", "test-session");
