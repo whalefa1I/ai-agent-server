@@ -46,10 +46,7 @@ CREATE TABLE IF NOT EXISTS user_task_quota (
     -- 元数据
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_quotas_reset_at TIMESTAMP,
-
-    INDEX idx_plan (plan_id),
-    INDEX idx_enabled (enabled)
+    last_quotas_reset_at TIMESTAMP
 );
 
 -- 套餐任务配额配置表
@@ -123,9 +120,7 @@ CREATE TABLE IF NOT EXISTS task_quota_usage_daily (
     -- 时间戳
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE KEY uk_user_date (user_id, usage_date),
-    INDEX idx_user (user_id),
-    INDEX idx_date (usage_date)
+    CONSTRAINT uk_user_date UNIQUE (user_id, usage_date)
 );
 
 -- 配额超限事件表
@@ -141,12 +136,19 @@ CREATE TABLE IF NOT EXISTS quota_exceeded_event (
 
     action_taken VARCHAR(32),  -- BLOCKED, QUEUED, NOTIFIED
 
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    INDEX idx_user (user_id),
-    INDEX idx_event_type (event_type),
-    INDEX idx_created_at (created_at)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_user_task_quota_plan ON user_task_quota(plan_id);
+CREATE INDEX IF NOT EXISTS idx_user_task_quota_enabled ON user_task_quota(enabled);
+
+CREATE INDEX IF NOT EXISTS idx_quota_usage_daily_user ON task_quota_usage_daily(user_id);
+CREATE INDEX IF NOT EXISTS idx_quota_usage_daily_date ON task_quota_usage_daily(usage_date);
+
+CREATE INDEX IF NOT EXISTS idx_quota_exceeded_event_user ON quota_exceeded_event(user_id);
+CREATE INDEX IF NOT EXISTS idx_quota_exceeded_event_type ON quota_exceeded_event(event_type);
+CREATE INDEX IF NOT EXISTS idx_quota_exceeded_event_created_at ON quota_exceeded_event(created_at);
 
 -- 插入默认套餐配置
 INSERT INTO plan_task_quota (plan_id, plan_name, description,

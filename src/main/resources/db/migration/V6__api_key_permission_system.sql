@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS api_key (
 
     -- Key 信息
     key_hash VARCHAR(256) NOT NULL,  -- BCrypt 加密后的 Key
-    key_prefix VARCHAR(16) NOT NULL, -- Key 前缀 (用于展示，如: sk-abc123...)
+    key_prefix VARCHAR(16) NOT NULL, -- Key 前缀 (用于展示，如：sk-abc123...)
     key_name VARCHAR(128),           -- Key 名称/备注
 
     -- 密钥类型
@@ -59,16 +59,7 @@ CREATE TABLE IF NOT EXISTS api_key (
     -- 元数据
     metadata JSON,
     created_by VARCHAR(64),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    -- 索引
-    INDEX idx_user_id (user_id),
-    INDEX idx_key_hash (key_hash),
-    INDEX idx_key_prefix (key_prefix),
-    INDEX idx_status (status),
-    INDEX idx_enabled (enabled),
-    INDEX idx_expires_at (expires_at),
-    UNIQUE INDEX idx_key_hash_unique (key_hash)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==================== API Key 使用日志 ====================
@@ -100,14 +91,7 @@ CREATE TABLE IF NOT EXISTS api_key_usage_log (
     referer VARCHAR(512),
 
     -- 时间戳
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    -- 索引
-    INDEX idx_api_key_id (api_key_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_endpoint (endpoint),
-    INDEX idx_created_at (created_at),
-    INDEX idx_status_code (status_code)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==================== 速率限制桶 ====================
@@ -125,11 +109,7 @@ CREATE TABLE IF NOT EXISTS rate_limit_bucket (
     tokens_consumed BIGINT DEFAULT 0,
 
     expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    -- 索引
-    INDEX idx_api_key_id (api_key_id),
-    INDEX idx_expires_at (expires_at)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==================== API Key 配额计划 ====================
@@ -172,10 +152,7 @@ CREATE TABLE IF NOT EXISTS api_key_quota_plan (
     is_premium BOOLEAN DEFAULT FALSE,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    INDEX idx_active (is_active),
-    INDEX idx_premium (is_premium)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==================== 核心收益点权限配置 ====================
@@ -200,10 +177,7 @@ CREATE TABLE IF NOT EXISTS premium_feature_config (
     description VARCHAR(512),
 
     is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    INDEX idx_category (feature_category),
-    INDEX idx_active (is_active)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 用户核心收益点使用统计
@@ -222,10 +196,7 @@ CREATE TABLE IF NOT EXISTS user_premium_usage (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE KEY uk_user_feature_date (user_id, feature_id, usage_date),
-    INDEX idx_user_id (user_id),
-    INDEX idx_feature_id (feature_id),
-    INDEX idx_date (usage_date)
+    CONSTRAINT uk_user_feature_date UNIQUE (user_id, feature_id, usage_date)
 );
 
 -- ==================== 管理员控制表 ====================
@@ -245,7 +216,7 @@ CREATE TABLE IF NOT EXISTS admin_quota_override (
 
     -- 控制开关
     force_enabled BOOLEAN DEFAULT FALSE,  -- 强制启用 (无视其他限制)
-    force_disabled BOOLEAN DEFAULT FALSE,  -- 强制禁用 (优先于其他设置)
+    force_disabled BOOLEAN DEFAULT FALSE,  -- 强制禁用 (优先于其他限制)
 
     -- 原因和审计
     reason VARCHAR(512),
@@ -254,10 +225,7 @@ CREATE TABLE IF NOT EXISTS admin_quota_override (
     valid_from TIMESTAMP,
     valid_until TIMESTAMP,
 
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    INDEX idx_user_id (user_id),
-    INDEX idx_admin_user_id (admin_user_id)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 服务熔断配置表
@@ -284,10 +252,7 @@ CREATE TABLE IF NOT EXISTS service_circuit_breaker (
 
     -- 时间戳
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    INDEX idx_service_name (service_name),
-    INDEX idx_status (status)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 恶意行为检测表
@@ -310,14 +275,58 @@ CREATE TABLE IF NOT EXISTS suspicious_activity (
     reviewed_by VARCHAR(64),
     reviewed_at TIMESTAMP,
 
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    INDEX idx_api_key_id (api_key_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_status (status),
-    INDEX idx_severity (severity),
-    INDEX idx_created_at (created_at)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ==================== 创建索引 ====================
+
+-- API Key 索引
+CREATE INDEX IF NOT EXISTS idx_api_key_user_id ON api_key(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_key_key_hash ON api_key(key_hash);
+CREATE INDEX IF NOT EXISTS idx_api_key_key_prefix ON api_key(key_prefix);
+CREATE INDEX IF NOT EXISTS idx_api_key_status ON api_key(status);
+CREATE INDEX IF NOT EXISTS idx_api_key_enabled ON api_key(enabled);
+CREATE INDEX IF NOT EXISTS idx_api_key_expires_at ON api_key(expires_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_api_key_key_hash_unique ON api_key(key_hash);
+
+-- API Key 使用日志索引
+CREATE INDEX IF NOT EXISTS idx_api_key_usage_log_api_key_id ON api_key_usage_log(api_key_id);
+CREATE INDEX IF NOT EXISTS idx_api_key_usage_log_user_id ON api_key_usage_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_key_usage_log_endpoint ON api_key_usage_log(endpoint);
+CREATE INDEX IF NOT EXISTS idx_api_key_usage_log_created_at ON api_key_usage_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_api_key_usage_log_status_code ON api_key_usage_log(status_code);
+
+-- 速率限制桶索引
+CREATE INDEX IF NOT EXISTS idx_rate_limit_bucket_api_key_id ON rate_limit_bucket(api_key_id);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_bucket_expires_at ON rate_limit_bucket(expires_at);
+
+-- API Key 配额计划索引
+CREATE INDEX IF NOT EXISTS idx_api_key_quota_plan_active ON api_key_quota_plan(is_active);
+CREATE INDEX IF NOT EXISTS idx_api_key_quota_plan_premium ON api_key_quota_plan(is_premium);
+
+-- 核心收益点配置索引
+CREATE INDEX IF NOT EXISTS idx_premium_feature_config_category ON premium_feature_config(feature_category);
+CREATE INDEX IF NOT EXISTS idx_premium_feature_config_active ON premium_feature_config(is_active);
+
+-- 用户核心收益点使用统计索引
+CREATE INDEX IF NOT EXISTS idx_user_premium_usage_user_id ON user_premium_usage(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_premium_usage_feature_id ON user_premium_usage(feature_id);
+CREATE INDEX IF NOT EXISTS idx_user_premium_usage_date ON user_premium_usage(usage_date);
+
+-- 管理员配额覆盖索引
+CREATE INDEX IF NOT EXISTS idx_admin_quota_override_user_id ON admin_quota_override(user_id);
+CREATE INDEX IF NOT EXISTS idx_admin_quota_override_admin_user_id ON admin_quota_override(admin_user_id);
+
+-- 服务熔断配置索引
+CREATE INDEX IF NOT EXISTS idx_service_circuit_breaker_service_name ON service_circuit_breaker(service_name);
+CREATE INDEX IF NOT EXISTS idx_service_circuit_breaker_status ON service_circuit_breaker(status);
+
+-- 恶意行为检测索引
+CREATE INDEX IF NOT EXISTS idx_suspicious_activity_api_key_id ON suspicious_activity(api_key_id);
+CREATE INDEX IF NOT EXISTS idx_suspicious_activity_user_id ON suspicious_activity(user_id);
+CREATE INDEX IF NOT EXISTS idx_suspicious_activity_status ON suspicious_activity(status);
+CREATE INDEX IF NOT EXISTS idx_suspicious_activity_severity ON suspicious_activity(severity);
+CREATE INDEX IF NOT EXISTS idx_suspicious_activity_created_at ON suspicious_activity(created_at);
 
 -- ==================== 初始化数据 ====================
 

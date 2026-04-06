@@ -49,14 +49,7 @@ CREATE TABLE IF NOT EXISTS scheduled_task (
     metadata JSON,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(64),
-
-    -- 索引
-    INDEX idx_user_id (user_id),
-    INDEX idx_status (status),
-    INDEX idx_enabled (enabled),
-    INDEX idx_next_execution (status, enabled, start_at),
-    INDEX idx_user_status (user_id, status)
+    created_by VARCHAR(64)
 );
 
 -- 任务执行历史表
@@ -88,15 +81,7 @@ CREATE TABLE IF NOT EXISTS task_execution_history (
     -- 执行上下文
     execution_context JSON, -- 执行时的上下文信息
 
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    -- 索引
-    INDEX idx_task_id (task_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_status (status),
-    INDEX idx_scheduled_time (scheduled_time),
-    INDEX idx_actual_start_time (actual_start_time),
-    INDEX idx_user_status (user_id, status)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 任务日志表
@@ -113,14 +98,27 @@ CREATE TABLE IF NOT EXISTS task_execution_log (
     log_data JSON,
 
     -- 时间戳
-    logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    -- 索引
-    INDEX idx_execution_id (execution_id),
-    INDEX idx_task_id (task_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_logged_at (logged_at)
+    logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_scheduled_task_user_id ON scheduled_task(user_id);
+CREATE INDEX IF NOT EXISTS idx_scheduled_task_status ON scheduled_task(status);
+CREATE INDEX IF NOT EXISTS idx_scheduled_task_enabled ON scheduled_task(enabled);
+CREATE INDEX IF NOT EXISTS idx_scheduled_task_next_execution ON scheduled_task(status, enabled, start_at);
+CREATE INDEX IF NOT EXISTS idx_scheduled_task_user_status ON scheduled_task(user_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_execution_history_task_id ON task_execution_history(task_id);
+CREATE INDEX IF NOT EXISTS idx_execution_history_user_id ON task_execution_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_execution_history_status ON task_execution_history(status);
+CREATE INDEX IF NOT EXISTS idx_execution_history_scheduled_time ON task_execution_history(scheduled_time);
+CREATE INDEX IF NOT EXISTS idx_execution_history_actual_start_time ON task_execution_history(actual_start_time);
+CREATE INDEX IF NOT EXISTS idx_execution_history_user_status ON task_execution_history(user_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_execution_log_execution_id ON task_execution_log(execution_id);
+CREATE INDEX IF NOT EXISTS idx_execution_log_task_id ON task_execution_log(task_id);
+CREATE INDEX IF NOT EXISTS idx_execution_log_user_id ON task_execution_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_execution_log_logged_at ON task_execution_log(logged_at);
 
 -- 创建触发器自动更新 updated_at
 CREATE TRIGGER IF NOT EXISTS update_scheduled_task_timestamp
