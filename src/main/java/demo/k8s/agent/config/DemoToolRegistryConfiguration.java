@@ -83,6 +83,18 @@ public class DemoToolRegistryConfiguration {
                     if (tool == null) {
                         return Map.of("success", false, "error", "Tool not found: " + toolName);
                     }
+                    // 确保 TraceContext 已设置（从当前线程获取或使用默认值）
+                    String sessionId = demo.k8s.agent.observability.tracing.TraceContext.getSessionId();
+                    String userId = demo.k8s.agent.observability.tracing.TraceContext.getUserId();
+                    if (sessionId == null) {
+                        // 如果 TraceContext 为空，生成一个临时 sessionId（用于匿名会话）
+                        sessionId = "anon-session-" + System.currentTimeMillis();
+                        demo.k8s.agent.observability.tracing.TraceContext.setSessionId(sessionId);
+                    }
+                    if (userId == null) {
+                        userId = sessionId;
+                        demo.k8s.agent.observability.tracing.TraceContext.setUserId(userId);
+                    }
                     var result = executor.execute(tool, input, null);
                     // 使用 HashMap 避免 Map.of() 不支持 null 值的问题
                     var resultMap = new java.util.HashMap<String, Object>();
