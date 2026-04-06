@@ -5,6 +5,7 @@ import demo.k8s.agent.tools.local.LocalToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolRegistry;
 import demo.k8s.agent.tools.local.planning.TodoArtifactHelper;
 import demo.k8s.agent.toolsystem.DemoToolSpecs;
+import demo.k8s.agent.toolsystem.McpToolProvider;
 import demo.k8s.agent.toolsystem.ToolModule;
 import demo.k8s.agent.toolsystem.ToolRegistry;
 
@@ -14,14 +15,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Map;
 
 /**
  * 简化工具注册配置 - 仅注册本地工具，避免循环依赖。
+ * 包含 MCP 工具提供者配置。
  */
 @Configuration
 public class DemoToolRegistryConfiguration {
@@ -57,6 +61,15 @@ public class DemoToolRegistryConfiguration {
         full.register(new ToolModule(DemoToolSpecs.todoWrite(), createToolCallback(unifiedToolExecutor, "todo_write")));
 
         return full;
+    }
+
+    /**
+     * MCP Tool 提供者 - 默认空实现
+     */
+    @Bean
+    @Primary
+    McpToolProvider mcpToolProvider() {
+        return List::of;
     }
 
     /**

@@ -6,6 +6,8 @@ import demo.k8s.agent.toolsystem.PermissionManager;
 import demo.k8s.agent.ws.AgentWebSocketHandler;
 import demo.k8s.agent.ws.PermissionBroadcastService;
 import demo.k8s.agent.ws.WebSocketTokenService;
+import demo.k8s.agent.toolstate.ToolStateWebSocketHandler;
+import demo.k8s.agent.toolstate.ToolStateHandshakeInterceptor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.WebSocketHandler;
@@ -19,6 +21,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
  * 端点：
  * <ul>
  *   <li>{@code /ws/agent/{token}} - 主 Agent 连接端点</li>
+ *   <li>{@code /ws/tool-state} - 工具状态推送端点</li>
  * </ul>
  */
 @Configuration
@@ -30,18 +33,24 @@ public class WebSocketConfig implements WebSocketConfigurer {
     private final ConversationManager conversationManager;
     private final WebSocketTokenService tokenService;
     private final PermissionBroadcastService broadcastService;
+    private final ToolStateWebSocketHandler toolStateHandler;
+    private final ToolStateHandshakeInterceptor handshakeInterceptor;
 
     public WebSocketConfig(
             EnhancedAgenticQueryLoop queryLoop,
             PermissionManager permissionManager,
             ConversationManager conversationManager,
             WebSocketTokenService tokenService,
-            PermissionBroadcastService broadcastService) {
+            PermissionBroadcastService broadcastService,
+            ToolStateWebSocketHandler toolStateHandler,
+            ToolStateHandshakeInterceptor handshakeInterceptor) {
         this.queryLoop = queryLoop;
         this.permissionManager = permissionManager;
         this.conversationManager = conversationManager;
         this.tokenService = tokenService;
         this.broadcastService = broadcastService;
+        this.toolStateHandler = toolStateHandler;
+        this.handshakeInterceptor = handshakeInterceptor;
     }
 
     @Override
@@ -52,6 +61,14 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 agentWebSocketHandler(),
                 "/ws/agent/{token}"
         ).setAllowedOrigins("*");
+
+        // WebSocket 端点：/ws/tool-state
+        // 用于推送工具执行状态更新
+        registry.addHandler(
+                toolStateHandler,
+                "/ws/tool-state"
+        ).addInterceptors(handshakeInterceptor)
+         .setAllowedOrigins("*");
     }
 
     @Bean

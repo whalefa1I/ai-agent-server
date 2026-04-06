@@ -26,6 +26,15 @@ public class ApiKeyGenerator {
     }
 
     /**
+     * 生成安全随机 Key (静态方法，供 Service 使用)
+     */
+    public static String generateSecureKey(int byteLength) {
+        byte[] randomBytes = new byte[byteLength];
+        RANDOM.nextBytes(randomBytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+    }
+
+    /**
      * 生成临时密码
      */
     public String generateTempPassword() {
