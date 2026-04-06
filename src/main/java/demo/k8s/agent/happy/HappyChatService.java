@@ -179,13 +179,16 @@ public class HappyChatService {
         try {
             demo.k8s.agent.observability.tracing.TraceContext.setSessionId(sessionId);
             demo.k8s.agent.observability.tracing.TraceContext.setUserId(accountId);
+            log.info("[DEBUG] TraceContext 已设置：sessionId={}, userId={}", sessionId, accountId);
 
             // 用于累积流式内容
             AtomicReference<StringBuilder> contentBuffer = new AtomicReference<>(new StringBuilder());
 
+            log.info("[DEBUG] 开始调用 agenticQueryLoop.runWithCallbacks");
             AgenticTurnResult result = agenticQueryLoop.runWithCallbacks(
                 content,
                 (toolName, input) -> {
+                    log.info("[DEBUG] 工具调用回调被触发：toolName={}", toolName);
                     log.info("工具调用：{} ({})", toolName, input);
                     // 注意：UnifiedToolExecutor 会自动创建 tool-call artifact，这里不需要重复创建
                 },
@@ -197,6 +200,7 @@ public class HappyChatService {
                     }
                 }
             );
+            log.info("[DEBUG] agenticQueryLoop.runWithCallbacks 完成，replyText={}", result.replyText());
             return result.replyText();
 
         } catch (Exception e) {
