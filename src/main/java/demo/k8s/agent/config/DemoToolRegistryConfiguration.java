@@ -11,6 +11,7 @@ import demo.k8s.agent.toolsystem.ToolRegistry;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.function.FunctionToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import jakarta.annotation.PostConstruct;
@@ -88,21 +89,32 @@ public class DemoToolRegistryConfiguration {
     }
 
     /**
-     * 统一工具执行器（默认本地模式）
+     * 统一工具执行器（支持本地 + 远程）
      */
     @Bean
     UnifiedToolExecutor unifiedToolExecutor(
             LocalToolExecutor localExecutor,
             demo.k8s.agent.toolstate.ToolStateService toolStateService,
             demo.k8s.agent.toolstate.ToolArtifactRepository repository,
-            demo.k8s.agent.privacykit.PrivacyKitService privacyKitService) {
-        return UnifiedToolExecutor.builder()
-                .mode(UnifiedToolExecutor.ExecutionMode.LOCAL)
+            demo.k8s.agent.privacykit.PrivacyKitService privacyKitService,
+            @Autowired(required = false) demo.k8s.agent.tools.remote.PythonRemoteToolExecutor pythonRemoteToolExecutor,
+            @Value("${remote.tools.base-url:}") String remoteBaseUrl,
+            @Value("${remote.tools.api-key:}") String remoteApiKey) {
+
+        var builder = UnifiedToolExecutor.builder()
+                .mode(UnifiedToolExecutor.ExecutionMode.AUTO)
                 .localExecutor(localExecutor)
                 .toolStateService(toolStateService)
                 .repository(repository)
-                .privacyKitService(privacyKitService)
-                .build();
+                .privacyKitService(privacyKitService);
+
+        // 如果配置了远程工具执行器，支持远程执行
+        if (pythonRemoteToolExecutor != null && remoteBaseUrl != null && !remoteBaseUrl.isEmpty()) {
+            builder.remoteExecutor(pythonRemoteToolExecutor)
+                   .remoteConfig(remoteBaseUrl, remoteApiKey);
+        }
+
+        return builder.build();
     }
 
     /**

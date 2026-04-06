@@ -58,13 +58,26 @@ async def execute_tool(
     start_time = time.time()
 
     try:
-        if request.tool_name == "shell":
+        # 工具名称别名映射（兼容 Spring Boot 工具命名）
+        tool_name = request.tool_name
+        if tool_name == "bash":
+            tool_name = "shell"
+        elif tool_name in ["file_read", "file_write"]:
+            pass  # 名称相同，不需要映射
+        elif tool_name == "glob" or tool_name == "grep":
+            # glob/grep 不支持，返回错误
+            return ToolResponse(
+                success=False,
+                error=f"Tool {request.tool_name} is not supported in remote mode. Use local execution."
+            )
+
+        if tool_name == "shell":
             result = await execute_shell(request.input, session_work_dir)
-        elif request.tool_name == "file_read":
+        elif tool_name == "file_read":
             result = await execute_file_read(request.input, session_work_dir)
-        elif request.tool_name == "file_write":
+        elif tool_name == "file_write":
             result = await execute_file_write(request.input, session_work_dir)
-        elif request.tool_name == "file_list":
+        elif tool_name == "file_list":
             result = await execute_file_list(request.input, session_work_dir)
         else:
             return ToolResponse(
