@@ -18,11 +18,32 @@ import java.util.regex.Pattern;
 
 /**
  * 本地文件编辑工具 - 使用字符串替换方式编辑文件。
- * 与 claude-code 的 FileEditTool 协议保持一致。
+ * 与 Claude Code 的 FileEditTool 对齐。
  */
 public class LocalFileEditTool {
 
     private static final Logger log = LoggerFactory.getLogger(LocalFileEditTool.class);
+
+    /**
+     * FileEdit 工具提示词（与 Claude Code 对齐）
+     */
+    private static final String FILE_EDIT_PROMPT = """
+            Edits a file by replacing old_string with new_string.
+
+            Usage:
+            - The file_path parameter must be an absolute path, not a relative path
+            - old_string must match EXACTLY the lines you want to replace, including all whitespace and indentation
+            - If old_string matches multiple locations in the file, use replace_all: true to replace all occurrences, otherwise the edit will fail due to ambiguity
+            - When using replace_all, only include enough context to uniquely identify the location
+            - To move code within a file: first insert at the new location, then remove the original
+            - To rename a variable/function: use replace_all: true
+            - This tool creates a backup copy before editing. If the edit fails, the original can be restored
+
+            Tips:
+            - Include 2-3 lines of context before and after the change to ensure uniqueness
+            - For complex edits, consider using multi_edit instead
+            - If the edit fails because the string matches multiple locations, try including more context or use replace_all
+            """;
 
     private static final int MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 

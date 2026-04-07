@@ -7,7 +7,6 @@ import demo.k8s.agent.tools.local.memory.MemorySearchTool;
 import demo.k8s.agent.tools.local.interaction.AskUserQuestionTool;
 import demo.k8s.agent.tools.local.planning.ExitPlanModeTool;
 import demo.k8s.agent.tools.local.planning.TaskTools;
-import demo.k8s.agent.tools.local.planning.TodoWriteTool;
 import demo.k8s.agent.tools.local.search.LocalGrepTool;
 import demo.k8s.agent.tools.local.shell.LocalBashTool;
 import demo.k8s.agent.tools.local.web.WebFetchTool;
@@ -56,9 +55,8 @@ public class LocalToolRegistry {
         tools.add(LocalBashTool.createTool());
 
         // 规划工具
-        tools.add(TodoWriteTool.createTool());
         tools.add(ExitPlanModeTool.createTool());
-        // Task 工具集
+        // Task 工具集（推荐使用）
         tools.add(TaskTools.createTaskCreateTool());
         tools.add(TaskTools.createTaskListTool());
         tools.add(TaskTools.createTaskGetTool());
@@ -128,15 +126,6 @@ public class LocalToolRegistry {
     public static List<ClaudeLikeTool> getVersionControlTools() {
         List<ClaudeLikeTool> tools = new ArrayList<>();
         tools.add(LocalGitTool.createTool());
-        return tools;
-    }
-
-    /**
-     * 获取规划相关工具
-     */
-    public static List<ClaudeLikeTool> getPlanningTools() {
-        List<ClaudeLikeTool> tools = new ArrayList<>();
-        tools.add(TodoWriteTool.createTool());
         return tools;
     }
 

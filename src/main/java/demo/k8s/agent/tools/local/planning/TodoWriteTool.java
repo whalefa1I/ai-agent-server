@@ -153,9 +153,30 @@ public class TodoWriteTool {
             output.put("oldTodos", oldTodos);
             output.put("newTodos", newTodos);
 
+            // 生成 markdown 格式的 todo 列表
+            StringBuilder markdownBuilder = new StringBuilder();
+            markdownBuilder.append("### Task List\n\n");
+            for (Map<String, Object> todo : newTodos) {
+                String status = (String) todo.get("status");
+                String content = (String) todo.get("content");
+                String checkbox;
+                switch (status) {
+                    case "completed":
+                        checkbox = "[x]";
+                        break;
+                    case "in_progress":
+                        checkbox = "[~]";
+                        break;
+                    default:
+                        checkbox = "[ ]";
+                }
+                markdownBuilder.append("- ").append(checkbox).append(" ").append(content).append("\n");
+            }
+            String markdownOutput = markdownBuilder.toString();
+
             return LocalToolResult.builder()
                     .success(true)
-                    .content("Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress.")
+                    .content(markdownOutput)
                     .executionLocation("local")
                     .metadata(new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(output))
                     .build();

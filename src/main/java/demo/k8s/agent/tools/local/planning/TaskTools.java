@@ -85,6 +85,51 @@ public class TaskTools {
 
     // ===== TaskCreate =====
 
+    /**
+     * TaskCreate 工具提示词（与 Claude Code 对齐）
+     */
+    private static final String TASK_CREATE_PROMPT = """
+            Use this tool to create a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.
+            It also helps the user understand the progress of the task and overall progress of their requests.
+
+            ## When to Use This Tool
+
+            Use this tool proactively in these scenarios:
+
+            - Complex multi-step tasks - When a task requires 3 or more distinct steps or actions
+            - Non-trivial and complex tasks - Tasks that require careful planning or multiple operations
+            - Plan mode - When using plan mode, create a task list to track the work
+            - User explicitly requests todo list - When the user directly asks you to use the todo list
+            - User provides multiple tasks - When users provide a list of things to be done (numbered or comma-separated)
+            - After receiving new instructions - Immediately capture user requirements as tasks
+            - When you start working on a task - Mark it as in_progress BEFORE beginning work
+            - After completing a task - Mark it as completed and add any new follow-up tasks discovered during implementation
+
+            ## When NOT to Use This Tool
+
+            Skip using this tool when:
+            - There is only a single, straightforward task
+            - The task is trivial and tracking it provides no organizational benefit
+            - The task can be completed in less than 3 trivial steps
+            - The task is purely conversational or informational
+
+            NOTE that you should not use this tool if there is only one trivial task to do. In this case you are better off just doing the task directly.
+
+            ## Task Fields
+
+            - **subject**: A brief, actionable title in imperative form (e.g., "Fix authentication bug in login flow")
+            - **description**: What needs to be done
+            - **activeForm** (optional): Present continuous form shown in the spinner when the task is in_progress (e.g., "Fixing authentication bug"). If omitted, the spinner shows the subject instead.
+
+            All tasks are created with status `pending`.
+
+            ## Tips
+
+            - Create tasks with clear, specific subjects that describe the outcome
+            - After creating tasks, use TaskUpdate to set up dependencies (blocks/blockedBy) if needed
+            - Check TaskList first to avoid creating duplicate tasks
+            """;
+
     private static final String TASK_CREATE_INPUT_SCHEMA =
             "{" +
             "  \"type\": \"object\"," +
@@ -98,8 +143,27 @@ public class TaskTools {
             "}";
 
     public static ClaudeLikeTool createTaskCreateTool() {
+        String detailedDescription = """
+                Create a new task in the task list.
+
+                Required parameters:
+                - subject: A brief, actionable title for the task in imperative form (e.g., "Fix authentication bug", "Add user login feature")
+                - description: Detailed description of what needs to be done
+
+                Optional parameters:
+                - activeForm: Present continuous form shown in spinner when task is in_progress (e.g., "Fixing authentication bug")
+                - metadata: Arbitrary metadata to attach to the task
+
+                Example:
+                {
+                  "subject": "Fix authentication bug in login flow",
+                  "description": "Users are unable to log in due to a session validation error",
+                  "activeForm": "Fixing authentication bug"
+                }
+                """;
+
         return ClaudeToolFactory.buildTool(
-                new ToolDefPartial("TaskCreate", ToolCategory.PLANNING, "Create a new task in the task list", TASK_CREATE_INPUT_SCHEMA, null, false),
+                new ToolDefPartial("TaskCreate", ToolCategory.PLANNING, detailedDescription, TASK_CREATE_INPUT_SCHEMA, null, false),
                 (json, ctx) -> {
                     // TaskCreate 需要用户确认（因为会创建新任务）
                     return null; // 由 PermissionManager 检查
@@ -123,6 +187,17 @@ public class TaskTools {
                 // 尝试从 name 获取
                 subject = (String) input.get("name");
             }
+            if (subject == null || subject.isBlank()) {
+                // 尝试从 prompt 提取（LLM 可能使用 prompt 字段）
+                String prompt = (String) input.get("prompt");
+                if (prompt != null && !prompt.isBlank()) {
+                    // 从 prompt 中提取简短主题（取前 20 个字符或第一个标点符号前的内容）
+                    subject = prompt.replaceAll("[,.!?.:，。！？：;]", " ").split("\\s+")[0];
+                    if (subject.length() > 30) {
+                        subject = subject.substring(0, 30) + "...";
+                    }
+                }
+            }
 
             String description = (String) input.get("description");
             if (description == null || description.isBlank()) {
@@ -132,13 +207,17 @@ public class TaskTools {
             if (description == null || description.isBlank()) {
                 description = (String) input.get("input");
             }
+            if (description == null || description.isBlank()) {
+                // 尝试从 prompt 获取
+                description = (String) input.get("prompt");
+            }
 
             // 最终检查
             if (subject == null || subject.isBlank()) {
                 return LocalToolResult.error("subject (or name) is required");
             }
             if (description == null || description.isBlank()) {
-                return LocalToolResult.error("description (or task_instruction or input) is required");
+                return LocalToolResult.error("description (or task_instruction or input or prompt) is required");
             }
 
             String activeForm = (String) input.get("activeForm");

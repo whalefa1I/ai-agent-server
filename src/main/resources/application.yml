@@ -13,7 +13,7 @@ spring:
   # Database Configuration
   datasource:
     # 开发环境使用 H2，生产环境使用 PostgreSQL (Railway)
-    url: ${DATABASE_URL:jdbc:h2:file:./data/agent;DB_CLOSE_ON_EXIT=FALSE}
+    url: ${DATABASE_URL:jdbc:h2:file:${java.io.tmpdir}/agent-data/agent;DB_CLOSE_ON_EXIT=FALSE}
     driver-class-name: ${DATABASE_DRIVER:org.h2.Driver}
     username: ${DATABASE_USERNAME:sa}
     password: ${DATABASE_PASSWORD:}
