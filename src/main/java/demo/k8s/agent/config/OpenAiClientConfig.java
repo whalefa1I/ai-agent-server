@@ -34,7 +34,7 @@ public class OpenAiClientConfig {
     @Value("${DASHSCOPE_API_KEY:sk-sp-ab63f62c8df3494a8763982b1a741081}")
     private String apiKey;
 
-    @Value("${DASHSCOPE_BASE_URL:https://coding.dashscope.aliyuncs.com}")
+    @Value("${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}")
     private String baseUrl;
 
     @Value("${DASHSCOPE_MODEL:qwen3.5-plus}")

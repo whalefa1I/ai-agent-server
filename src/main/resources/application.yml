@@ -34,7 +34,7 @@ spring:
   ai:
     openai:
       api-key: ${DASHSCOPE_API_KEY:sk-sp-ab63f62c8df3494a8763982b1a741081}
-      base-url: ${DASHSCOPE_BASE_URL:https://coding.dashscope.aliyuncs.com}
+      base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
       chat:
         options:
           model: ${DASHSCOPE_MODEL:qwen3.5-plus}
@@ -71,6 +71,10 @@ demo:
   dev:
     # 开发环境跳过配额检查
     skip-quota-check: true
+  # 记忆系统配置
+  memory:
+    # 是否启用记忆系统（包括语义搜索和 Embedding）
+    enabled: ${DEMO_MEMORY_ENABLED:false}
   coordinator:
     # true 时主会话仅 Task + SendMessage + TaskStop（占位），对齐 Claude Code Coordinator 工具分区思路
     enabled: ${DEMO_COORDINATOR_MODE:false}

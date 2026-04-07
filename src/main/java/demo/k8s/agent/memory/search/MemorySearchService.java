@@ -5,6 +5,7 @@ import demo.k8s.agent.memory.model.MemoryEntry;
 import demo.k8s.agent.memory.store.VectorStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -22,11 +23,14 @@ public class MemorySearchService {
 
     private final EmbeddingService embeddingService;
     private final VectorStore vectorStore;
+    private final boolean enabled;
 
-    public MemorySearchService(EmbeddingService embeddingService, VectorStore vectorStore) {
+    public MemorySearchService(EmbeddingService embeddingService, VectorStore vectorStore,
+                               @Value("${demo.memory.enabled:false}") boolean enabled) {
         this.embeddingService = embeddingService;
         this.vectorStore = vectorStore;
-        log.info("MemorySearchService initialized");
+        this.enabled = enabled;
+        log.info("MemorySearchService initialized (enabled={})", enabled);
     }
 
     /**
@@ -49,6 +53,9 @@ public class MemorySearchService {
      * @return 匹配的记忆条目列表
      */
     public List<MemoryEntry> search(String query, int maxResults, SearchFilter filter) {
+        if (!enabled) {
+            return List.of(); // 记忆系统禁用时直接返回空
+        }
         if (query == null || query.isBlank()) {
             return List.of();
         }
@@ -85,6 +92,9 @@ public class MemorySearchService {
      * @return 记忆条目和分数的列表
      */
     public List<SearchResultWithScore> searchWithScore(String query, int maxResults) {
+        if (!enabled) {
+            return List.of(); // 记忆系统禁用时直接返回空
+        }
         if (query == null || query.isBlank()) {
             return List.of();
         }
@@ -145,6 +155,9 @@ public class MemorySearchService {
      * @return 格式化的记忆片段
      */
     public String getRelevantMemoriesForContext(String currentMessage, String sessionId) {
+        if (!enabled) {
+            return ""; // 记忆系统禁用时直接返回空
+        }
         if (currentMessage == null || currentMessage.isBlank()) {
             return "";
         }

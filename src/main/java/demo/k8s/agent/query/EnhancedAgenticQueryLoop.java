@@ -40,6 +40,7 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
@@ -93,7 +94,7 @@ public class EnhancedAgenticQueryLoop {
 
     public EnhancedAgenticQueryLoop(
             ChatModel chatModel,
-            CompactionPipeline compactionPipeline,
+            @Qualifier("enhancedCompactionPipeline") CompactionPipeline compactionPipeline,
             ModelCallRetryPolicy retryPolicy,
             DemoQueryProperties queryProperties,
             ToolRegistry toolRegistry,
