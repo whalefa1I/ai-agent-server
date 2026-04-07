@@ -195,10 +195,10 @@ public class ContextCommandExecutor implements SlashCommandExecutor {
                 case ASSISTANT -> messages.add(new org.springframework.ai.chat.messages.AssistantMessage(content));
                 case SYSTEM -> messages.add(new org.springframework.ai.chat.messages.SystemMessage(content));
                 case TOOL -> {
-                    var toolResponse = new org.springframework.ai.chat.messages.ToolResponseMessage(
-                            List.of(new org.springframework.ai.chat.messages.ToolResponseMessage.ToolResponse(
-                                    "unknown", "unknown", content)),
-                            Map.of());
+                    var toolResponse = org.springframework.ai.chat.messages.ToolResponseMessage.builder()
+                            .responses(List.of(new org.springframework.ai.chat.messages.ToolResponseMessage.ToolResponse(
+                                    "unknown", "unknown", content)))
+                            .build();
                     messages.add(toolResponse);
                 }
             }

@@ -71,7 +71,7 @@ public class CompactCommandExecutor implements SlashCommandExecutor {
 
             // 清除旧消息（保留最近 1 条用户消息）
             List<ChatMessage> newHistory = new ArrayList<>();
-            newHistory.add(ChatMessage.system(compactSummary.getContent()));
+            newHistory.add(ChatMessage.system(compactSummary.getText()));
 
             // 保留最后一条用户消息
             for (int i = history.size() - 1; i >= 0; i--) {
@@ -189,7 +189,7 @@ public class CompactCommandExecutor implements SlashCommandExecutor {
         for (Message m : messages) {
             if (m instanceof UserMessage) {
                 userCount++;
-                String text = m.getContent();
+                String text = m.getText();
                 if (text != null && text.length() > 0 && recentTopics.size() < 5) {
                     recentTopics.add(truncate(text, 60));
                 }
@@ -245,10 +245,10 @@ public class CompactCommandExecutor implements SlashCommandExecutor {
                 case SYSTEM -> messages.add(new SystemMessage(content));
                 case TOOL -> {
                     // 工具消息转换为 ToolResponseMessage（简化处理）
-                    var toolResponse = new org.springframework.ai.chat.messages.ToolResponseMessage(
-                            List.of(new org.springframework.ai.chat.messages.ToolResponseMessage.ToolResponse(
-                                    "unknown", "unknown", content)),
-                            Map.of());
+                    var toolResponse = org.springframework.ai.chat.messages.ToolResponseMessage.builder()
+                            .responses(List.of(new org.springframework.ai.chat.messages.ToolResponseMessage.ToolResponse(
+                                    "unknown", "unknown", content)))
+                            .build();
                     messages.add(toolResponse);
                 }
             }
