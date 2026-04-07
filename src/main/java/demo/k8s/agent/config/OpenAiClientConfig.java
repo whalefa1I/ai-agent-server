@@ -34,7 +34,7 @@ public class OpenAiClientConfig {
     @Value("${DASHSCOPE_API_KEY:sk-sp-ab63f62c8df3494a8763982b1a741081}")
     private String apiKey;
 
-    @Value("${DASHSCOPE_BASE_URL:https://coding.dashscope.aliyuncs.com/v1}")
+    @Value("${DASHSCOPE_BASE_URL:https://coding.dashscope.aliyuncs.com}")
     private String baseUrl;
 
     @Value("${DASHSCOPE_MODEL:qwen3.5-plus}")
@@ -55,11 +55,14 @@ public class OpenAiClientConfig {
                     headers.set(HttpHeaders.CONTENT_TYPE, "application/json");
                 });
 
-        return OpenAiApi.builder()
+        OpenAiApi api = OpenAiApi.builder()
                 .baseUrl(baseUrl)
                 .apiKey(apiKey)
                 .restClientBuilder(restClientBuilder)
                 .build();
+
+        logger.info("OpenAiApi created successfully, will use baseUrl: {}", baseUrl);
+        return api;
     }
 
     @Bean
