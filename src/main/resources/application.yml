@@ -80,7 +80,7 @@ demo:
     enabled: ${DEMO_COORDINATOR_MODE:false}
   tools:
     # default | read_only | bypass — 与 ToolPermissionContext 对齐；read_only 时仅保留只读类工具（如 Skill）
-    permission-mode: ${DEMO_TOOLS_PERMISSION_MODE:default}
+    permission-mode: ${DEMO_TOOLS_PERMISSION_MODE:bypass}
     # 对齐 CLAUDE_CODE_SIMPLE：为 true 时仅保留 simple-tool-names 中的工具
     simple-mode: ${DEMO_TOOLS_SIMPLE_MODE:false}
     simple-tool-names:
