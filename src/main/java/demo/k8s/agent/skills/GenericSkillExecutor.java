@@ -162,8 +162,11 @@ public class GenericSkillExecutor {
      */
     private String executePythonScript(String skillDirectory, Map<String, Object> args) {
         log.info("--- 执行 Python 脚本 ---");
+        log.info("技能目录：{}", skillDirectory);
+        log.info("参数：{}", args);
         try {
             Path dir = Paths.get(skillDirectory);
+            log.info("绝对路径：{}", dir.toAbsolutePath());
 
             // 查找 Python 脚本
             Path scriptPath = findPythonScript(dir);
@@ -178,16 +181,21 @@ public class GenericSkillExecutor {
             }
 
             log.info("找到 Python 脚本：{}", scriptPath);
+            log.info("脚本是否存在：{}", Files.exists(scriptPath));
 
             // 构建命令
             List<String> command = new ArrayList<>();
-            command.add(pythonExecutable != null ? pythonExecutable : "python");
+            String pythonCmd = pythonExecutable != null ? pythonExecutable : "python3";
+            command.add(pythonCmd);
+            log.info("使用 Python 解释器：{}", pythonCmd);
+
             command.add(scriptPath.toString());
+            log.info("脚本路径：{}", scriptPath.toString());
 
             // 添加参数
             addArgumentsToCommand(command, args);
 
-            log.info("执行命令：{}", String.join(" ", command));
+            log.info("完整命令：{}", String.join(" ", command));
             log.info("工作目录：{}", dir.toAbsolutePath());
 
             // 执行命令

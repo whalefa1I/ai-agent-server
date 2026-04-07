@@ -2,9 +2,11 @@ package demo.k8s.agent.commandsystem;
 
 import jakarta.annotation.PostConstruct;
 
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.context.annotation.Configuration;
 
 import demo.k8s.agent.commandsystem.executors.CompactCommandExecutor;
+import demo.k8s.agent.commandsystem.executors.ContextCommandExecutor;
 import demo.k8s.agent.commandsystem.executors.PlanCommandExecutor;
 import demo.k8s.agent.state.ConversationSession;
 
@@ -17,18 +19,24 @@ public class SlashCommandExecutorConfiguration {
 
     private final SlashCommandRegistry registry;
     private final ConversationSession conversationSession;
+    private final ChatModel chatModel;
 
     public SlashCommandExecutorConfiguration(
             SlashCommandRegistry registry,
-            ConversationSession conversationSession) {
+            ConversationSession conversationSession,
+            ChatModel chatModel) {
         this.registry = registry;
         this.conversationSession = conversationSession;
+        this.chatModel = chatModel;
     }
 
     @PostConstruct
     public void registerExecutors() {
         // 注册 /compact 命令
-        registry.register("compact", new CompactCommandExecutor(conversationSession));
+        registry.register("compact", new CompactCommandExecutor(conversationSession, chatModel));
+
+        // 注册 /context 命令
+        registry.register("context", new ContextCommandExecutor(conversationSession));
 
         // 注册 /plan 命令
         registry.register("plan", new PlanCommandExecutor(conversationSession));
@@ -40,6 +48,7 @@ public class SlashCommandExecutorConfiguration {
 
                 ### 会话管理
                 - `/compact [instructions]` - 压缩对话上下文，保留摘要
+                - `/context` - 查看上下文使用情况
                 - `/clear` - 清除当前会话
 
                 ### 计划模式

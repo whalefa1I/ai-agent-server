@@ -54,6 +54,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/health").permitAll()         // 健康检查
                 .requestMatchers("/api/public/**").permitAll()      // 公开 API
                 .requestMatchers("/api/auth/**").permitAll()        // 认证相关
+                .requestMatchers("/api/commands/**").permitAll()    // 斜杠命令
+                .requestMatchers("/api/skills/**").permitAll()      // 技能管理
                 .requestMatchers("/actuator/**").permitAll()        // 监控端点
                 .requestMatchers("/error").permitAll()              // 错误页面
                 .requestMatchers("/h2-console/**").permitAll()      // H2 控制台（开发环境）

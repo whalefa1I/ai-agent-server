@@ -14,6 +14,12 @@ public class DemoQueryProperties {
     /** Tier1：单条 tool 结果字符串超过则截断（microcompact 类比） */
     private int microcompactMaxCharsPerToolResponse = 24_000;
 
+    /** Tier2：时间触发压缩 - 空闲超过此阈值（分钟）后清除旧工具结果，<=0 表示禁用 */
+    private int timeBasedCompactionGapMinutes = 30;
+
+    /** Tier2：时间触发压缩时保留的最近工具结果数量 */
+    private int timeBasedCompactionKeepRecent = 3;
+
     /** 估算总字符超过则尝试 Tier3 摘要（autocompact 类比，需开启 full-compact-enabled） */
     private int fullCompactThresholdChars = 120_000;
 
@@ -36,6 +42,22 @@ public class DemoQueryProperties {
 
     public void setMicrocompactMaxCharsPerToolResponse(int microcompactMaxCharsPerToolResponse) {
         this.microcompactMaxCharsPerToolResponse = microcompactMaxCharsPerToolResponse;
+    }
+
+    public int getTimeBasedCompactionGapMinutes() {
+        return timeBasedCompactionGapMinutes;
+    }
+
+    public void setTimeBasedCompactionGapMinutes(int timeBasedCompactionGapMinutes) {
+        this.timeBasedCompactionGapMinutes = timeBasedCompactionGapMinutes;
+    }
+
+    public int getTimeBasedCompactionKeepRecent() {
+        return timeBasedCompactionKeepRecent;
+    }
+
+    public void setTimeBasedCompactionKeepRecent(int timeBasedCompactionKeepRecent) {
+        this.timeBasedCompactionKeepRecent = timeBasedCompactionKeepRecent;
     }
 
     public int getFullCompactThresholdChars() {

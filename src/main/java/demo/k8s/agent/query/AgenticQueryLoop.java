@@ -6,6 +6,7 @@ import java.util.List;
 import demo.k8s.agent.config.AgentPrompts;
 import demo.k8s.agent.config.DemoCoordinatorProperties;
 import demo.k8s.agent.config.DemoQueryProperties;
+import demo.k8s.agent.skills.SkillService;
 import demo.k8s.agent.toolsystem.McpToolProvider;
 import demo.k8s.agent.toolsystem.ToolFeatureFlags;
 import demo.k8s.agent.toolsystem.ToolPermissionContext;
@@ -48,6 +49,7 @@ public class AgenticQueryLoop {
     private final ToolFeatureFlags toolFeatureFlags;
     private final McpToolProvider mcpToolProvider;
     private final DemoCoordinatorProperties coordinatorProperties;
+    private final SkillService skillService;
 
     public AgenticQueryLoop(
             ChatModel chatModel,
@@ -59,7 +61,8 @@ public class AgenticQueryLoop {
             ToolPermissionContext toolPermissionContext,
             ToolFeatureFlags toolFeatureFlags,
             McpToolProvider mcpToolProvider,
-            DemoCoordinatorProperties coordinatorProperties) {
+            DemoCoordinatorProperties coordinatorProperties,
+            SkillService skillService) {
         this.chatModel = chatModel;
         this.toolCallingManager = toolCallingManager;
         this.compactionPipeline = compactionPipeline;
@@ -70,6 +73,7 @@ public class AgenticQueryLoop {
         this.toolFeatureFlags = toolFeatureFlags;
         this.mcpToolProvider = mcpToolProvider;
         this.coordinatorProperties = coordinatorProperties;
+        this.skillService = skillService;
     }
 
     public AgenticTurnResult run(String userMessage) {
@@ -80,10 +84,16 @@ public class AgenticQueryLoop {
         ToolCallingChatOptions options =
                 ToolCallingChatOptions.builder().toolCallbacks(tools).build();
 
-        String system =
+        // 构建系统提示词，动态注入技能提示词（每次请求时检查版本变化）
+        String baseSystem =
                 coordinatorProperties.isEnabled()
                         ? AgentPrompts.COORDINATOR_ORCHESTRATOR_ONLY
                         : AgentPrompts.DEMO_COORDINATOR_SYSTEM;
+
+        // 动态获取技能提示词（版本变化时自动重载）
+        String skillsPrompt = skillService.buildSkillsPrompt();
+        String system = baseSystem + (skillsPrompt.isEmpty() ? "" : "\n\n" + skillsPrompt);
+
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(system));
         messages.add(new UserMessage(userMessage));

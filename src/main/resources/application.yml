@@ -52,6 +52,9 @@ logging:
     org.springframework.web.client: TRACE
     org.springframework.http: DEBUG
     org.springframework.http.client: DEBUG
+    # 降低 Hibernate 工具 schema 日志级别（避免索引已存在的警告）
+    org.hibernate.tool.schema.spi.ExceptionHandlerLoggedImpl: ERROR
+    org.hibernate.tool.schema.internal.ExceptionHandlerLoggedImpl: ERROR
   # Grafana Loki 配置
   loki:
     url: ${LOKI_URL:http://localhost:3100/loki/api/v1/push}
@@ -63,15 +66,11 @@ logging:
     datepattern: "yyyy-MM-dd HH:mm:ss.SSS"
     filepattern: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [${spring.application.name:-},%X{traceId:-},%X{spanId:-}] %m%n"
 
-# 禁用 actuator 数据库健康检查
-management:
-  health:
-    db:
-      enabled: false
-    datasource:
-      enabled: false
-
+# 开发环境配置
 demo:
+  dev:
+    # 开发环境跳过配额检查
+    skip-quota-check: true
   coordinator:
     # true 时主会话仅 Task + SendMessage + TaskStop（占位），对齐 Claude Code Coordinator 工具分区思路
     enabled: ${DEMO_COORDINATOR_MODE:false}
@@ -93,8 +92,15 @@ demo:
   query:
     # 对齐 query.ts 外层 maxTurns（模型调用轮次上限）
     max-turns: ${DEMO_QUERY_MAX_TURNS:32}
+    # Tier 1: microcompact - 单条 tool result 最大字符数
     microcompact-max-chars-per-tool-response: 24000
+    # Tier 2: time-based compaction - 空闲阈值（分钟），<=0 表示禁用
+    time-based-compaction-gap-minutes: ${DEMO_QUERY_TIME_BASED_GAP:30}
+    # Tier 2: time-based compaction - 保留最近工具结果数量
+    time-based-compaction-keep-recent: 3
+    # Tier 3: autocompact - 总字符阈值
     full-compact-threshold-chars: 120000
+    # Tier 3: autocompact - 开关
     full-compact-enabled: ${DEMO_QUERY_FULL_COMPACT:false}
     retry:
       max-attempts: 5
@@ -136,6 +142,27 @@ demo:
       encrypt-key: ${DEMO_FEISHU_ENCRYPT_KEY:}
       # 飞书 API 基础 URL
       api-base-url: ${DEMO_FEISHU_API_BASE_URL:https://open.feishu.cn/open-apis}
+  skills:
+    # 技能系统开关
+    enabled: ${DEMO_SKILLS_ENABLED:true}
+    # 热加载配置
+    watch:
+      # 是否启用文件监听热加载
+      enabled: ${DEMO_SKILLS_WATCH_ENABLED:true}
+      # 防抖延迟（毫秒）
+      debounce-ms: ${DEMO_SKILLS_WATCH_DEBOUNCE_MS:250}
+      # 是否忽略 .git 目录
+      ignore-git: ${DEMO_SKILLS_WATCH_IGNORE_GIT:true}
+      # 是否忽略 node_modules 目录
+      ignore-node-modules: ${DEMO_SKILLS_WATCH_IGNORE_NODE_MODULES:true}
+
+# 禁用 actuator 数据库健康检查
+management:
+  health:
+    db:
+      enabled: false
+    datasource:
+      enabled: false
 
 # Python 远程工具执行器配置
 remote:

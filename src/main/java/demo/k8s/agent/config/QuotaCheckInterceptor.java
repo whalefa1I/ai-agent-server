@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -25,12 +26,21 @@ public class QuotaCheckInterceptor implements HandlerInterceptor {
 
     private final QuotaService quotaService;
 
+    @Value("${demo.dev.skip-quota-check:false}")
+    private boolean skipQuotaCheck;
+
     public QuotaCheckInterceptor(QuotaService quotaService) {
         this.quotaService = quotaService;
     }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        // 开发环境跳过配额检查
+        if (skipQuotaCheck) {
+            log.debug("开发模式：跳过配额检查");
+            return true;
+        }
+
         // 跳过健康检查和静态资源
         String uri = request.getRequestURI();
         if (uri.startsWith("/actuator/") || uri.startsWith("/api/logs/") || uri.equals("/health")) {
@@ -76,8 +86,13 @@ public class QuotaCheckInterceptor implements HandlerInterceptor {
             return apiKey; // 暂时直接用 API Key 作为用户 ID
         }
 
-        // 3. 从请求参数获取
+        // 3. 从请求参数获取 (userId 或 accountId)
         userId = request.getParameter("userId");
+        if (userId != null && !userId.isBlank()) {
+            return userId;
+        }
+        // 兼容 accountId 参数（前端 Happy 协议使用）
+        userId = request.getParameter("accountId");
         if (userId != null && !userId.isBlank()) {
             return userId;
         }

@@ -5,6 +5,7 @@ import demo.k8s.agent.skills.GenericSkillExecutor;
 import demo.k8s.agent.skills.SkillExecutorRegistry;
 import demo.k8s.agent.skills.SkillRegistry;
 import demo.k8s.agent.skills.SkillService;
+import demo.k8s.agent.skills.SkillsSnapshotService;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -32,11 +33,18 @@ public class SkillsConfiguration {
     }
 
     @Bean
+    public SkillsSnapshotService skillsSnapshotService() {
+        return new SkillsSnapshotService();
+    }
+
+    @Bean
     public SkillService skillService(
             SkillRegistry skillRegistry,
             SkillExecutorRegistry skillExecutorRegistry,
-            GenericSkillExecutor genericSkillExecutor) {
-        return new SkillService(skillRegistry, skillExecutorRegistry, genericSkillExecutor);
+            GenericSkillExecutor genericSkillExecutor,
+            SkillsSnapshotService snapshotService,
+            SkillsProperties skillsProperties) {
+        return new SkillService(skillRegistry, skillExecutorRegistry, genericSkillExecutor, snapshotService, skillsProperties);
     }
 
     @Bean

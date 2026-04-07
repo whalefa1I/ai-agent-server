@@ -50,20 +50,22 @@ public class AnonymousApiKeyController {
         createRequest.setKeyScope(ApiKey.KeyScope.PERSONAL);
         createRequest.setQuotaPlanId("default");  // 使用默认配额计划
 
-        // 设置较宽松的速率限制（防止滥用）
-        createRequest.setRateLimitPerSecond(5);   // 每秒 5 次
-        createRequest.setRateLimitPerMinute(60);  // 每分钟 60 次
-        createRequest.setRateLimitPerHour(1000);  // 每小时 1000 次
+        // 开发模式 - 无速率限制
+        createRequest.setRateLimitPerSecond(1000);  // 每秒 1000 次（实际无限制）
+        createRequest.setRateLimitPerMinute(60000); // 每分钟 60000 次
+        createRequest.setRateLimitPerHour(1000000); // 每小时 100 万次
 
         // 设置过期时间（7 天后过期）
         createRequest.setExpiresAt(Instant.now().plusSeconds(7 * 24 * 60 * 60));
 
-        // 设置权限（限制只能访问公开端点）
+        // 设置权限（开发模式开放所有权限）
         Map<String, Object> permissions = new HashMap<>();
         permissions.put("happy_protocol", true);
-        permissions.put("logs_read", false);
-        permissions.put("scheduler", false);
-        permissions.put("admin", false);
+        permissions.put("logs_read", true);
+        permissions.put("scheduler", true);
+        permissions.put("admin", true);
+        permissions.put("tools", true);
+        permissions.put("models", true);
         createRequest.setPermissions(permissions);
 
         // 设置允许的端点前缀

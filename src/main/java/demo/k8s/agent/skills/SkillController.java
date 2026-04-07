@@ -21,9 +21,13 @@ public class SkillController {
     private static final Logger log = LoggerFactory.getLogger(SkillController.class);
 
     private final SkillService skillService;
+    private final SkillsWatchService skillsWatchService;
+    private final SkillsSnapshotService snapshotService;
 
-    public SkillController(SkillService skillService) {
+    public SkillController(SkillService skillService, SkillsWatchService skillsWatchService, SkillsSnapshotService snapshotService) {
         this.skillService = skillService;
+        this.skillsWatchService = skillsWatchService;
+        this.snapshotService = snapshotService;
     }
 
     /**
@@ -147,6 +151,35 @@ public class SkillController {
         response.put("success", true);
         response.put("count", skillService.getAllSkills().size());
         response.put("message", "Skills reloaded");
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 获取技能系统状态
+     */
+    @GetMapping("/status")
+    public ResponseEntity<Map<String, Object>> getSkillsStatus() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("watch_enabled", skillsWatchService.isWatching());
+        response.put("snapshot_version", snapshotService.getSnapshotVersion());
+        response.put("last_change_time", snapshotService.getLastChangeTime());
+        response.put("last_change_path", snapshotService.getLastChangePath());
+        response.put("loaded_skills_count", skillService.getLoadedSkillsCount());
+        response.put("skills_prompt_length", skillService.buildSkillsPrompt().length());
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 获取技能提示词（用于调试）
+     */
+    @GetMapping("/prompt")
+    public ResponseEntity<Map<String, String>> getSkillsPrompt() {
+        String prompt = skillService.buildSkillsPrompt();
+
+        Map<String, String> response = new HashMap<>();
+        response.put("prompt", prompt);
 
         return ResponseEntity.ok(response);
     }

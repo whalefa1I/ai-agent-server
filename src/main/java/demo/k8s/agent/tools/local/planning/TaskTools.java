@@ -117,8 +117,30 @@ public class TaskTools {
 
     public static LocalToolResult executeTaskCreate(Map<String, Object> input) {
         try {
+            // 兼容多种参数格式
             String subject = (String) input.get("subject");
+            if (subject == null || subject.isBlank()) {
+                // 尝试从 name 获取
+                subject = (String) input.get("name");
+            }
+
             String description = (String) input.get("description");
+            if (description == null || description.isBlank()) {
+                // 尝试从 task_instruction 或 input 获取
+                description = (String) input.get("task_instruction");
+            }
+            if (description == null || description.isBlank()) {
+                description = (String) input.get("input");
+            }
+
+            // 最终检查
+            if (subject == null || subject.isBlank()) {
+                return LocalToolResult.error("subject (or name) is required");
+            }
+            if (description == null || description.isBlank()) {
+                return LocalToolResult.error("description (or task_instruction or input) is required");
+            }
+
             String activeForm = (String) input.get("activeForm");
             @SuppressWarnings("unchecked")
             Map<String, Object> metadata = (Map<String, Object>) input.get("metadata");
@@ -227,11 +249,35 @@ public class TaskTools {
 
     public static LocalToolResult executeTaskGet(Map<String, Object> input) {
         try {
+            // 兼容多种参数格式：task_id, id, name
             String taskId = (String) input.get("task_id");
+            if (taskId == null || taskId.isBlank()) {
+                taskId = (String) input.get("id");
+            }
+            if (taskId == null || taskId.isBlank()) {
+                taskId = (String) input.get("name");
+            }
+
+            // 最终检查
+            if (taskId == null || taskId.isBlank()) {
+                return LocalToolResult.error("task_id (or id or name) is required");
+            }
 
             Task task = tasks.get(taskId);
             if (task == null) {
-                return LocalToolResult.error("Task not found: " + taskId);
+                // 尝试查找名称匹配的任务
+                Task matchedTask = null;
+                for (Task t : tasks.values()) {
+                    if (t.subject.equalsIgnoreCase(taskId) || t.id.contains(taskId.toLowerCase())) {
+                        matchedTask = t;
+                        break;
+                    }
+                }
+                if (matchedTask != null) {
+                    task = matchedTask;
+                } else {
+                    return LocalToolResult.error("Task not found: " + taskId);
+                }
             }
 
             Map<String, Object> output = new LinkedHashMap<>();
@@ -279,11 +325,36 @@ public class TaskTools {
 
     public static LocalToolResult executeTaskUpdate(Map<String, Object> input) {
         try {
+            // 兼容多种参数格式：task_id, id, name
             String taskId = (String) input.get("task_id");
+            if (taskId == null || taskId.isBlank()) {
+                taskId = (String) input.get("id");
+            }
+            if (taskId == null || taskId.isBlank()) {
+                taskId = (String) input.get("name");
+            }
+
+            // 最终检查
+            if (taskId == null || taskId.isBlank()) {
+                return LocalToolResult.error("task_id (or id or name) is required");
+            }
 
             Task task = tasks.get(taskId);
             if (task == null) {
-                return LocalToolResult.error("Task not found: " + taskId);
+                // 尝试查找名称匹配的任务
+                Task matchedTask = null;
+                for (Task t : tasks.values()) {
+                    if (t.subject.equalsIgnoreCase(taskId) || t.id.contains(taskId.toLowerCase())) {
+                        matchedTask = t;
+                        break;
+                    }
+                }
+                if (matchedTask != null) {
+                    task = matchedTask;
+                    taskId = task.id; // 使用匹配到的任务 ID
+                } else {
+                    return LocalToolResult.error("Task not found: " + taskId);
+                }
             }
 
             List<String> updates = new ArrayList<>();
@@ -366,11 +437,35 @@ public class TaskTools {
 
     public static LocalToolResult executeTaskStop(Map<String, Object> input) {
         try {
+            // 兼容多种参数格式：task_id, id, name
             String taskId = (String) input.get("task_id");
+            if (taskId == null || taskId.isBlank()) {
+                taskId = (String) input.get("id");
+            }
+            if (taskId == null || taskId.isBlank()) {
+                taskId = (String) input.get("name");
+            }
+
+            // 最终检查
+            if (taskId == null || taskId.isBlank()) {
+                return LocalToolResult.error("task_id (or id or name) is required");
+            }
 
             Task task = tasks.get(taskId);
             if (task == null) {
-                return LocalToolResult.error("Task not found: " + taskId);
+                // 尝试查找名称匹配的任务
+                Task matchedTask = null;
+                for (Task t : tasks.values()) {
+                    if (t.subject.equalsIgnoreCase(taskId) || t.id.contains(taskId.toLowerCase())) {
+                        matchedTask = t;
+                        break;
+                    }
+                }
+                if (matchedTask != null) {
+                    task = matchedTask;
+                } else {
+                    return LocalToolResult.error("Task not found: " + taskId);
+                }
             }
 
             task.status = TaskStatus.STOPPED;
@@ -419,14 +514,38 @@ public class TaskTools {
 
     public static LocalToolResult executeTaskOutput(Map<String, Object> input) {
         try {
+            // 兼容多种参数格式：task_id, id, name
             String taskId = (String) input.get("task_id");
+            if (taskId == null || taskId.isBlank()) {
+                taskId = (String) input.get("id");
+            }
+            if (taskId == null || taskId.isBlank()) {
+                taskId = (String) input.get("name");
+            }
+
+            // 最终检查
+            if (taskId == null || taskId.isBlank()) {
+                return LocalToolResult.error("task_id (or id or name) is required");
+            }
 
             Task task = tasks.get(taskId);
             if (task == null) {
-                return LocalToolResult.error("Task not found: " + taskId);
+                // 尝试查找名称匹配的任务
+                Task matchedTask = null;
+                for (Task t : tasks.values()) {
+                    if (t.subject.equalsIgnoreCase(taskId) || t.id.contains(taskId.toLowerCase())) {
+                        matchedTask = t;
+                        break;
+                    }
+                }
+                if (matchedTask != null) {
+                    task = matchedTask;
+                } else {
+                    return LocalToolResult.error("Task not found: " + taskId);
+                }
             }
 
-            // 获取任务输出（这里从 metadata 中获取）
+            // 获取任务输出（从 metadata 中获取）
             Object outputObj = task.metadata.get("output");
             String output = outputObj != null ? outputObj.toString() : "No output available";
 

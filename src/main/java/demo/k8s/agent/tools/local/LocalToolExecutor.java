@@ -5,12 +5,11 @@ import demo.k8s.agent.tools.local.file.LocalFileReadTool;
 import demo.k8s.agent.tools.local.file.LocalFileWriteTool;
 import demo.k8s.agent.tools.local.file.LocalFileEditTool;
 import demo.k8s.agent.tools.local.planning.TodoWriteTool;
+import demo.k8s.agent.tools.local.planning.TaskTools;
 import demo.k8s.agent.tools.local.search.LocalGrepTool;
 import demo.k8s.agent.tools.local.shell.LocalBashTool;
 import demo.k8s.agent.toolsystem.ClaudeLikeTool;
 import demo.k8s.agent.toolsystem.ToolPermissionContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
@@ -20,8 +19,6 @@ import java.util.Map;
  * 未来扩展：可通过实现 {@link RemoteToolExecutor} 支持 HTTP 远程调用。
  */
 public class LocalToolExecutor {
-
-    private static final Logger log = LoggerFactory.getLogger(LocalToolExecutor.class);
 
     /**
      * 执行本地工具
@@ -46,6 +43,13 @@ public class LocalToolExecutor {
             case "grep" -> LocalGrepTool.execute(input);
             case "bash" -> LocalBashTool.execute(input);
             case "todo_write" -> TodoWriteTool.execute(input);
+            // Task 工具集
+            case "TaskCreate" -> TaskTools.executeTaskCreate(input);
+            case "TaskList" -> TaskTools.executeTaskList(input);
+            case "TaskGet" -> TaskTools.executeTaskGet(input);
+            case "TaskUpdate" -> TaskTools.executeTaskUpdate(input);
+            case "TaskStop" -> TaskTools.executeTaskStop(input);
+            case "TaskOutput" -> TaskTools.executeTaskOutput(input);
             default -> LocalToolResult.error("Unknown tool: " + toolName);
         };
     }

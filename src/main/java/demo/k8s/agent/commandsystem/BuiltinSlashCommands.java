@@ -17,6 +17,7 @@ public final class BuiltinSlashCommands {
         return List.of(
                 new SlashCommand("clear", List.of(), "清除当前会话上下文", SlashCommandSource.BUILTIN, true),
                 new SlashCommand("compact", List.of(), "压缩上下文窗口", SlashCommandSource.BUILTIN, true),
+                new SlashCommand("context", List.of(), "查看上下文使用情况", SlashCommandSource.BUILTIN, true),
                 new SlashCommand("help", List.of(), "显示命令帮助", SlashCommandSource.BUILTIN, true),
                 new SlashCommand("config", List.of(), "查看或修改配置", SlashCommandSource.BUILTIN, true),
                 new SlashCommand("review", List.of(), "代码审查流程", SlashCommandSource.BUILTIN, true));

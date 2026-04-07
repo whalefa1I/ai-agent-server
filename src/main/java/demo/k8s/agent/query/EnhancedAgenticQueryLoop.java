@@ -18,6 +18,9 @@ import demo.k8s.agent.observability.events.Event.ErrorEvent;
 import demo.k8s.agent.observability.logging.StructuredLogger;
 import demo.k8s.agent.observability.tracing.TraceContext;
 import demo.k8s.agent.observability.metrics.MetricsCollector;
+import demo.k8s.agent.skills.SkillService;
+import demo.k8s.agent.tools.UnifiedToolExecutor;
+import demo.k8s.agent.tools.local.LocalToolResult;
 import demo.k8s.agent.toolsystem.*;
 import demo.k8s.agent.toolstate.ToolStateService;
 import demo.k8s.agent.toolstate.ToolStatus;
@@ -80,6 +83,8 @@ public class EnhancedAgenticQueryLoop {
     private final HookService hookService;
     private final ToolStateService toolStateService;
     private final ToolCallingManager toolCallingManager;
+    private final SkillService skillService;
+    private final UnifiedToolExecutor unifiedToolExecutor;
 
     // 权限确认回调（用于 WebSocket TUI）
     private Function<PermissionRequest, CompletableFuture<PermissionResult>> permissionCallback;
@@ -103,7 +108,9 @@ public class EnhancedAgenticQueryLoop {
             MemorySearchService memorySearchService,
             HookService hookService,
             ToolStateService toolStateService,
-            ToolCallingManager toolCallingManager) {
+            ToolCallingManager toolCallingManager,
+            SkillService skillService,
+            UnifiedToolExecutor unifiedToolExecutor) {
         this.chatModel = chatModel;
         this.compactionPipeline = compactionPipeline;
         this.retryPolicy = retryPolicy;
@@ -121,6 +128,8 @@ public class EnhancedAgenticQueryLoop {
         this.hookService = hookService;
         this.toolStateService = toolStateService;
         this.toolCallingManager = toolCallingManager;
+        this.skillService = skillService;
+        this.unifiedToolExecutor = unifiedToolExecutor;
 
         // 订阅 ToolCalledEvent 事件，用于在工具执行时创建 artifact
         // 注意：这是在工具执行之后，但可以用来记录工具调用历史
@@ -179,11 +188,15 @@ public class EnhancedAgenticQueryLoop {
         ToolCallingChatOptions options =
                 ToolCallingChatOptions.builder().toolCallbacks(tools).build();
 
-        // 构建系统提示
-        String system =
+        // 构建系统提示，动态注入技能提示词（每次请求时检查版本变化）
+        String baseSystem =
                 coordinatorProperties.isEnabled()
                         ? AgentPrompts.COORDINATOR_ORCHESTRATOR_ONLY
                         : AgentPrompts.DEMO_COORDINATOR_SYSTEM;
+
+        // 动态获取技能提示词（版本变化时自动重载）
+        String skillsPrompt = skillService.buildSkillsPrompt();
+        String system = baseSystem + (skillsPrompt.isEmpty() ? "" : "\n\n" + skillsPrompt);
 
         // 注入记忆上下文（语义搜索相关记忆）
         String memoryContext = memorySearchService != null
@@ -455,8 +468,27 @@ public class EnhancedAgenticQueryLoop {
                     truncate(tc.arguments(), 100));
 
             try {
-                // 执行工具 - TODO: 需要替换 toolCallingManager
-                String toolOutput = "Tool execution not yet implemented for " + tc.name();
+                // 使用 UnifiedToolExecutor 执行工具
+                Map<String, Object> inputMap = objectMapper.convertValue(input, Map.class);
+                LocalToolResult result = unifiedToolExecutor.execute(tool, inputMap, toolPermissionContext);
+                String toolOutput;
+
+                if (result.isSuccess()) {
+                    // 构建结构化输出
+                    Map<String, Object> outputData = new HashMap<>();
+                    outputData.put("content", result.getContent());
+                    outputData.put("location", result.getExecutionLocation());
+                    outputData.put("durationMs", result.getDurationMs());
+                    if (result.getMetadata() != null) {
+                        outputData.put("metadata", result.getMetadata());
+                    }
+                    toolOutput = objectMapper.writeValueAsString(outputData);
+                } else {
+                    toolOutput = objectMapper.writeValueAsString(Map.of(
+                        "error", result.getContent(),
+                        "success", false
+                    ));
+                }
 
                 // 记录成功
                 sessionStats.completeToolCall(toolMetrics, toolOutput);

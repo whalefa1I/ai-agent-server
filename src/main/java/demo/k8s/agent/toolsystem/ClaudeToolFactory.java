@@ -127,6 +127,7 @@ public final class ClaudeToolFactory {
                 actualExecutor)
                 .description(claudeTool.description())
                 .inputSchema(claudeTool.inputSchemaJson())
+                .inputType(java.util.Map.class)
                 .build();
     }
 }

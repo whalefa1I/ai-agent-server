@@ -1,22 +1,35 @@
 ---
 name: calculator
 description: |
-  Accurate mathematical calculations. Use when user needs to compute: (1) Basic arithmetic (+, -, *, /), 
-  (2) Powers and roots (^, sqrt), (3) Percentages, (4) Trigonometry (sin, cos, tan), 
-  (5) Logarithms (log, ln), (6) Complex expressions, (7) Unit conversions.
+  Accurate mathematical calculations by running the bundled Python script.
+  Use this skill when you need exact arithmetic, functions, or constants.
+metadata:
+  openclaw:
+    os: ["win32","linux","darwin"]
+    requires:
+      bins: ["python"]
 ---
 
 # Calculator Skill
 
-Perform accurate mathematical calculations using the `calc.py` script.
+Use this skill to evaluate a math expression by executing the bundled script.
 
-## Usage
+## How to use
 
-Run calculations directly with Python:
+1. Read this `SKILL.md` (so you have the correct script path).
+2. Execute the script via the `bash` tool.
+
+## Command
+
+Run:
 
 ```bash
-python3 <skill-path>/scripts/calc.py "<expression>"
+python "scripts/calc.py" "<expression>"
 ```
+
+Notes:
+- Run the command with the working directory set to the skill folder (the directory containing this `SKILL.md`).
+- If `python` is not available but `python3` is, use `python3` instead.
 
 ## Supported Operations
 

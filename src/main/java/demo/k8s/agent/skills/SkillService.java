@@ -3,19 +3,20 @@ package demo.k8s.agent.skills;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import demo.k8s.agent.config.SkillsProperties;
 import demo.k8s.agent.toolsystem.ClaudeLikeTool;
 import demo.k8s.agent.toolsystem.ClaudeToolFactory;
 import demo.k8s.agent.toolsystem.ToolCategory;
 import demo.k8s.agent.toolsystem.ToolDefPartial;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.io.File;
 import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -45,19 +46,50 @@ public class SkillService {
     );
 
     private final SkillRegistry skillRegistry;
-    private final SkillExecutorRegistry skillExecutorRegistry;
     private final GenericSkillExecutor genericSkillExecutor;
+    private final SkillsSnapshotService snapshotService;
+    private final SkillsProperties skillsProperties;
 
     // 已加载的技能清单
     private final Map<String, SkillManifest> loadedSkills = new ConcurrentHashMap<>();
 
+    // 最后加载的技能快照版本
+    private volatile long lastLoadedSnapshotVersion = -1;
+
+    /**
+     * 技能快照缓存 - 避免每轮请求重建 prompt
+     */
+    private volatile SkillsSnapshot cachedSnapshot;
+
+    /**
+     * 技能快照 - 包含版本、合格技能列表和预构建的 prompt
+     */
+    private static class SkillsSnapshot {
+        final long version;
+        final List<SkillManifest> eligibleSkills;
+        final String fullCatalogPrompt;
+        final String compactCatalogPrompt;
+
+        SkillsSnapshot(long version, List<SkillManifest> eligibleSkills,
+                       String fullCatalogPrompt, String compactCatalogPrompt) {
+            this.version = version;
+            this.eligibleSkills = eligibleSkills;
+            this.fullCatalogPrompt = fullCatalogPrompt;
+            this.compactCatalogPrompt = compactCatalogPrompt;
+        }
+    }
+
     public SkillService(
             SkillRegistry skillRegistry,
             SkillExecutorRegistry skillExecutorRegistry,
-            GenericSkillExecutor genericSkillExecutor) {
+            GenericSkillExecutor genericSkillExecutor,
+            SkillsSnapshotService snapshotService,
+            @Autowired(required = false) SkillsProperties skillsProperties) {
         this.skillRegistry = skillRegistry;
-        this.skillExecutorRegistry = skillExecutorRegistry;
         this.genericSkillExecutor = genericSkillExecutor;
+        this.snapshotService = snapshotService;
+        this.skillsProperties = skillsProperties != null ? skillsProperties : new SkillsProperties();
+        // 在构造函数中直接加载技能，确保在 Bean 使用前已就绪
         loadAllSkills();
     }
 
@@ -85,6 +117,7 @@ public class SkillService {
 
             public static class Requires {
                 public List<String> bins;
+                public List<String> anyBins;
                 public List<String> env;
                 public List<String> config;
             }
@@ -129,7 +162,296 @@ public class SkillService {
             }
         }
 
-        log.info("加载了 {} 个技能", loadedSkills.size());
+        // 更新快照版本标记
+        lastLoadedSnapshotVersion = snapshotService.getSnapshotVersion();
+
+        // 构建并缓存 snapshot
+        List<SkillManifest> eligibleSkills = loadedSkills.values().stream()
+                .filter(this::isEligibleForCatalog)
+                .sorted(Comparator.comparing(s -> s.name.toLowerCase(Locale.ROOT)))
+                .toList();
+
+        String fullPrompt = buildCatalogXml(eligibleSkills, false);
+        String compactPrompt = buildCatalogXml(eligibleSkills, true);
+
+        cachedSnapshot = new SkillsSnapshot(
+                lastLoadedSnapshotVersion,
+                eligibleSkills,
+                applyBudgetLimits(fullPrompt, compactPrompt, 30_000),
+                applyBudgetLimits(compactPrompt, compactPrompt, 30_000)
+        );
+
+        log.info("加载了 {} 个技能 (快照版本：{}, eligible: {})",
+                loadedSkills.size(), lastLoadedSnapshotVersion, eligibleSkills.size());
+    }
+
+    /**
+     * 应用预算限制，返回合适的 prompt 版本
+     */
+    private String applyBudgetLimits(String fullPrompt, String compactPrompt, int maxChars) {
+        if (fullPrompt.length() <= maxChars) {
+            return fullPrompt;
+        }
+        if (compactPrompt.length() <= maxChars) {
+            return "⚠️ Skills catalog using compact format (descriptions omitted).\n" + compactPrompt;
+        }
+        // 极端情况下截断
+        return truncatePrompt(compactPrompt, maxChars);
+    }
+
+    /**
+     * 截断 prompt 以适应预算
+     */
+    private String truncatePrompt(String prompt, int maxChars) {
+        if (prompt.length() <= maxChars) {
+            return prompt;
+        }
+        // 找到最后一个完整的 skill 标签
+        int cutoff = prompt.lastIndexOf("</skill>");
+        if (cutoff != -1 && cutoff + 9 <= maxChars) {
+            return prompt.substring(0, cutoff + 9) + "\n</available_skills>\n";
+        }
+        return prompt.substring(0, Math.min(maxChars, prompt.length()));
+    }
+
+    /**
+     * 构建 Skills catalog 提示词（用于注入到 system message）。
+     * <p>
+     * 采用混合模式：
+     * - 默认注入可用技能目录（name/description/location）
+     * - 模型可选择：
+     *   1. 直接调用 skill_<name> 工具（快捷方式）
+     *   2. 使用文件读取工具读取 SKILL.md 获取详细指令
+     * <p>
+     * 使用 snapshot 缓存避免每轮重建 prompt。
+     */
+    public String buildSkillsPrompt() {
+        // 检查是否需要重新加载（快照版本变化时）
+        if (snapshotService.getSnapshotVersion() != lastLoadedSnapshotVersion) {
+            log.info("检测到技能快照版本变化 ({} -> {})，重新加载技能",
+                    lastLoadedSnapshotVersion, snapshotService.getSnapshotVersion());
+            loadAllSkills();
+        }
+
+        // 使用 cached snapshot（如果已加载）
+        if (cachedSnapshot != null) {
+            log.debug("使用技能 snapshot 缓存：version={}", cachedSnapshot.version);
+            return cachedSnapshot.fullCatalogPrompt;
+        }
+
+        // 如果没有 cached snapshot 且没有技能，返回空字符串
+        return "";
+    }
+
+    /**
+     * 构建 catalog XML prompt（OpenClaw 风格）
+     * <p>
+     * 输出格式与 OpenClaw 官方实现对齐：
+     * - XML 格式：&lt;available_skills&gt;&lt;skill&gt;...&lt;/skill&gt;&lt;/available_skills&gt;
+     * - 每个技能包含：name, description, location
+     * - location 为 SKILL.md 的绝对路径（home 路径压缩为 ~/）
+     * <p>
+     * 模型使用方式：
+     * - 使用 file_read 工具读取 skill 的 SKILL.md 文件（当任务与 description 匹配时）
+     * - 技能文件中的相对路径应相对于 skill 目录解析
+     */
+    private String buildCatalogXml(List<SkillManifest> skills, boolean compact) {
+        if (skills == null || skills.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n\nThe following skills provide specialized instructions for specific tasks.");
+        sb.append("\nUse the file_read tool to load a skill's file when the task matches its description.");
+        sb.append("\nWhen a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.");
+        sb.append("\n\n<available_skills>\n");
+
+        for (SkillManifest s : skills) {
+            String name = safeTrim(s.name);
+            if (name.isEmpty()) {
+                continue;
+            }
+            String description = safeTrim(s.description);
+            String location = compactHomePath(joinPath(s.directory, "SKILL.md"));
+
+            sb.append("  <skill>\n");
+            sb.append("    <name>").append(escapeXml(name)).append("</name>\n");
+            sb.append("    <description>").append(escapeXml(description)).append("</description>\n");
+            sb.append("    <location>").append(escapeXml(location)).append("</location>\n");
+            sb.append("  </skill>\n");
+        }
+
+        sb.append("</available_skills>\n");
+        return sb.toString();
+    }
+
+    /**
+     * OpenClaw 风格 gating（完整实现）：
+     * - metadata.always: true → 直接通过
+     * - metadata.os: 限定平台（win32/linux/darwin）
+     * - metadata.requires.bins: 所有二进制必须存在
+     * - metadata.requires.anyBins: 任一二进制存在即可
+     * - metadata.requires.env：所有环境变量必须存在
+     * - metadata.requires.config：从 SkillsProperties 配置判断 truthy
+     */
+    private boolean isEligibleForCatalog(SkillManifest manifest) {
+        if (manifest == null) return false;
+        SkillManifest.OpenClawMetadata md = manifest.metadata;
+        if (md != null && Boolean.TRUE.equals(md.always)) {
+            return true;
+        }
+
+        // os gate
+        if (md != null && md.os != null && !md.os.isEmpty()) {
+            String platform = resolveRuntimePlatform();
+            boolean ok = md.os.stream()
+                    .filter(Objects::nonNull)
+                    .map(s -> s.trim().toLowerCase(Locale.ROOT))
+                    .anyMatch(s -> s.equals(platform));
+            if (!ok) return false;
+        }
+
+        // env gate
+        if (md != null && md.requires != null && md.requires.env != null && !md.requires.env.isEmpty()) {
+            for (String k : md.requires.env) {
+                if (k == null || k.isBlank()) continue;
+                String v = System.getenv(k.trim());
+                if (v == null || v.isBlank()) {
+                    return false;
+                }
+            }
+        }
+
+        // bins gate (all required)
+        if (md != null && md.requires != null && md.requires.bins != null && !md.requires.bins.isEmpty()) {
+            for (String bin : md.requires.bins) {
+                if (bin == null || bin.isBlank()) continue;
+                if (!hasBinaryOnPath(bin.trim())) {
+                    return false;
+                }
+            }
+        }
+
+        // anyBins gate (any one is enough)
+        if (md != null && md.requires != null && md.requires.anyBins != null && !md.requires.anyBins.isEmpty()) {
+            boolean found = false;
+            for (String bin : md.requires.anyBins) {
+                if (bin == null || bin.isBlank()) continue;
+                if (hasBinaryOnPath(bin.trim())) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return false;
+        }
+
+        // config gate
+        if (md != null && md.requires != null && md.requires.config != null && !md.requires.config.isEmpty()) {
+            for (String configKey : md.requires.config) {
+                if (configKey == null || configKey.isBlank()) continue;
+                if (!skillsProperties.isConfigTruthy(configKey.trim())) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static String resolveRuntimePlatform() {
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (osName.contains("win")) return "win32";
+        if (osName.contains("mac") || osName.contains("darwin")) return "darwin";
+        return "linux";
+    }
+
+    private static boolean hasBinaryOnPath(String bin) {
+        String path = System.getenv("PATH");
+        if (path == null || path.isBlank()) return false;
+        String[] parts = path.split(File.pathSeparator);
+
+        boolean isWindows = "win32".equals(resolveRuntimePlatform());
+        List<String> candidates = new ArrayList<>();
+        candidates.add(bin);
+        if (isWindows && !bin.toLowerCase(Locale.ROOT).endsWith(".exe")) {
+            candidates.add(bin + ".exe");
+            candidates.add(bin + ".cmd");
+            candidates.add(bin + ".bat");
+        }
+
+        for (String p : parts) {
+            if (p == null || p.isBlank()) continue;
+            for (String c : candidates) {
+                Path candidate = Paths.get(p).resolve(c);
+                try {
+                    if (Files.exists(candidate) && !Files.isDirectory(candidate)) {
+                        return true;
+                    }
+                } catch (Exception ignored) {
+                    // ignore and continue
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String safeTrim(String s) {
+        return s == null ? "" : s.trim();
+    }
+
+    private static String joinPath(String baseDir, String fileName) {
+        if (baseDir == null || baseDir.isBlank()) {
+            return fileName;
+        }
+        try {
+            return Paths.get(baseDir).resolve(fileName).toString();
+        } catch (Exception e) {
+            // fallback：避免路径异常导致 prompt 构建失败
+            return baseDir + "/" + fileName;
+        }
+    }
+
+    private static String compactHomePath(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+        String p = path;
+        String home = System.getProperty("user.home");
+        if (home != null && !home.isBlank()) {
+            String normalizedHome = home.replace('\\', '/');
+            String normalizedPath = p.replace('\\', '/');
+            if (normalizedPath.startsWith(normalizedHome.endsWith("/") ? normalizedHome : (normalizedHome + "/"))) {
+                String suffix = normalizedPath.substring((normalizedHome.endsWith("/") ? normalizedHome : (normalizedHome + "/")).length());
+                return "~/" + suffix;
+            }
+        }
+        return p.replace('\\', '/');
+    }
+
+    private static String escapeXml(String str) {
+        if (str == null) {
+            return "";
+        }
+        return str
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;");
+    }
+
+    /**
+     * 获取已加载技能数量
+     */
+    public int getLoadedSkillsCount() {
+        return loadedSkills.size();
+    }
+
+    /**
+     * 获取当前快照版本
+     */
+    public long getCurrentSnapshotVersion() {
+        return snapshotService.getSnapshotVersion();
     }
 
     /**
@@ -171,10 +493,8 @@ public class SkillService {
         SkillManifest manifest = YAML_MAPPER.readValue(frontmatter, SkillManifest.class);
         manifest.directory = directory;
 
-        // 解析 metadata 中的 openclaw 字段（可能是单行 JSON）
-        if (manifest.metadata != null && content.contains("\"openclaw\":")) {
-            parseOpenClawMetadata(content, manifest);
-        }
+        // 解析 metadata.openclaw 字段（可能是 YAML 对象或单行 JSON）
+        parseOpenClawMetadata(frontmatter, manifest);
 
         return manifest;
     }
@@ -183,8 +503,95 @@ public class SkillService {
      * 解析 openclaw 元数据
      */
     private void parseOpenClawMetadata(String content, SkillManifest manifest) throws IOException {
-        // 简化实现，从 YAML 中直接读取 metadata
-        // 完整实现需要解析单行 JSON
+        if (manifest == null) return;
+        if (content == null || content.isBlank()) return;
+
+        JsonNode root = YAML_MAPPER.readTree(content);
+        if (root == null || root.isNull()) return;
+
+        JsonNode meta = root.get("metadata");
+        if (meta == null || meta.isNull()) {
+            return;
+        }
+
+        // 支持两种形态：
+        // 1) metadata: { openclaw: { ... } }
+        // 2) metadata: { ... }  (部分现有技能用平铺字段)
+        JsonNode openclaw = meta.get("openclaw");
+        JsonNode source = (openclaw != null && !openclaw.isNull()) ? openclaw : meta;
+
+        // metadata.openclaw 也可能是单行 JSON 字符串
+        if (source.isTextual()) {
+            String raw = source.asText().trim();
+            if (raw.startsWith("{") && raw.endsWith("}")) {
+                try {
+                    source = JSON_MAPPER.readTree(raw);
+                } catch (Exception ignored) {
+                    // ignore invalid json
+                }
+            }
+        }
+
+        if (source == null || source.isNull() || !source.isObject()) {
+            return;
+        }
+
+        SkillManifest.OpenClawMetadata out = manifest.metadata != null
+                ? manifest.metadata
+                : new SkillManifest.OpenClawMetadata();
+
+        // always/os/emoji/homepage
+        if (source.hasNonNull("always")) {
+            out.always = source.get("always").asBoolean(false);
+        }
+        if (source.hasNonNull("emoji")) {
+            out.emoji = source.get("emoji").asText(null);
+        }
+        if (source.hasNonNull("homepage")) {
+            out.homepage = source.get("homepage").asText(null);
+        }
+        if (source.hasNonNull("os") && source.get("os").isArray()) {
+            List<String> os = new ArrayList<>();
+            for (JsonNode n : source.get("os")) {
+                if (n != null && !n.isNull()) os.add(n.asText());
+            }
+            out.os = os;
+        }
+
+        // requires.*
+        JsonNode requires = source.get("requires");
+        if (requires != null && requires.isObject()) {
+            if (out.requires == null) out.requires = new SkillManifest.OpenClawMetadata.Requires();
+            out.requires.bins = readStringArray(requires.get("bins"));
+            out.requires.env = readStringArray(requires.get("env"));
+            out.requires.config = readStringArray(requires.get("config"));
+        }
+
+        // install（保持最小映射，当前仅用于 UI 展示/未来扩展）
+        JsonNode install = source.get("install");
+        if (install != null && install.isArray()) {
+            try {
+                out.install = JSON_MAPPER.convertValue(
+                        install,
+                        new TypeReference<List<SkillManifest.OpenClawMetadata.Installer>>() {});
+            } catch (Exception ignored) {
+                // ignore
+            }
+        }
+
+        manifest.metadata = out;
+    }
+
+    private static List<String> readStringArray(JsonNode node) {
+        if (node == null || node.isNull()) return null;
+        if (!node.isArray()) return null;
+        List<String> out = new ArrayList<>();
+        for (JsonNode n : node) {
+            if (n == null || n.isNull()) continue;
+            String s = n.asText();
+            if (s != null && !s.isBlank()) out.add(s);
+        }
+        return out.isEmpty() ? null : out;
     }
 
     /**
@@ -310,25 +717,36 @@ public class SkillService {
         String skillDirectory = manifest.directory;
 
         return (String inputJson) -> {
+            log.info("=== 技能工具被调用 ===");
+            log.info("技能名称：{}", skillName);
+            log.info("技能目录：{}", skillDirectory);
+            log.info("输入 JSON: {}", inputJson);
+
             try {
                 // 解析 JSON 输入
                 Map<String, Object> args = JSON_MAPPER.readValue(
                     inputJson,
                     new TypeReference<Map<String, Object>>() {}
                 );
+                log.info("解析后的参数：{}", args);
 
                 // 对于 JSON 和 Markdown 这种指令型技能，使用 Java 实现
                 if ("json".equals(skillName) || "markdown".equals(skillName)) {
-                    return executeBuiltInSkill(skillName, args);
+                    log.info("使用内置 Java 执行器执行技能：{}", skillName);
+                    String result = executeBuiltInSkill(skillName, args);
+                    log.info("技能执行结果：{}", result);
+                    return result;
                 }
 
                 // 其他技能使用通用执行器调用脚本
+                log.info("使用 GenericSkillExecutor 执行技能：{}", skillName);
                 String result = genericSkillExecutor.execute(skillDirectory, args);
 
                 // 返回结果（如果是纯文本，包装成 JSON）
                 if (!result.trim().startsWith("{")) {
                     result = "{\"result\": " + JSON_MAPPER.writeValueAsString(result) + "}";
                 }
+                log.info("技能执行结果：{}", result);
                 return result;
 
             } catch (Exception e) {

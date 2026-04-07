@@ -6,6 +6,8 @@ import java.util.concurrent.Executors;
 
 import demo.k8s.agent.skills.SkillRegistry;
 import demo.k8s.agent.skills.SkillExecutorRegistry;
+import demo.k8s.agent.skills.SkillService;
+import demo.k8s.agent.skills.SkillsWatchService;
 import demo.k8s.agent.toolsystem.McpToolProvider;
 import demo.k8s.agent.toolsystem.ToolFeatureFlags;
 import demo.k8s.agent.toolsystem.ToolPermissionContext;
@@ -18,6 +20,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.ToolCallAdvisor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.annotation.Primary;
 import org.springframework.scheduling.annotation.EnableAsync;
 
@@ -29,6 +32,7 @@ public class AgentConfiguration {
 
     @Bean
     @Primary
+    @DependsOn("skillService")  // 确保技能在 ChatClient 之前加载
     ChatClient demoChatClient(
             ChatClient.Builder chatClientBuilder,
             ToolRegistry demoToolRegistry,
@@ -37,7 +41,12 @@ public class AgentConfiguration {
             McpToolProvider mcpToolProvider,
             SkillRegistry skillRegistry,
             SkillExecutorRegistry skillExecutorRegistry,
+            SkillService skillService,
+            SkillsWatchService skillsWatchService,
             DemoCoordinatorProperties coordinatorProperties) {
+
+        // 启动技能监听服务
+        skillsWatchService.startWatching();
 
         // 加载 MCP 工具并转换为 ToolCallback
         List<org.springframework.ai.tool.ToolCallback> mcpTools = mcpToolProvider.loadMcpTools().stream()
@@ -68,12 +77,20 @@ public class AgentConfiguration {
                 demoToolRegistry.filteredCallbacks(toolPermissionContext, toolFeatureFlags, mcpToolProvider.loadMcpTools()));
         allTools.addAll(skillTools);
 
-        String system =
+        // 构建系统提示词，动态注入技能提示词
+        String baseSystem =
                 coordinatorProperties.isEnabled()
                         ? AgentPrompts.COORDINATOR_ORCHESTRATOR_ONLY
                         : AgentPrompts.DEMO_COORDINATOR_SYSTEM;
+
+        // 添加技能提示词
+        String skillsPrompt = skillService.buildSkillsPrompt();
+        String fullSystem = baseSystem + (skillsPrompt.isEmpty() ? "" : "\n\n" + skillsPrompt);
+
+        log.info("初始化 ChatClient，系统提示词长度：{} chars", fullSystem.length());
+
         return chatClientBuilder
-                .defaultSystem(system)
+                .defaultSystem(fullSystem)
                 .defaultToolCallbacks(allTools.toArray(org.springframework.ai.tool.ToolCallback[]::new))
                 .defaultAdvisors(
                         ToolCallAdvisor.builder().conversationHistoryEnabled(false).build())
