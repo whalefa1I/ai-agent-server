@@ -168,17 +168,24 @@ public final class AgentPrompts {
             """;
 
     /**
-     * 本地文件工具入参规则：与 {@code LocalFileReadTool}、{@code LocalFileWriteTool}、{@code LocalFileEditTool}
-     * 及 {@code demo.k8s.agent.toolsystem.DemoToolSpecs} 中 JSON Schema 一致（对齐 Claude Code 命名）。
+     * 本地文件/搜索类工具入参摘要；与 {@code LocalFileReadTool} 等及 {@code DemoToolSpecs} 中 Schema 一致。
+     * 完整工具表与权限说明见 Claude Code 官方文档（终端产品工具名与本服务注册名可能不同）。
+     *
+     * @see <a href="https://code.claude.com/docs/en/tools-reference">Claude Code — Tools reference</a>
      */
     public static final String FILE_TOOLS_PARAM_RULES = """
-            === 文件工具入参（与工具 JSON Schema / Claude Code 一致） ===
-            - 路径参数规范名：**file_path**（绝对路径）。不要用 **path** 代替 file_path。
-            - file_read：必填 file_path；可选 offset、limit、pages。
-            - file_write：必填 file_path、content。
-            - file_edit：必填 file_path、old_string、new_string。
-            - multi_edit：每条编辑对象为 file_path、old_string、new_string。
-            说明：若上游以 **filePath**（camelCase）传参，服务端执行层会按同义处理；对外与 Schema 仍以 **file_path** 为准。
+            === 文件与搜索类工具（与本服务 JSON Schema 一致；命名对齐思路参考 Claude Code） ===
+            官方工具参考（终端产品中的工具名如 Read / Write / Edit / Glob / Grep；本服务使用 snake_case 或 Java 注册名，请勿混用文档里的名称直接当工具名调用）：
+            https://code.claude.com/docs/en/tools-reference
+
+            - **file_read**：必填 **file_path**（优先绝对路径）；可选 offset、limit、pages。对应 Claude Code 文档中的「Read」类能力。
+            - **file_write**：必填 file_path、content。
+            - **file_edit**：必填 file_path、old_string、new_string（须与文件中字面内容一致，含缩进与换行）。
+            - **multi_edit**：edits 数组中每项含 file_path、old_string、new_string。
+            - **glob / grep / ls / FileDelete / local_file_stat / local_mkdir** 等：Schema 里目录或目标路径主键多为 **path**；执行层同时接受 **path**、**file_path**、**filePath**（FilesystemPathArgs）。
+            - **bash**（若启用）：必填 **command**；可选 **description** 说明意图，便于权限与会话展示。
+
+            说明：file_read / file_write / file_edit 在 FileToolArgs 中会将 **filePath**、**path** 与 **file_path** 视作同一路径；对外 Schema 仍以 **file_path** 为准。
             """;
 
     /** 默认（非 Coordinator Mode）：主会话可 Task + k8s + Skill */
@@ -192,13 +199,25 @@ public final class AgentPrompts {
 
                     """ + TASK_CREATE_PROMPT + """
 
-                    === 其他 Task 工具 ===
+                    === TaskList ===
 
-                    - TaskList: 列出所有任务，检查现有任务避免重复创建
-                    - TaskGet: 获取特定任务详情（需要 taskId）
-                    - TaskUpdate: 更新任务状态/详情（需要 taskId，可更新 status/subject/description/owner 等）
-                    - TaskStop: 停止运行中的任务（需要 taskId）
-                    - TaskOutput: 获取任务输出结果（需要 taskId）
+                    """ + TASK_LIST_PROMPT + """
+
+                    === TaskGet ===
+
+                    """ + TASK_GET_PROMPT + """
+
+                    === TaskUpdate ===
+
+                    """ + TASK_UPDATE_PROMPT + """
+
+                    === TaskStop ===
+
+                    """ + TASK_STOP_PROMPT + """
+
+                    === TaskOutput ===
+
+                    """ + TASK_OUTPUT_PROMPT + """
 
                     === 执行约束（减少常见报错） ===
 

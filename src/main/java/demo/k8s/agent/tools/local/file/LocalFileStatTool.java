@@ -66,7 +66,7 @@ public class LocalFileStatTool {
      * @return 文件元数据
      */
     public static LocalToolResult execute(Map<String, Object> input) {
-        String pathStr = (String) input.get("path");
+        String pathStr = FilesystemPathArgs.readPathOrAlias(input);
         Boolean includeHash = (Boolean) input.getOrDefault("includeHash", false);
         String hashAlgorithm = (String) input.getOrDefault("hashAlgorithm", "sha256");
 

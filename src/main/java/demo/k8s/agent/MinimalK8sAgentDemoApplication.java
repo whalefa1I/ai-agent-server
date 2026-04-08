@@ -1,6 +1,7 @@
 package demo.k8s.agent;
 
 import demo.k8s.agent.config.DemoCoordinatorProperties;
+import demo.k8s.agent.config.DemoDebugProperties;
 import demo.k8s.agent.config.DemoQueryProperties;
 import demo.k8s.agent.config.DemoToolsProperties;
 import demo.k8s.agent.k8s.DemoK8sProperties;
@@ -21,7 +22,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
     DemoK8sProperties.class,
     DemoToolsProperties.class,
     DemoQueryProperties.class,
-    DemoCoordinatorProperties.class
+    DemoCoordinatorProperties.class,
+    DemoDebugProperties.class
 })
 public class MinimalK8sAgentDemoApplication {
 

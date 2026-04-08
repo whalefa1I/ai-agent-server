@@ -1,6 +1,7 @@
 package demo.k8s.agent.tools.local.search;
 
 import demo.k8s.agent.tools.local.LocalToolResult;
+import demo.k8s.agent.tools.local.file.FilesystemPathArgs;
 import demo.k8s.agent.toolsystem.ClaudeLikeTool;
 import demo.k8s.agent.toolsystem.ClaudeToolFactory;
 import demo.k8s.agent.toolsystem.ToolCategory;
@@ -100,7 +101,10 @@ public class LocalGrepTool {
 
         try {
             String patternStr = (String) input.get("pattern");
-            String basePath = (String) input.getOrDefault("path", System.getProperty("user.dir"));
+            String basePath = FilesystemPathArgs.readPathOrAlias(input);
+            if (basePath == null || basePath.isBlank()) {
+                basePath = System.getProperty("user.dir");
+            }
             String includePattern = (String) input.get("include");
             String excludePattern = (String) input.get("exclude");
             int contextLines = getInt(input, "contextLines", 2);

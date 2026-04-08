@@ -3,6 +3,7 @@ package demo.k8s.agent.query;
 import com.fasterxml.jackson.databind.JsonNode;
 import demo.k8s.agent.config.AgentPrompts;
 import demo.k8s.agent.config.DemoCoordinatorProperties;
+import demo.k8s.agent.config.DemoDebugProperties;
 import demo.k8s.agent.config.DemoQueryProperties;
 import demo.k8s.agent.memory.search.MemorySearchService;
 import demo.k8s.agent.plugin.hook.HookService;
@@ -15,6 +16,7 @@ import demo.k8s.agent.observability.events.Event;
 import demo.k8s.agent.observability.events.Event.ToolCalledEvent;
 import demo.k8s.agent.observability.events.Event.ModelCalledEvent;
 import demo.k8s.agent.observability.events.Event.ErrorEvent;
+import demo.k8s.agent.observability.logging.ModelRequestDebugLogger;
 import demo.k8s.agent.observability.logging.StructuredLogger;
 import demo.k8s.agent.observability.tracing.TraceContext;
 import demo.k8s.agent.observability.metrics.MetricsCollector;
@@ -86,6 +88,7 @@ public class EnhancedAgenticQueryLoop {
     private final ToolCallingManager toolCallingManager;
     private final SkillService skillService;
     private final UnifiedToolExecutor unifiedToolExecutor;
+    private final DemoDebugProperties demoDebugProperties;
 
     // 权限确认回调（用于 WebSocket TUI）
     private Function<PermissionRequest, CompletableFuture<PermissionResult>> permissionCallback;
@@ -111,7 +114,8 @@ public class EnhancedAgenticQueryLoop {
             ToolStateService toolStateService,
             ToolCallingManager toolCallingManager,
             SkillService skillService,
-            UnifiedToolExecutor unifiedToolExecutor) {
+            UnifiedToolExecutor unifiedToolExecutor,
+            DemoDebugProperties demoDebugProperties) {
         this.chatModel = chatModel;
         this.compactionPipeline = compactionPipeline;
         this.retryPolicy = retryPolicy;
@@ -131,6 +135,7 @@ public class EnhancedAgenticQueryLoop {
         this.toolCallingManager = toolCallingManager;
         this.skillService = skillService;
         this.unifiedToolExecutor = unifiedToolExecutor;
+        this.demoDebugProperties = demoDebugProperties;
 
         // 订阅 ToolCalledEvent 事件，用于在工具执行时创建 artifact
         // 注意：这是在工具执行之后，但可以用来记录工具调用历史
@@ -237,11 +242,16 @@ public class EnhancedAgenticQueryLoop {
             // 注意：Spring AI 会在内部自动执行工具调用
             // 为了在工具执行之前拦截，我们需要在调用 chatModel 之前设置回调
             Prompt prompt = new Prompt(messages, options);
+            final int turnForDebugLog = state.turnCount();
+            final List<Message> messagesForDebugLog = messages;
+            final List<ToolCallback> toolsForDebugLog = tools;
 
             ChatResponse response;
             try {
                 response = retryPolicy.call(() -> {
                     Instant start = Instant.now();
+                    ModelRequestDebugLogger.logBeforeModelCall(
+                            log, demoDebugProperties, toolsForDebugLog, messagesForDebugLog, turnForDebugLog);
                     // Spring AI 会在内部自动执行工具调用
                     ChatResponse resp = chatModel.call(prompt);
                     Instant end = Instant.now();

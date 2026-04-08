@@ -71,6 +71,11 @@ logging:
 
 # 开发环境配置
 demo:
+  debug:
+    # 为 true 时在每次模型调用前打印工具 inputSchema 摘要、系统提示与各条消息预览（仅服务端日志）
+    log-model-request: ${DEMO_DEBUG_LOG_MODEL_REQUEST:false}
+    model-request-preview-chars: 500
+    model-request-tool-schema-max-chars: 1200
   dev:
     # 开发环境跳过配额检查
     skip-quota-check: true

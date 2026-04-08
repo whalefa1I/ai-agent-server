@@ -66,7 +66,7 @@ public class LocalMkdirTool {
      */
     public static LocalToolResult execute(Map<String, Object> input) {
         String action = (String) input.get("action");
-        String pathStr = (String) input.get("path");
+        String pathStr = FilesystemPathArgs.readPathOrAlias(input);
         Boolean recursive = (Boolean) input.getOrDefault("recursive", true);
 
         if (pathStr == null || pathStr.isBlank()) {

@@ -5,7 +5,9 @@ import java.util.List;
 
 import demo.k8s.agent.config.AgentPrompts;
 import demo.k8s.agent.config.DemoCoordinatorProperties;
+import demo.k8s.agent.config.DemoDebugProperties;
 import demo.k8s.agent.config.DemoQueryProperties;
+import demo.k8s.agent.observability.logging.ModelRequestDebugLogger;
 import demo.k8s.agent.skills.SkillService;
 import demo.k8s.agent.toolsystem.McpToolProvider;
 import demo.k8s.agent.toolsystem.ToolFeatureFlags;
@@ -51,6 +53,7 @@ public class AgenticQueryLoop {
     private final McpToolProvider mcpToolProvider;
     private final DemoCoordinatorProperties coordinatorProperties;
     private final SkillService skillService;
+    private final DemoDebugProperties demoDebugProperties;
 
     public AgenticQueryLoop(
             ChatModel chatModel,
@@ -63,7 +66,8 @@ public class AgenticQueryLoop {
             ToolFeatureFlags toolFeatureFlags,
             McpToolProvider mcpToolProvider,
             DemoCoordinatorProperties coordinatorProperties,
-            SkillService skillService) {
+            SkillService skillService,
+            DemoDebugProperties demoDebugProperties) {
         this.chatModel = chatModel;
         this.toolCallingManager = toolCallingManager;
         this.compactionPipeline = compactionPipeline;
@@ -75,6 +79,7 @@ public class AgenticQueryLoop {
         this.mcpToolProvider = mcpToolProvider;
         this.coordinatorProperties = coordinatorProperties;
         this.skillService = skillService;
+        this.demoDebugProperties = demoDebugProperties;
     }
 
     public AgenticTurnResult run(String userMessage) {
@@ -112,7 +117,15 @@ public class AgenticQueryLoop {
             messages = compactionPipeline.compactBeforeModelCall(messages);
 
             Prompt prompt = new Prompt(messages, options);
-            ChatResponse response = retryPolicy.call(() -> chatModel.call(prompt));
+            final int turnForDebugLog = state.turnCount();
+            final List<Message> messagesForDebugLog = messages;
+            ChatResponse response =
+                    retryPolicy.call(
+                            () -> {
+                                ModelRequestDebugLogger.logBeforeModelCall(
+                                        log, demoDebugProperties, tools, messagesForDebugLog, turnForDebugLog);
+                                return chatModel.call(prompt);
+                            });
 
             if (!hasToolCalls(response)) {
                 String text = extractAssistantText(response);

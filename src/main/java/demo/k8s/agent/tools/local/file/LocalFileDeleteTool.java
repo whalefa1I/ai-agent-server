@@ -58,7 +58,7 @@ public class LocalFileDeleteTool {
      * @return 删除结果
      */
     public static LocalToolResult execute(Map<String, Object> input) {
-        String pathStr = (String) input.get("path");
+        String pathStr = FilesystemPathArgs.readPathOrAlias(input);
         Boolean recursive = (Boolean) input.getOrDefault("recursive", false);
 
         if (pathStr == null || pathStr.isBlank()) {

@@ -249,11 +249,14 @@ public class PermissionManager {
             }
         }
 
-        // 文件工具：提取 file_path 字段（与 FileToolArgs 一致，兼容 filePath）
+        // 文件工具：与 FileToolArgs 一致：file_path → filePath → path
         if (toolName.contains("file") || toolName.contains("File")) {
             JsonNode pathNode = input.get("file_path");
             if (pathNode == null || !pathNode.isTextual() || pathNode.asText("").isBlank()) {
                 pathNode = input.get("filePath");
+            }
+            if (pathNode == null || !pathNode.isTextual() || pathNode.asText("").isBlank()) {
+                pathNode = input.get("path");
             }
             if (pathNode != null && pathNode.isTextual()) {
                 return "file:" + pathNode.asText();

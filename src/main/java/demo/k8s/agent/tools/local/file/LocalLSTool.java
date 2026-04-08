@@ -62,7 +62,7 @@ public class LocalLSTool {
      * @return 目录内容列表
      */
     public static LocalToolResult execute(Map<String, Object> input) {
-        String pathStr = (String) input.get("path");
+        String pathStr = FilesystemPathArgs.readPathOrAlias(input);
         Boolean recursive = (Boolean) input.getOrDefault("recursive", false);
 
         if (pathStr == null || pathStr.isBlank()) {

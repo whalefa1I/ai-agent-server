@@ -75,7 +75,10 @@ public class LocalGlobTool {
 
         try {
             String pattern = (String) input.get("pattern");
-            String basePath = (String) input.getOrDefault("path", System.getProperty("user.dir"));
+            String basePath = FilesystemPathArgs.readPathOrAlias(input);
+            if (basePath == null || basePath.isBlank()) {
+                basePath = System.getProperty("user.dir");
+            }
 
             if (pattern == null || pattern.isEmpty()) {
                 return LocalToolResult.error("pattern is required");
