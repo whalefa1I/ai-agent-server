@@ -266,8 +266,13 @@ public class HappyChatService {
             artifact.setUpdatedAt(Instant.now());
 
             repository.save(artifact);
-            log.info("更新助手消息：id={}, contentLength={}, isFinal={}",
-                artifactId, content != null ? content.length() : 0, isFinal);
+            if (isFinal) {
+                log.info("更新助手消息：id={}, contentLength={}, isFinal=true",
+                        artifactId, content != null ? content.length() : 0);
+            } else {
+                log.debug("更新助手消息（流式增量）：id={}, contentLength={}",
+                        artifactId, content != null ? content.length() : 0);
+            }
 
         } catch (Exception e) {
             log.error("更新助手消息失败：artifactId={}", artifactId, e);
