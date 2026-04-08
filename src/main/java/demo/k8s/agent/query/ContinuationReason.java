@@ -9,8 +9,12 @@ public enum ContinuationReason {
 
     TOOL_FOLLOW_UP,
 
+    NEXT_TURN,
+
     /** 与 {@code reactive_compact_retry} / {@code collapse_drain_retry} 等类比 */
     POST_COMPACTION_RETRY,
 
-    RETRY_AFTER_ERROR
+    RETRY_AFTER_ERROR,
+
+    TERMINAL_NO_TOOLS
 }

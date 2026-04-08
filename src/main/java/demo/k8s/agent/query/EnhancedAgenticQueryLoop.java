@@ -52,6 +52,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -68,6 +69,7 @@ import java.util.HashMap;
 public class EnhancedAgenticQueryLoop {
 
     private static final Logger log = LoggerFactory.getLogger(EnhancedAgenticQueryLoop.class);
+    private static final String COMPACT_BOUNDARY_PREFIX = "__COMPACT_BOUNDARY__:";
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ChatModel chatModel;
@@ -177,7 +179,7 @@ public class EnhancedAgenticQueryLoop {
             String userMessage,
             java.util.function.BiConsumer<String, JsonNode> onToolCall,
             java.util.function.Consumer<String> onTextDelta) {
-        return runWithCallbacks(userMessage, onToolCall, onTextDelta, null, null);
+        return runWithCallbacks(userMessage, onToolCall, onTextDelta, null, null, null);
     }
 
     /**
@@ -188,7 +190,7 @@ public class EnhancedAgenticQueryLoop {
             java.util.function.BiConsumer<String, JsonNode> onToolCall,
             java.util.function.Consumer<String> onTextDelta,
             java.util.function.Consumer<String> onReasoningDelta) {
-        return runWithCallbacks(userMessage, onToolCall, onTextDelta, onReasoningDelta, null);
+        return runWithCallbacks(userMessage, onToolCall, onTextDelta, onReasoningDelta, null, null);
     }
 
     /**
@@ -199,7 +201,8 @@ public class EnhancedAgenticQueryLoop {
             java.util.function.BiConsumer<String, JsonNode> onToolCall,
             java.util.function.Consumer<String> onTextDelta,
             java.util.function.Consumer<String> onReasoningDelta,
-            java.util.function.Consumer<String> onIntermediateAssistantText) {
+            java.util.function.Consumer<String> onIntermediateAssistantText,
+            java.util.function.Consumer<LoopStateEvent> onStateTransition) {
 
         log.info("开始 agentic query loop: userMessage={}", truncate(userMessage, 100));
 
@@ -249,6 +252,38 @@ public class EnhancedAgenticQueryLoop {
 
         // Agentic 主循环
         while (true) {
+            // 对齐 Claude Code 的 compact boundary 语义：后续回合仅使用最近边界之后的消息。
+            messages = messagesAfterLastCompactBoundary(messages);
+            String compactionParentId = "compact-chain-" + UUID.randomUUID();
+            TrimOutcome trimOutcome = trimLargeToolResponses(messages, queryProperties.getMicrocompactMaxCharsPerToolResponse());
+            messages = trimOutcome.messages();
+            if (trimOutcome.trimmedResponses() > 0 && onStateTransition != null) {
+                onStateTransition.accept(new LoopStateEvent(
+                        "tool-result-trim-message",
+                        String.format("[ToolBudget] 已裁剪 %d 条工具输出，累计裁剪 %d 字符",
+                                trimOutcome.trimmedResponses(), trimOutcome.trimmedChars()),
+                        Map.of(
+                                "parentId", compactionParentId,
+                                "phase", "trim",
+                                "trimmedResponses", trimOutcome.trimmedResponses(),
+                                "trimmedChars", trimOutcome.trimmedChars(),
+                                "maxCharsPerResponse", queryProperties.getMicrocompactMaxCharsPerToolResponse())));
+            }
+            SnipOutcome snipOutcome = snipHistoryByBudget(messages, queryProperties.getFullCompactThresholdChars());
+            messages = snipOutcome.messages();
+            if (snipOutcome.snippedMessages() > 0 && onStateTransition != null) {
+                onStateTransition.accept(new LoopStateEvent(
+                        "snip-history-message",
+                        String.format("[Snip] 已裁剪中段历史 %d 条，字符 %d -> %d",
+                                snipOutcome.snippedMessages(), snipOutcome.beforeChars(), snipOutcome.afterChars()),
+                        Map.of(
+                                "parentId", compactionParentId,
+                                "phase", "snip",
+                                "snippedMessages", snipOutcome.snippedMessages(),
+                                "beforeChars", snipOutcome.beforeChars(),
+                                "afterChars", snipOutcome.afterChars(),
+                                "snipBudgetChars", snipOutcome.budgetChars())));
+            }
             // 检查最大轮次
             if (state.turnCount() >= queryProperties.getMaxTurns()) {
                 log.warn("达到最大轮次限制：{}", state.turnCount());
@@ -259,9 +294,51 @@ public class EnhancedAgenticQueryLoop {
             ContinuationReason cont =
                     state.turnCount() == 0 ? ContinuationReason.INITIAL : ContinuationReason.TOOL_FOLLOW_UP;
             state = state.nextTurn(cont);
+            String turnId = "turn-" + UUID.randomUUID();
 
             // 更新模型调用前压缩
+            int preCompactCount = messages.size();
+            int preCompactChars = MessageTextEstimator.estimateChars(messages);
             messages = compactionPipeline.compactBeforeModelCall(messages);
+            int postCompactCount = messages.size();
+            int postCompactChars = MessageTextEstimator.estimateChars(messages);
+            if (containsSummaryCompactMarker(messages) && onStateTransition != null) {
+                onStateTransition.accept(new LoopStateEvent(
+                        "summary-compact-message",
+                        String.format("[SummaryCompact] 摘要压缩已生效，字符 %d -> %d", preCompactChars, postCompactChars),
+                        Map.of(
+                                "parentId", compactionParentId,
+                                "phase", "summary",
+                                "turnId", turnId,
+                                "beforeChars", preCompactChars,
+                                "afterChars", postCompactChars,
+                                "beforeCount", preCompactCount,
+                                "afterCount", postCompactCount)));
+            }
+            if (postCompactCount < preCompactCount) {
+                String compactId = "compact-" + UUID.randomUUID();
+                // 写入 compact 边界锚点（下轮会通过 messagesAfterLastCompactBoundary 生效）。
+                List<Message> bounded = new ArrayList<>();
+                bounded.add(new SystemMessage(COMPACT_BOUNDARY_PREFIX + compactId));
+                bounded.addAll(messages);
+                messages = bounded;
+                state = state.withCompactionIncrement(ContinuationReason.POST_COMPACTION_RETRY);
+                if (onStateTransition != null) {
+                    onStateTransition.accept(new LoopStateEvent(
+                            "compact-boundary-message",
+                            String.format("[Context] 已压缩：%d -> %d（累计 %d 次）",
+                                    preCompactCount, postCompactCount, state.compactionCount()),
+                            Map.of(
+                                    "parentId", compactionParentId,
+                                    "phase", "boundary",
+                                    "compactId", compactId,
+                                    "turnId", turnId,
+                                    "preCompactCount", preCompactCount,
+                                    "postCompactCount", postCompactCount,
+                                    "compactionCount", state.compactionCount(),
+                                    "turnCount", state.turnCount())));
+                }
+            }
             log.debug("Compaction 后消息数：{}", messages.size());
 
             // 开始模型调用指标追踪
@@ -338,6 +415,13 @@ public class EnhancedAgenticQueryLoop {
             // 如果没有工具调用但有响应文本，直接返回
             // 注意：Spring AI 可能已经执行了工具，但我们无法获取工具调用信息
             if (!hasTools) {
+                state = new QueryLoopState(
+                        state.turnCount(),
+                        state.toolBatchCount(),
+                        state.compactionCount(),
+                        state.maxOutputTokensRecoveryCount(),
+                        state.hasAttemptedReactiveCompact(),
+                        ContinuationReason.TERMINAL_NO_TOOLS);
                 log.info("Agentic loop 完成：turns={}, responseLength={}", state.turnCount(), responseText.length());
 
                 // 如果有文本增量回调，流式发送文本
@@ -373,6 +457,21 @@ public class EnhancedAgenticQueryLoop {
                     .toList();
             if (!toolResponses.isEmpty()) {
                 messages.add(ToolResponseMessage.builder().responses(toolResponses).build());
+            }
+            state = state.withToolBatchIncrement(ContinuationReason.NEXT_TURN);
+            if (onStateTransition != null) {
+                String toolBatchId = "tool-batch-" + UUID.randomUUID();
+                onStateTransition.accept(new LoopStateEvent(
+                        "assistant-loop-state-message",
+                        String.format("[Loop] 第 %d 轮执行工具批次 #%d（工具 %d 个）",
+                                state.turnCount(), state.toolBatchCount(), executedToolCalls.size()),
+                        Map.of(
+                                "toolBatchId", toolBatchId,
+                                "turnId", turnId,
+                                "turnCount", state.turnCount(),
+                                "toolBatchCount", state.toolBatchCount(),
+                                "toolCallCount", executedToolCalls.size(),
+                                "continuation", state.lastContinuation().name())));
             }
             log.debug("执行了 {} 个工具调用，并已回写 {} 条 tool_response", executedToolCalls.size(), toolResponses.size());
         }
@@ -635,6 +734,105 @@ public class EnhancedAgenticQueryLoop {
     }
 
     private record ExecutedToolCall(AssistantMessage.ToolCall toolCall, String output) {}
+    public record LoopStateEvent(String subtype, String content, Map<String, Object> metadata) {}
+    private record TrimOutcome(List<Message> messages, int trimmedResponses, int trimmedChars) {}
+    private record SnipOutcome(List<Message> messages, int snippedMessages, int beforeChars, int afterChars, int budgetChars) {}
+
+    private List<Message> messagesAfterLastCompactBoundary(List<Message> input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+        int boundaryIdx = -1;
+        for (int i = input.size() - 1; i >= 0; i--) {
+            Message m = input.get(i);
+            if (m instanceof SystemMessage sm
+                    && sm.getText() != null
+                    && sm.getText().startsWith(COMPACT_BOUNDARY_PREFIX)) {
+                boundaryIdx = i;
+                break;
+            }
+        }
+        if (boundaryIdx < 0 || boundaryIdx + 1 >= input.size()) {
+            return input;
+        }
+        return new ArrayList<>(input.subList(boundaryIdx + 1, input.size()));
+    }
+
+    private TrimOutcome trimLargeToolResponses(List<Message> input, int maxCharsPerResponse) {
+        if (input == null || input.isEmpty() || maxCharsPerResponse <= 0) {
+            return new TrimOutcome(input, 0, 0);
+        }
+        List<Message> result = new ArrayList<>();
+        int trimmedResponses = 0;
+        int trimmedChars = 0;
+        for (Message m : input) {
+            if (m instanceof ToolResponseMessage trm) {
+                List<ToolResponseMessage.ToolResponse> rs = new ArrayList<>();
+                for (ToolResponseMessage.ToolResponse r : trm.getResponses()) {
+                    String data = r.responseData();
+                    if (data != null && data.length() > maxCharsPerResponse) {
+                        int trimmed = data.length() - maxCharsPerResponse;
+                        String d = data.substring(0, maxCharsPerResponse) + "\n...[tool-result-trimmed]";
+                        rs.add(new ToolResponseMessage.ToolResponse(r.name(), r.id(), d));
+                        trimmedResponses += 1;
+                        trimmedChars += Math.max(trimmed, 0);
+                    } else {
+                        rs.add(r);
+                    }
+                }
+                result.add(ToolResponseMessage.builder().responses(rs).build());
+            } else {
+                result.add(m);
+            }
+        }
+        return new TrimOutcome(result, trimmedResponses, trimmedChars);
+    }
+
+    private SnipOutcome snipHistoryByBudget(List<Message> input, int thresholdChars) {
+        if (input == null || input.size() <= 4 || thresholdChars <= 0) {
+            int current = MessageTextEstimator.estimateChars(input);
+            return new SnipOutcome(input, 0, current, current, thresholdChars);
+        }
+        int before = MessageTextEstimator.estimateChars(input);
+        int budget = Math.max((int) (thresholdChars * 0.7d), 20_000);
+        if (before <= budget) {
+            return new SnipOutcome(input, 0, before, before, budget);
+        }
+        Message first = input.get(0);
+        List<Message> tail = new ArrayList<>();
+        int tailChars = 0;
+        for (int i = input.size() - 1; i >= 1; i--) {
+            Message m = input.get(i);
+            int c = MessageTextEstimator.estimateChars(List.of(m));
+            if (tailChars + c > budget) {
+                break;
+            }
+            tail.add(0, m);
+            tailChars += c;
+        }
+        List<Message> output = new ArrayList<>();
+        output.add(first);
+        output.add(new SystemMessage("[snip] 中段历史已按预算裁剪，保留系统语义与最近上下文。"));
+        output.addAll(tail);
+        int after = MessageTextEstimator.estimateChars(output);
+        int snipped = Math.max(input.size() - output.size(), 0);
+        return new SnipOutcome(output, snipped, before, after, budget);
+    }
+
+    private boolean containsSummaryCompactMarker(List<Message> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return false;
+        }
+        for (Message message : messages) {
+            if (message instanceof SystemMessage sm) {
+                String text = sm.getText();
+                if (text != null && text.contains("[上下文已压缩]")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 
     /**
      * 同步等待用户确认（支持回调和轮询两种方式）

@@ -123,21 +123,41 @@ public class HappyChatService {
     }
 
     private void createAssistantProgressMessage(String accountId, String sessionId, String content) {
+        createAssistantProgressMessage(accountId, sessionId, content, "assistant-progress-message", "Assistant Progress Message");
+    }
+
+    private void createAssistantProgressMessage(
+            String accountId,
+            String sessionId,
+            String content,
+            String subtype,
+            String title) {
+        createAssistantProgressMessage(accountId, sessionId, content, subtype, title, Map.of());
+    }
+
+    private void createAssistantProgressMessage(
+            String accountId,
+            String sessionId,
+            String content,
+            String subtype,
+            String title,
+            Map<String, Object> metadata) {
         try {
             if (content == null || content.isBlank()) return;
             String id = "assistant-progress-" + System.currentTimeMillis();
             Map<String, Object> header = Map.of(
                 "type", "message",
-                "subtype", "assistant-progress-message",
-                "title", "Assistant Progress Message",
+                "subtype", subtype,
+                "title", title,
                 "timestamp", System.currentTimeMillis(),
                 "status", "completed"
             );
             Map<String, Object> body = Map.of(
-                "type", "assistant-progress-message",
+                "type", subtype,
                 "content", content,
                 "timestamp", System.currentTimeMillis(),
-                "status", "completed"
+                "status", "completed",
+                "metadata", metadata == null ? Map.of() : metadata
             );
             ToolArtifact artifact = new ToolArtifact();
             artifact.setId(id);
@@ -306,6 +326,17 @@ public class HappyChatService {
                 },
                 (intermediateText) -> {
                     createAssistantProgressMessage(accountId, sessionId, intermediateText);
+                },
+                (stateEvent) -> {
+                    String subtype = stateEvent != null && stateEvent.subtype() != null
+                            ? stateEvent.subtype()
+                            : "assistant-loop-state-message";
+                    String title = "compact-boundary-message".equals(subtype) ? "Compact Boundary" : "Loop State";
+                    String text = stateEvent != null ? stateEvent.content() : "";
+                    Map<String, Object> metadata = stateEvent != null && stateEvent.metadata() != null
+                            ? stateEvent.metadata()
+                            : Map.of();
+                    createAssistantProgressMessage(accountId, sessionId, text, subtype, title, metadata);
                 }
             );
             updateThinkingMessage(thinkingArtifactId, thinkingBuffer.get().toString(), true);
