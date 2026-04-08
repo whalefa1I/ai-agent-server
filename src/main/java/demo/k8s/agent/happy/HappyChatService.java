@@ -87,6 +87,75 @@ public class HappyChatService {
         }
     }
 
+    private String createStreamingThinkingMessage(String accountId, String sessionId) {
+        try {
+            String id = "thinking-" + System.currentTimeMillis();
+            Map<String, Object> header = Map.of(
+                "type", "message",
+                "subtype", "thinking-message",
+                "title", "Thinking Message",
+                "timestamp", System.currentTimeMillis(),
+                "status", "streaming"
+            );
+            Map<String, Object> body = Map.of(
+                "type", "thinking-message",
+                "content", "",
+                "timestamp", System.currentTimeMillis(),
+                "status", "streaming"
+            );
+            ToolArtifact artifact = new ToolArtifact();
+            artifact.setId(id);
+            artifact.setAccountId(accountId);
+            artifact.setSessionId(sessionId);
+            artifact.setHeader(Base64.getEncoder().encodeToString(objectMapper.writeValueAsBytes(header)));
+            artifact.setBody(Base64.getEncoder().encodeToString(objectMapper.writeValueAsBytes(body)));
+            artifact.setHeaderVersion(1);
+            artifact.setBodyVersion(1);
+            artifact.setSeq(0);
+            artifact.setCreatedAt(Instant.now());
+            artifact.setUpdatedAt(Instant.now());
+            repository.save(artifact);
+            return id;
+        } catch (Exception e) {
+            log.error("创建 thinking 消息失败", e);
+            return null;
+        }
+    }
+
+    private void createAssistantProgressMessage(String accountId, String sessionId, String content) {
+        try {
+            if (content == null || content.isBlank()) return;
+            String id = "assistant-progress-" + System.currentTimeMillis();
+            Map<String, Object> header = Map.of(
+                "type", "message",
+                "subtype", "assistant-progress-message",
+                "title", "Assistant Progress Message",
+                "timestamp", System.currentTimeMillis(),
+                "status", "completed"
+            );
+            Map<String, Object> body = Map.of(
+                "type", "assistant-progress-message",
+                "content", content,
+                "timestamp", System.currentTimeMillis(),
+                "status", "completed"
+            );
+            ToolArtifact artifact = new ToolArtifact();
+            artifact.setId(id);
+            artifact.setAccountId(accountId);
+            artifact.setSessionId(sessionId);
+            artifact.setHeader(Base64.getEncoder().encodeToString(objectMapper.writeValueAsBytes(header)));
+            artifact.setBody(Base64.getEncoder().encodeToString(objectMapper.writeValueAsBytes(body)));
+            artifact.setHeaderVersion(1);
+            artifact.setBodyVersion(1);
+            artifact.setSeq(0);
+            artifact.setCreatedAt(Instant.now());
+            artifact.setUpdatedAt(Instant.now());
+            repository.save(artifact);
+        } catch (Exception e) {
+            log.error("创建 assistant-progress 消息失败", e);
+        }
+    }
+
     /**
      * 创建"正在生成中"的助手消息 artifact
      */
@@ -175,6 +244,34 @@ public class HappyChatService {
         }
     }
 
+    private void updateThinkingMessage(String artifactId, String content, boolean isFinal) {
+        if (artifactId == null) return;
+        try {
+            ToolArtifact artifact = repository.findById(artifactId).orElse(null);
+            if (artifact == null) return;
+            Map<String, Object> header = Map.of(
+                "type", "message",
+                "subtype", "thinking-message",
+                "title", "Thinking Message",
+                "timestamp", System.currentTimeMillis(),
+                "status", isFinal ? "completed" : "streaming"
+            );
+            Map<String, Object> body = Map.of(
+                "type", "thinking-message",
+                "content", content != null ? content : "",
+                "timestamp", System.currentTimeMillis(),
+                "status", isFinal ? "completed" : "streaming"
+            );
+            artifact.setHeader(Base64.getEncoder().encodeToString(objectMapper.writeValueAsBytes(header)));
+            artifact.setBody(Base64.getEncoder().encodeToString(objectMapper.writeValueAsBytes(body)));
+            artifact.setBodyVersion(artifact.getBodyVersion() + 1);
+            artifact.setUpdatedAt(Instant.now());
+            repository.save(artifact);
+        } catch (Exception e) {
+            log.error("更新 thinking 消息失败：artifactId={}", artifactId, e);
+        }
+    }
+
     private String callAIWithToolCallbacks(String accountId, String sessionId, String content, String assistantArtifactId) {
         try {
             demo.k8s.agent.observability.tracing.TraceContext.setSessionId(sessionId);
@@ -185,6 +282,8 @@ public class HappyChatService {
             AtomicReference<StringBuilder> contentBuffer = new AtomicReference<>(new StringBuilder());
 
             log.info("[DEBUG] 开始调用 agenticQueryLoop.runWithCallbacks");
+            AtomicReference<StringBuilder> thinkingBuffer = new AtomicReference<>(new StringBuilder());
+            String thinkingArtifactId = createStreamingThinkingMessage(accountId, sessionId);
             AgenticTurnResult result = agenticQueryLoop.runWithCallbacks(
                 content,
                 (toolName, input) -> {
@@ -198,8 +297,18 @@ public class HappyChatService {
                         contentBuffer.get().append(delta);
                         updateAssistantMessage(assistantArtifactId, contentBuffer.get().toString(), false);
                     }
+                },
+                (reasoningDelta) -> {
+                    if (reasoningDelta != null && !reasoningDelta.isEmpty()) {
+                        thinkingBuffer.get().append(reasoningDelta);
+                        updateThinkingMessage(thinkingArtifactId, thinkingBuffer.get().toString(), false);
+                    }
+                },
+                (intermediateText) -> {
+                    createAssistantProgressMessage(accountId, sessionId, intermediateText);
                 }
             );
+            updateThinkingMessage(thinkingArtifactId, thinkingBuffer.get().toString(), true);
             log.info("[DEBUG] agenticQueryLoop.runWithCallbacks 完成，replyText={}", result.replyText());
             return result.replyText();
 

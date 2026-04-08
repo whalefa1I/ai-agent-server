@@ -42,15 +42,25 @@ public class StatefulChatController {
      * 有状态对话接口
      */
     @PostMapping
-    public ChatResponse chat(@RequestBody ChatRequest request) {
+    public ChatResponse chat(@RequestBody Map<String, Object> request) {
+        String message = request != null && request.get("message") != null
+                ? String.valueOf(request.get("message"))
+                : "";
+        if (message.isBlank()) {
+            return new ChatResponse(
+                    "错误：message 不能为空",
+                    conversationManager.getSessionId(),
+                    conversationManager.getSessionSnapshot()
+            );
+        }
         log.info("收到对话请求：sessionId={}", conversationManager.getSessionId());
 
         // 开始新回合
-        ConversationManager.TurnContext ctx = conversationManager.startTurn(request.message());
+        ConversationManager.TurnContext ctx = conversationManager.startTurn(message);
 
         try {
             // 执行 agentic loop
-            AgenticTurnResult result = agenticQueryLoop.run(request.message());
+            AgenticTurnResult result = agenticQueryLoop.run(message);
 
             // 保存助手响应
             conversationManager.completeTurn(ctx, result.replyText(), List.of());

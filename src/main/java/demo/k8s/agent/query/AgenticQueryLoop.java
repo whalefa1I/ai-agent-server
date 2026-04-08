@@ -88,7 +88,10 @@ public class AgenticQueryLoop {
                         toolPermissionContext, toolFeatureFlags, mcpToolProvider.loadMcpTools());
 
         ToolCallingChatOptions options =
-                ToolCallingChatOptions.builder().toolCallbacks(tools).build();
+                ToolCallingChatOptions.builder()
+                        .toolCallbacks(tools)
+                        .internalToolExecutionEnabled(false)
+                        .build();
 
         // 构建系统提示词，动态注入技能提示词（每次请求时检查版本变化）
         String baseSystem =

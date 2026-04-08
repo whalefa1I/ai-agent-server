@@ -147,7 +147,10 @@ public class WorkerAgentExecutor {
 
                 // 调用模型
                 ToolCallingChatOptions options =
-                        ToolCallingChatOptions.builder().toolCallbacks(workerTools).build();
+                ToolCallingChatOptions.builder()
+                        .toolCallbacks(workerTools)
+                        .internalToolExecutionEnabled(false)
+                        .build();
                 Prompt prompt = new Prompt(messages, options);
 
                 ChatResponse response;

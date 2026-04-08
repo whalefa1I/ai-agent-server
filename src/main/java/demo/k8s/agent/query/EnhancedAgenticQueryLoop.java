@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -176,6 +177,29 @@ public class EnhancedAgenticQueryLoop {
             String userMessage,
             java.util.function.BiConsumer<String, JsonNode> onToolCall,
             java.util.function.Consumer<String> onTextDelta) {
+        return runWithCallbacks(userMessage, onToolCall, onTextDelta, null, null);
+    }
+
+    /**
+     * 运行 agentic 回合（带回调支持，含 reasoning/thinking 增量）
+     */
+    public AgenticTurnResult runWithCallbacks(
+            String userMessage,
+            java.util.function.BiConsumer<String, JsonNode> onToolCall,
+            java.util.function.Consumer<String> onTextDelta,
+            java.util.function.Consumer<String> onReasoningDelta) {
+        return runWithCallbacks(userMessage, onToolCall, onTextDelta, onReasoningDelta, null);
+    }
+
+    /**
+     * 运行 agentic 回合（带回调支持，含 reasoning 与中间 assistant 文本）
+     */
+    public AgenticTurnResult runWithCallbacks(
+            String userMessage,
+            java.util.function.BiConsumer<String, JsonNode> onToolCall,
+            java.util.function.Consumer<String> onTextDelta,
+            java.util.function.Consumer<String> onReasoningDelta,
+            java.util.function.Consumer<String> onIntermediateAssistantText) {
 
         log.info("开始 agentic query loop: userMessage={}", truncate(userMessage, 100));
 
@@ -192,7 +216,11 @@ public class EnhancedAgenticQueryLoop {
         log.debug("加载工具数量：{}", tools.size());
 
         ToolCallingChatOptions options =
-                ToolCallingChatOptions.builder().toolCallbacks(tools).build();
+                ToolCallingChatOptions.builder()
+                        .toolCallbacks(tools)
+                        // 关闭 Spring AI 内部工具执行，改为应用层显式调度，保证中间过程可观测。
+                        .internalToolExecutionEnabled(false)
+                        .build();
 
         // 构建系统提示，动态注入技能提示词（每次请求时检查版本变化）
         String baseSystem =
@@ -295,6 +323,18 @@ public class EnhancedAgenticQueryLoop {
             log.info("模型响应检查：hasToolCalls={}, responseText={}", hasTools,
                 responseText != null ? (responseText.length() > 50 ? responseText.substring(0, 50) + "..." : responseText) : "null");
 
+            // 若模型返回 reasoning/thinking 内容，透传给上层（研发阶段可视化）
+            String reasoningText = extractReasoningText(response);
+            if (onReasoningDelta != null && reasoningText != null && !reasoningText.isEmpty()) {
+                streamText(reasoningText, onReasoningDelta);
+            }
+
+            // 仅在“将继续执行工具”的回合透传中间说明，避免与最终答复重复。
+            if (hasTools && onIntermediateAssistantText != null
+                    && responseText != null && !responseText.isBlank()) {
+                onIntermediateAssistantText.accept(responseText);
+            }
+
             // 如果没有工具调用但有响应文本，直接返回
             // 注意：Spring AI 可能已经执行了工具，但我们无法获取工具调用信息
             if (!hasTools) {
@@ -309,7 +349,7 @@ public class EnhancedAgenticQueryLoop {
             }
 
             // 处理工具调用（带权限检查）
-            List<AssistantMessage.ToolCall> executedToolCalls;
+            List<ExecutedToolCall> executedToolCalls;
             try {
                 log.info("开始执行工具调用检查，工具数量：{}", response.getResult().getOutput().getToolCalls() != null ? response.getResult().getOutput().getToolCalls().size() : 0);
                 executedToolCalls = executeToolsWithPermissionCheck(response, prompt, options, onToolCall);
@@ -321,8 +361,20 @@ public class EnhancedAgenticQueryLoop {
                         state);
             }
 
-            // 简化处理：工具执行后继续循环
-            log.debug("执行了 {} 个工具调用", executedToolCalls.size());
+            // 显式回写本轮 assistant(toolCalls) + tool_response，进入下一轮
+            // 直接复用模型原始 assistant 输出（包含 toolCalls），避免依赖不可见构造器。
+            messages.add(response.getResult().getOutput());
+
+            List<ToolResponseMessage.ToolResponse> toolResponses = executedToolCalls.stream()
+                    .map(c -> new ToolResponseMessage.ToolResponse(
+                            c.toolCall().id(),
+                            c.toolCall().name(),
+                            c.output() != null ? c.output() : ""))
+                    .toList();
+            if (!toolResponses.isEmpty()) {
+                messages.add(ToolResponseMessage.builder().responses(toolResponses).build());
+            }
+            log.debug("执行了 {} 个工具调用，并已回写 {} 条 tool_response", executedToolCalls.size(), toolResponses.size());
         }
     }
 
@@ -330,7 +382,7 @@ public class EnhancedAgenticQueryLoop {
      * 执行工具调用并进行权限检查
      * TODO: 修复 Spring AI API 兼容性
      */
-    private List<AssistantMessage.ToolCall> executeToolsWithPermissionCheck(
+    private List<ExecutedToolCall> executeToolsWithPermissionCheck(
             ChatResponse response,
             Prompt prompt,
             ToolCallingChatOptions options,
@@ -343,7 +395,7 @@ public class EnhancedAgenticQueryLoop {
             return List.of();
         }
 
-        List<AssistantMessage.ToolCall> approvedCalls = new ArrayList<>();
+        List<ExecutedToolCall> approvedCalls = new ArrayList<>();
 
         for (AssistantMessage.ToolCall tc : toolCalls) {
             // 查找工具定义
@@ -503,7 +555,9 @@ public class EnhancedAgenticQueryLoop {
 
                 // 记录成功
                 sessionStats.completeToolCall(toolMetrics, toolOutput);
-                approvedCalls.add(tc);
+                approvedCalls.add(new ExecutedToolCall(
+                        new AssistantMessage.ToolCall(tc.id(), tc.name(), tc.arguments(), toolOutput),
+                        toolOutput));
 
                 // 记录工具调用（结构化日志和事件）
                 long toolLatencyMs = toolMetrics.getLatencyMs();
@@ -566,16 +620,21 @@ public class EnhancedAgenticQueryLoop {
                 }
 
                 // 添加错误响应到消息
-                approvedCalls.add(new AssistantMessage.ToolCall(
-                        tc.id(),
-                        tc.name(),
-                        tc.arguments(),
-                        "Error: " + e.getMessage()));
+                String errorOutput = "Error: " + e.getMessage();
+                approvedCalls.add(new ExecutedToolCall(
+                        new AssistantMessage.ToolCall(
+                                tc.id(),
+                                tc.name(),
+                                tc.arguments(),
+                                errorOutput),
+                        errorOutput));
             }
         }
 
         return approvedCalls;
     }
+
+    private record ExecutedToolCall(AssistantMessage.ToolCall toolCall, String output) {}
 
     /**
      * 同步等待用户确认（支持回调和轮询两种方式）
@@ -724,8 +783,80 @@ public class EnhancedAgenticQueryLoop {
         if (response.getResult() == null || response.getResult().getOutput() == null) {
             return "";
         }
-        String t = response.getResult().getOutput().getText();
-        return t != null ? t : "";
+        var output = response.getResult().getOutput();
+        String t = output.getText();
+        if (t != null && !t.isBlank()) {
+            return t;
+        }
+
+        // 兼容部分 OpenAI-compatible 实现：中间回合文字只在 rawContent 中可见
+        try {
+            Object raw = output.getClass().getMethod("getRawContent").invoke(output);
+            if (raw != null) {
+                String s = String.valueOf(raw).trim();
+                if (!s.isEmpty() && !"null".equalsIgnoreCase(s)) {
+                    return s;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        // 兜底：某些实现会把文本放在 metadata 的 content/message 字段
+        try {
+            Object md = output.getClass().getMethod("getMetadata").invoke(output);
+            if (md instanceof Map<?, ?> map) {
+                Object content = map.get("content");
+                if (content == null) {
+                    content = map.get("message");
+                }
+                if (content != null) {
+                    String s = String.valueOf(content).trim();
+                    if (!s.isEmpty() && !"null".equalsIgnoreCase(s)) {
+                        return s;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
+    }
+
+    private String extractReasoningText(ChatResponse response) {
+        if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
+            return "";
+        }
+        Object output = response.getResult().getOutput();
+        // 优先尝试 AssistantMessage#getReasoningContent（若底层实现支持）
+        try {
+            Object rc = output.getClass().getMethod("getReasoningContent").invoke(output);
+            if (rc != null) {
+                String s = String.valueOf(rc).trim();
+                if (!s.isEmpty() && !"null".equalsIgnoreCase(s)) {
+                    return s;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        // 兜底：从 metadata 中尝试常见键
+        try {
+            Object md = response.getMetadata();
+            if (md != null) {
+                Object v = null;
+                try {
+                    v = md.getClass().getMethod("get", String.class).invoke(md, "reasoningContent");
+                    if (v == null) v = md.getClass().getMethod("get", String.class).invoke(md, "reasoning");
+                    if (v == null) v = md.getClass().getMethod("get", String.class).invoke(md, "thinking");
+                } catch (Exception ignored) {
+                }
+                if (v != null) {
+                    String s = String.valueOf(v).trim();
+                    if (!s.isEmpty() && !"null".equalsIgnoreCase(s)) return s;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
     }
 
     private static String truncate(String s, int maxLen) {
