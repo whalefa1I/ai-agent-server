@@ -33,7 +33,7 @@ public class RemoteToolRouter {
      */
     private static final Set<String> LOCAL_ONLY_TOOLS = Set.of(
         "file_read", "glob", "grep",                  // 只读文件操作
-        "todo_write", "task_create", "task_list",     // 规划工具
+        "task_create", "task_list",                   // 任务工具
         "task_get", "task_update", "task_stop",       // 任务工具
         "task_output", "exit_plan_mode"               // 其他规划工具
     );

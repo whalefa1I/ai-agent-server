@@ -3,7 +3,6 @@ package demo.k8s.agent.config;
 import demo.k8s.agent.tools.UnifiedToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolRegistry;
-import demo.k8s.agent.tools.local.planning.TodoArtifactHelper;
 import demo.k8s.agent.toolsystem.ClaudeLikeTool;
 import demo.k8s.agent.toolsystem.ClaudeToolFactory;
 import demo.k8s.agent.toolsystem.DemoToolSpecs;
@@ -49,9 +48,7 @@ public class DemoToolRegistryConfiguration {
 
     @PostConstruct
     public void init() {
-        // 初始化 TodoArtifactHelper 的依赖服务
-        TodoArtifactHelper.setServices(toolStateService, repository, privacyKitService);
-        log.info("TodoArtifactHelper 已初始化");
+        // Nothing to initialize for now
     }
 
     @Bean
@@ -59,7 +56,7 @@ public class DemoToolRegistryConfiguration {
             UnifiedToolExecutor unifiedToolExecutor,
             PermissionManager permissionManager,
             ToolPermissionContext toolPermissionContext) {
-        // 注册本地工具（基本工具 + todo_write + Task 工具集）
+        // 注册本地工具（基本工具 + Task 工具集）
         ToolRegistry full = new ToolRegistry();
         full.register(new ToolModule(DemoToolSpecs.glob(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "glob")));
         full.register(new ToolModule(DemoToolSpecs.fileRead(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "file_read")));
@@ -67,7 +64,6 @@ public class DemoToolRegistryConfiguration {
         full.register(new ToolModule(DemoToolSpecs.fileEdit(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "file_edit")));
         full.register(new ToolModule(DemoToolSpecs.bash(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "bash")));
         full.register(new ToolModule(DemoToolSpecs.grep(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "grep")));
-        full.register(new ToolModule(DemoToolSpecs.todoWrite(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "todo_write")));
         // Task 工具集（单独注册每个子工具）
         full.register(new ToolModule(createTaskCreateToolSpec(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "TaskCreate")));
         full.register(new ToolModule(createTaskListToolSpec(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "TaskList")));

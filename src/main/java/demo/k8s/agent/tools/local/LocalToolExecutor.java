@@ -4,7 +4,6 @@ import demo.k8s.agent.tools.local.file.LocalGlobTool;
 import demo.k8s.agent.tools.local.file.LocalFileReadTool;
 import demo.k8s.agent.tools.local.file.LocalFileWriteTool;
 import demo.k8s.agent.tools.local.file.LocalFileEditTool;
-import demo.k8s.agent.tools.local.planning.TodoWriteTool;
 import demo.k8s.agent.tools.local.planning.TaskTools;
 import demo.k8s.agent.tools.local.search.LocalGrepTool;
 import demo.k8s.agent.tools.local.shell.LocalBashTool;
@@ -42,7 +41,6 @@ public class LocalToolExecutor {
             case "file_edit" -> LocalFileEditTool.execute(input);
             case "grep" -> LocalGrepTool.execute(input);
             case "bash" -> LocalBashTool.execute(input);
-            case "todo_write" -> TodoWriteTool.execute(input);
             // Task 工具集
             case "TaskCreate" -> TaskTools.executeTaskCreate(input);
             case "TaskList" -> TaskTools.executeTaskList(input);
