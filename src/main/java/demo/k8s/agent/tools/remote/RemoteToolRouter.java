@@ -23,16 +23,15 @@ public class RemoteToolRouter {
      * 需要路由到远程服务的具体工具名称（危险操作）
      */
     private static final Set<String> REMOTE_TOOLS = Set.of(
-        "bash", "shell",                              // Shell 执行 - 危险
-        "file_write", "file_edit", "file_delete",     // 文件修改
-        "file_move", "file_copy", "mkdir"             // 文件系统操作
+        "bash", "shell"                               // 仅 Shell 走远程，避免文件读写跨环境不一致
     );
 
     /**
      * 只在本地执行的安全工具（只读操作）
      */
     private static final Set<String> LOCAL_ONLY_TOOLS = Set.of(
-        "file_read", "glob", "grep",                  // 只读文件操作
+        "file_read", "file_write", "file_edit",       // 文件操作统一本地
+        "glob", "grep", "FileDelete", "local_mkdir",  // 文件系统/目录工具
         "task_create", "task_list",                   // 任务工具
         "task_get", "task_update", "task_stop",       // 任务工具
         "task_output", "exit_plan_mode"               // 其他规划工具

@@ -210,21 +210,17 @@ public class DemoToolRegistryConfiguration {
             @Autowired(required = false) demo.k8s.agent.tools.remote.PythonRemoteToolExecutor pythonRemoteToolExecutor,
             @Value("${remote.tools.base-url:}") String remoteBaseUrl,
             @Value("${remote.tools.api-key:}") String remoteApiKey) {
-
-        // 创建远程工具路由器
-        demo.k8s.agent.tools.remote.RemoteToolRouter router = null;
-        if (pythonRemoteToolExecutor != null && remoteBaseUrl != null && !remoteBaseUrl.isEmpty()) {
-            router = new demo.k8s.agent.tools.remote.RemoteToolRouter(
-                true, pythonRemoteToolExecutor, remoteBaseUrl, remoteApiKey);
+        // 强制仅本地调试：忽略远程沙盒配置与 Python 远程执行器。
+        if (pythonRemoteToolExecutor != null || (remoteBaseUrl != null && !remoteBaseUrl.isEmpty())) {
+            log.warn("Remote sandbox is disabled. All tools execute locally. remoteBaseUrl={}", remoteBaseUrl);
         }
 
         var builder = UnifiedToolExecutor.builder()
-                .mode(UnifiedToolExecutor.ExecutionMode.AUTO)
+                .mode(UnifiedToolExecutor.ExecutionMode.LOCAL)
                 .localExecutor(localExecutor)
                 .toolStateService(toolStateService)
                 .repository(repository)
-                .privacyKitService(privacyKitService)
-                .remoteRouter(router);
+                .privacyKitService(privacyKitService);
 
         return builder.build();
     }
