@@ -95,7 +95,10 @@ public class LocalFileEditTool {
     public static PermissionResult checkPermissions(String argumentsJson, ToolPermissionContext ctx) {
         try {
             JsonNode input = new com.fasterxml.jackson.databind.ObjectMapper().readTree(argumentsJson);
-            String filePath = input.has("file_path") ? input.get("file_path").asText("") : "";
+            String filePath = FileToolArgs.readFilePath(input);
+            if (filePath == null) {
+                filePath = "";
+            }
 
             if (filePath.isBlank()) {
                 return PermissionResult.deny("file_path is required");
@@ -124,7 +127,10 @@ public class LocalFileEditTool {
      * 输入验证方法
      */
     public static String validateInput(JsonNode input) {
-        String filePath = input.has("file_path") ? input.get("file_path").asText("") : "";
+        String filePath = FileToolArgs.readFilePath(input);
+        if (filePath == null) {
+            filePath = "";
+        }
         String oldString = input.has("old_string") ? input.get("old_string").asText("") : "";
         String newString = input.has("new_string") ? input.get("new_string").asText("") : "";
 
@@ -196,7 +202,7 @@ public class LocalFileEditTool {
         long startTime = System.currentTimeMillis();
 
         try {
-            String filePath = (String) input.get("file_path");
+            String filePath = FileToolArgs.readFilePath(input);
             if (filePath == null || filePath.isEmpty()) {
                 return LocalToolResult.error("file_path is required");
             }

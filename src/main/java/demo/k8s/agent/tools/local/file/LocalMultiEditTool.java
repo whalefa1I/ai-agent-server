@@ -96,7 +96,10 @@ public class LocalMultiEditTool {
             }
 
             for (JsonNode edit : edits) {
-                String filePath = edit.has("file_path") ? edit.get("file_path").asText("") : "";
+                String filePath = FileToolArgs.readFilePathFromEdit(edit);
+                if (filePath == null) {
+                    filePath = "";
+                }
 
                 if (filePath.isBlank()) {
                     return PermissionResult.deny("file_path is required for all edits");
@@ -135,7 +138,10 @@ public class LocalMultiEditTool {
 
         for (int i = 0; i < edits.size(); i++) {
             JsonNode edit = edits.get(i);
-            String filePath = edit.has("file_path") ? edit.get("file_path").asText("") : "";
+            String filePath = FileToolArgs.readFilePathFromEdit(edit);
+            if (filePath == null) {
+                filePath = "";
+            }
             String oldString = edit.has("old_string") ? edit.get("old_string").asText("") : "";
             String newString = edit.has("new_string") ? edit.get("new_string").asText("") : "";
 
@@ -328,7 +334,7 @@ public class LocalMultiEditTool {
         Map<String, List<EditOperation>> result = new java.util.LinkedHashMap<>();
 
         for (Map<String, Object> edit : edits) {
-            String filePath = (String) edit.get("file_path");
+            String filePath = FileToolArgs.readFilePath(edit);
             String oldString = (String) edit.get("old_string");
             String newString = (String) edit.get("new_string");
             boolean replaceAll = getBoolean(edit, "replace_all", false);

@@ -172,12 +172,13 @@ public final class AgentPrompts {
      * 及 {@code demo.k8s.agent.toolsystem.DemoToolSpecs} 中 JSON Schema 一致（对齐 Claude Code 命名）。
      */
     public static final String FILE_TOOLS_PARAM_RULES = """
-            === 文件工具入参（须与工具 Schema 字段名完全一致） ===
-            - file_read：必填 **file_path**（绝对路径字符串）；可选 offset、limit、pages。不要用 **path** 代替 file_path。
-            - file_write：必填 **file_path**、**content**。不要用 path 代替 file_path。
-            - file_edit：必填 **file_path**、**old_string**、**new_string**。
-            - multi_edit：每条编辑对象内为 **file_path**、old_string、new_string。
-            字段名错误会导致服务端返回 file_path is required 等校验错误。
+            === 文件工具入参（与工具 JSON Schema / Claude Code 一致） ===
+            - 路径参数规范名：**file_path**（绝对路径）。不要用 **path** 代替 file_path。
+            - file_read：必填 file_path；可选 offset、limit、pages。
+            - file_write：必填 file_path、content。
+            - file_edit：必填 file_path、old_string、new_string。
+            - multi_edit：每条编辑对象为 file_path、old_string、new_string。
+            说明：若上游以 **filePath**（camelCase）传参，服务端执行层会按同义处理；对外与 Schema 仍以 **file_path** 为准。
             """;
 
     /** 默认（非 Coordinator Mode）：主会话可 Task + k8s + Skill */

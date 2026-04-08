@@ -78,7 +78,10 @@ public class LocalFileWriteTool {
     public static PermissionResult checkPermissions(String argumentsJson, ToolPermissionContext ctx) {
         try {
             JsonNode input = new com.fasterxml.jackson.databind.ObjectMapper().readTree(argumentsJson);
-            String filePath = input.has("file_path") ? input.get("file_path").asText("") : "";
+            String filePath = FileToolArgs.readFilePath(input);
+            if (filePath == null) {
+                filePath = "";
+            }
 
             if (filePath.isBlank()) {
                 return PermissionResult.deny("file_path is required");
@@ -107,7 +110,10 @@ public class LocalFileWriteTool {
      * 输入验证方法
      */
     public static String validateInput(JsonNode input) {
-        String filePath = input.has("file_path") ? input.get("file_path").asText("") : "";
+        String filePath = FileToolArgs.readFilePath(input);
+        if (filePath == null) {
+            filePath = "";
+        }
         String content = input.has("content") ? input.get("content").asText("") : "";
 
         if (filePath.isBlank()) {
@@ -169,7 +175,7 @@ public class LocalFileWriteTool {
         long startTime = System.currentTimeMillis();
 
         try {
-            String filePath = (String) input.get("file_path");
+            String filePath = FileToolArgs.readFilePath(input);
             String content = (String) input.get("content");
 
             if (filePath == null || filePath.isEmpty()) {

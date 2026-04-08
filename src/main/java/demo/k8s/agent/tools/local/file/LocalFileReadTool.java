@@ -90,7 +90,7 @@ public class LocalFileReadTool {
         long startTime = System.currentTimeMillis();
 
         try {
-            String filePath = (String) input.get("file_path");
+            String filePath = FileToolArgs.readFilePath(input);
             int offset = getInt(input, "offset", 0);
             int limit = getInt(input, "limit", Integer.MAX_VALUE);
             String pages = (String) input.get("pages");
