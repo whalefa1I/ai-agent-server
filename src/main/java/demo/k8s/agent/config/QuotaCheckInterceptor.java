@@ -35,9 +35,8 @@ public class QuotaCheckInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        // 开发环境跳过配额检查
+        // 开发环境跳过配额检查（勿打 debug：前端轮询会每秒刷满日志）
         if (skipQuotaCheck) {
-            log.debug("开发模式：跳过配额检查");
             return true;
         }
 

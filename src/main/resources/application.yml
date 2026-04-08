@@ -44,14 +44,17 @@ spring:
         options:
           model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v3}
 
-# 日志配置 - 详细 HTTP 级别日志
+# 日志：默认偏安静，避免联调时轮询 + Spring HTTP 调试把 logs 撑爆。
+# 需要细查时可加环境变量：LOGGING_LEVEL_DEMO_K8S_AGENT=DEBUG
+# 或：LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB=DEBUG
 logging:
   level:
-    demo.k8s.agent: DEBUG
-    org.springframework.ai: DEBUG
-    org.springframework.web.client: TRACE
-    org.springframework.http: DEBUG
-    org.springframework.http.client: DEBUG
+    root: INFO
+    demo.k8s.agent: INFO
+    org.springframework.ai: INFO
+    org.springframework.web.client: INFO
+    org.springframework.http: INFO
+    org.springframework.http.client: INFO
     # 降低 Hibernate 工具 schema 日志级别（避免索引已存在的警告）
     org.hibernate.tool.schema.spi.ExceptionHandlerLoggedImpl: ERROR
     org.hibernate.tool.schema.internal.ExceptionHandlerLoggedImpl: ERROR

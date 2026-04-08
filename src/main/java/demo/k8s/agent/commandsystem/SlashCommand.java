@@ -20,8 +20,8 @@ public record SlashCommand(
         aliases = aliases == null ? List.of() : List.copyOf(aliases);
     }
 
-    /** 与 TS {@code isEnabled()} 命名一致 */
-    public boolean isEnabled() {
-        return enabled;
-    }
+    /**
+     * 勿再添加 {@code isEnabled()}：record 已有 {@code enabled} 组件与 {@code enabled()} 访问器，
+     * 若与 Bean 风格 {@code isEnabled()} 并存，Jackson 序列化 {@code List<SlashCommand>} 时会冲突导致 HTTP 500。
+     */
 }

@@ -76,11 +76,11 @@ public final class AgentPrompts {
             Use this tool to retrieve detailed information about a specific task.
 
             Required parameter:
-            - task_id: The ID of the task to retrieve (must obtain from TaskCreate response or TaskList output)
+            - taskId: The ID of the task to retrieve (must obtain from TaskCreate response or TaskList output)
 
             Important:
-            - You MUST have a valid task_id before calling TaskGet
-            - Get task_id from:
+            - You MUST have a valid taskId before calling TaskGet
+            - Get taskId from:
               1. The 'id' field returned by TaskCreate after creating a task
               2. The 'id' field from TaskList output showing existing tasks
 
@@ -102,14 +102,14 @@ public final class AgentPrompts {
             Use this tool to update an existing task's properties.
 
             Required parameter:
-            - task_id: The ID of the task to update (must obtain from TaskCreate response or TaskList output)
+            - taskId: The ID of the task to update (must obtain from TaskCreate response or TaskList output)
 
             Important:
-            - You MUST have a valid task_id before calling TaskUpdate
-            - Get task_id from:
+            - You MUST have a valid taskId before calling TaskUpdate
+            - Get taskId from:
               1. The 'id' field returned by TaskCreate after creating a task
               2. The 'id' field from TaskList output showing existing tasks
-            - Never call TaskUpdate without a valid task_id - it will fail
+            - Never call TaskUpdate without a valid taskId - it will fail
 
             Optional parameters:
             - subject: New task title
@@ -135,11 +135,11 @@ public final class AgentPrompts {
             Use this tool to stop a running background task by ID.
 
             Required parameter:
-            - task_id: The ID of the background task to stop (must obtain from TaskCreate response or TaskList output)
+            - taskId: The ID of the background task to stop (must obtain from TaskCreate response or TaskList output)
 
             Important:
-            - You MUST have a valid task_id before calling TaskStop
-            - Get task_id from:
+            - You MUST have a valid taskId before calling TaskStop
+            - Get taskId from:
               1. The 'id' field returned by TaskCreate after creating a task
               2. The 'id' field from TaskList output showing existing tasks
 
@@ -156,11 +156,11 @@ public final class AgentPrompts {
             Use this tool to retrieve the output/result of a task.
 
             Required parameter:
-            - task_id: The ID of the task to get output for (must obtain from TaskCreate response or TaskList output)
+            - taskId: The ID of the task to get output for (must obtain from TaskCreate response or TaskList output)
 
             Important:
-            - You MUST have a valid task_id before calling TaskOutput
-            - Get task_id from:
+            - You MUST have a valid taskId before calling TaskOutput
+            - Get taskId from:
               1. The 'id' field returned by TaskCreate after creating a task
               2. The 'id' field from TaskList output showing existing tasks
 
@@ -181,10 +181,17 @@ public final class AgentPrompts {
                     === 其他 Task 工具 ===
 
                     - TaskList: 列出所有任务，检查现有任务避免重复创建
-                    - TaskGet: 获取特定任务详情（需要 task_id）
-                    - TaskUpdate: 更新任务状态/详情（需要 task_id，可更新 status/subject/description/owner 等）
-                    - TaskStop: 停止运行中的任务（需要 task_id）
-                    - TaskOutput: 获取任务输出结果（需要 task_id）
+                    - TaskGet: 获取特定任务详情（需要 taskId）
+                    - TaskUpdate: 更新任务状态/详情（需要 taskId，可更新 status/subject/description/owner 等）
+                    - TaskStop: 停止运行中的任务（需要 taskId）
+                    - TaskOutput: 获取任务输出结果（需要 taskId）
+
+                    === 执行约束（减少常见报错） ===
+
+                    - 调用 TaskGet / TaskUpdate / TaskStop / TaskOutput 前，必须先拿到有效 taskId；禁止空参数调用。
+                    - 调用 TaskCreate 时必须同时提供非空 subject 与 description；若上次返回 TASK_CREATE_SUBJECT_REQUIRED / TASK_CREATE_DESCRIPTION_REQUIRED，需修正参数后重试，禁止再次发送 Input {}。
+                    - 文件查看优先使用 file_read，不要用 shell 的 `type`（在 bash 环境会被当作命令类型检查，容易失败）。
+                    - 使用 file_edit 时，old_string/new_string 必须是文件中的真实片段，禁止使用 "<原内容>"、"<新内容>" 这类占位文本。
 
                     工具系统元数据见 Java 包 demo.k8s.agent.toolsystem。
                     """;
@@ -197,7 +204,7 @@ public final class AgentPrompts {
             """
                     你是纯编排者（Coordinator）：没有 k8s_sandbox_run、Skill、Bash、读文件等直接执行类工具。
                     通过 Task 启动子 Agent 完成调研与实现；用 SendMessage 对已有 task 发送跟进消息；用 TaskStop 请求中止。
-                    SendMessage/TaskStop 在本 demo 中为内存占位，未接入真实 worker 总线，但请按正式协议填写 task_id。
+                    SendMessage/TaskStop 在本 demo 中为内存占位，未接入真实 worker 总线，但请按正式协议填写 taskId。
                     向用户汇报时自行总结，不要捏造工具输出。
                     """;
 

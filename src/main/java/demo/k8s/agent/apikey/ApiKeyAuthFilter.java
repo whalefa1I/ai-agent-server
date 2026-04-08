@@ -141,8 +141,8 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
         request.setAttribute("API_KEY", apiKey);
         request.setAttribute("API_KEY_PLAN", plan);
 
-        // 记录访问日志
-        log.debug("API Key 访问：{} (key={}, path={})",
+        // 高频路径（轮询等）：仅 TRACE，避免与 DEBUG 应用日志叠加刷屏
+        log.trace("API Key 访问：{} (key={}, path={})",
                 apiKey.getUserId(), apiKey.getKeyPrefix(), path);
 
         try {

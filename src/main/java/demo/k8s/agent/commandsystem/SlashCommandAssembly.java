@@ -50,8 +50,8 @@ public final class SlashCommandAssembly {
         return mergeFirstWins(flat);
     }
 
-    /** 对应 {@code meetsAvailabilityRequirement && isCommandEnabled} 的简化：仅 {@link SlashCommand#isEnabled()} */
+    /** 对应 {@code meetsAvailabilityRequirement && isCommandEnabled} 的简化：仅 {@link SlashCommand#enabled()} */
     public static List<SlashCommand> filterEnabled(List<SlashCommand> commands) {
-        return commands.stream().filter(SlashCommand::isEnabled).toList();
+        return commands.stream().filter(SlashCommand::enabled).toList();
     }
 }

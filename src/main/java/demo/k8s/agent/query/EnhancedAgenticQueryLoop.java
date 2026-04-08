@@ -508,13 +508,14 @@ public class EnhancedAgenticQueryLoop {
                     hookService.afterToolCall(sessionId, userId, tc.name(), input, toolOutput, true, toolLatencyMs);
                 }
 
-                // 更新 ToolArtifact 为 COMPLETED
+                // 更新 ToolArtifact 为 COMPLETED（与 UnifiedToolExecutor 一致：顶层附带 metadata，供前端渲染 Task 等工具）
                 if (toolStateService != null && artifactId != null) {
                     try {
                         Map<String, Object> completedBody = new HashMap<>();
                         completedBody.put("output", toolOutput);
                         completedBody.put("progress", "已完成");
                         completedBody.put("version", 4);
+                        enrichToolArtifactBodyFromToolOutputJson(completedBody, toolOutput);
                         toolStateService.updateToolArtifact(
                             artifactId, userId, ToolStatus.COMPLETED, completedBody, 3, currentWebSocketSession);
                     } catch (Exception e) {
@@ -720,6 +721,27 @@ public class EnhancedAgenticQueryLoop {
     private static String truncate(String s, int maxLen) {
         if (s == null) return "";
         return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
+    }
+
+    /**
+     * 将 {@link LocalToolResult} 序列化后的 JSON 字符串中的结构化字段合并进 artifact body，
+     * 与 {@link demo.k8s.agent.tools.UnifiedToolExecutor} 顶层 {@code metadata} 对齐，供前端 Task 等组件使用。
+     */
+    private void enrichToolArtifactBodyFromToolOutputJson(Map<String, Object> body, String toolOutputJson) {
+        if (toolOutputJson == null || toolOutputJson.isBlank()) {
+            return;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(toolOutputJson);
+            if (root.has("metadata") && !root.get("metadata").isNull()) {
+                body.put("metadata", objectMapper.convertValue(root.get("metadata"), Map.class));
+            }
+            if (root.has("content") && root.get("content").isTextual()) {
+                body.put("content", root.get("content").asText());
+            }
+        } catch (Exception e) {
+            log.debug("无法从 toolOutput 解析结构化字段: {}", e.getMessage());
+        }
     }
 
     /**

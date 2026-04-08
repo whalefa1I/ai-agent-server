@@ -199,6 +199,9 @@ public class UnifiedToolExecutor {
                 if (result.isSuccess()) {
                     updatedBody.put("status", "completed");
                     updatedBody.put("output", result.getContent());
+                    if (result.getMetadata() != null && result.getMetadata().size() > 0) {
+                        updatedBody.put("metadata", objectMapper.convertValue(result.getMetadata(), Map.class));
+                    }
                 } else {
                     updatedBody.put("status", "failed");
                     updatedBody.put("error", result.getError());
