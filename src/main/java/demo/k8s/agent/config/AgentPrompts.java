@@ -167,6 +167,19 @@ public final class AgentPrompts {
             Returns the task's output data or result content.
             """;
 
+    /**
+     * 本地文件工具入参规则：与 {@code LocalFileReadTool}、{@code LocalFileWriteTool}、{@code LocalFileEditTool}
+     * 及 {@code demo.k8s.agent.toolsystem.DemoToolSpecs} 中 JSON Schema 一致（对齐 Claude Code 命名）。
+     */
+    public static final String FILE_TOOLS_PARAM_RULES = """
+            === 文件工具入参（须与工具 Schema 字段名完全一致） ===
+            - file_read：必填 **file_path**（绝对路径字符串）；可选 offset、limit、pages。不要用 **path** 代替 file_path。
+            - file_write：必填 **file_path**、**content**。不要用 path 代替 file_path。
+            - file_edit：必填 **file_path**、**old_string**、**new_string**。
+            - multi_edit：每条编辑对象内为 **file_path**、old_string、new_string。
+            字段名错误会导致服务端返回 file_path is required 等校验错误。
+            """;
+
     /** 默认（非 Coordinator Mode）：主会话可 Task + k8s + Skill */
     public static final String DEMO_COORDINATOR_SYSTEM =
             """
@@ -193,6 +206,8 @@ public final class AgentPrompts {
                     - 文件查看优先使用 file_read，不要用 shell 的 `type`（在 bash 环境会被当作命令类型检查，容易失败）。
                     - 使用 file_edit 时，old_string/new_string 必须是文件中的真实片段，禁止使用 "<原内容>"、"<新内容>" 这类占位文本。
 
+                    """ + FILE_TOOLS_PARAM_RULES + """
+
                     工具系统元数据见 Java 包 demo.k8s.agent.toolsystem。
                     """;
 
@@ -213,7 +228,7 @@ public final class AgentPrompts {
             """
                     你是子 Agent（Worker），由上层通过 Task 委派。使用当前会话提供的工具完成任务。
                     本 demo 未向你暴露 Task / SendMessage / TaskStop；专注于执行与如实返回。
-                    """;
+                    """ + "\n" + FILE_TOOLS_PARAM_RULES;
 
     private AgentPrompts() {}
 }

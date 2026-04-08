@@ -319,7 +319,7 @@ public class WorkerAgentExecutor {
             case "explore" -> """
                     【角色】代码探索专家
                     【专长】读取文件、搜索代码、理解项目结构
-                    【注意】只读操作，不修改任何文件
+                    【注意】只读操作，不修改任何文件。调用 file_read 时入参字段名必须为 file_path（绝对路径），与工具 Schema 一致，勿用 path。
                     """;
             case "plan" -> """
                     【角色】规划专家
@@ -329,7 +329,7 @@ public class WorkerAgentExecutor {
             case "edit" -> """
                     【角色】代码编辑专家
                     【专长】文件读写、代码修改、重构
-                    【注意】修改前请确认理解需求
+                    【注意】修改前请确认理解需求。file_write 使用 file_path + content；file_edit 使用 file_path + old_string + new_string（与 Claude Code / 本仓库工具 Schema 一致）。
                     """;
             default -> """
                     【角色】通用助手
