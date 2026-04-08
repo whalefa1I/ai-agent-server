@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.client.RestClient;
 import org.slf4j.Logger;
@@ -43,13 +44,23 @@ public class OpenAiClientConfig {
     @Value("${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v3}")
     private String embeddingModel;
 
+    @Value("${demo.openai.connect-timeout-ms:15000}")
+    private int connectTimeoutMs;
+
+    @Value("${demo.openai.read-timeout-ms:180000}")
+    private int readTimeoutMs;
+
     @Bean
     @Primary
     public OpenAiApi openAiApi() {
         logger.info("Creating custom OpenAiApi bean with baseUrl={}, model={}, embeddingModel={}", baseUrl, model, embeddingModel);
 
         // Create custom RestClient with proper Authorization header
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(connectTimeoutMs);
+        requestFactory.setReadTimeout(readTimeoutMs);
         RestClient.Builder restClientBuilder = RestClient.builder()
+                .requestFactory(requestFactory)
                 .defaultHeaders(headers -> {
                     headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey);
                     headers.set(HttpHeaders.CONTENT_TYPE, "application/json");
@@ -61,7 +72,8 @@ public class OpenAiClientConfig {
                 .restClientBuilder(restClientBuilder)
                 .build();
 
-        logger.info("OpenAiApi created successfully, will use baseUrl: {}", baseUrl);
+        logger.info("OpenAiApi created successfully, baseUrl={}, connectTimeoutMs={}, readTimeoutMs={}",
+                baseUrl, connectTimeoutMs, readTimeoutMs);
         return api;
     }
 

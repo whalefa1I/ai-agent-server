@@ -232,6 +232,8 @@ public final class AgentPrompts {
 
                     - 调用 TaskGet / TaskUpdate / TaskStop / TaskOutput 前，必须先拿到有效 taskId；禁止空参数调用。
                     - 调用 TaskCreate 时必须同时提供非空 subject 与 description；若上次返回 TASK_CREATE_SUBJECT_REQUIRED / TASK_CREATE_DESCRIPTION_REQUIRED，需修正参数后重试，禁止再次发送 Input {}。
+                    - 若用户明确要求“创建 N 步任务”（如“第一步/第二步”或编号列表），必须按步骤一一创建 N 个独立任务；禁止把多步合并成 1 个任务。
+                    - 两步及以上的执行型请求，优先创建多个细粒度任务（每步一个 subject），再按顺序 TaskUpdate 推进状态。
                     - 文件查看优先使用 file_read，不要用 shell 的 `type`（在 bash 环境会被当作命令类型检查，容易失败）。
                     - 使用 file_edit 时，old_string/new_string 必须是文件中的真实片段，禁止使用 "<原内容>"、"<新内容>" 这类占位文本。
 

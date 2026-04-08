@@ -71,6 +71,9 @@ logging:
 
 # 开发环境配置
 demo:
+  openai:
+    connect-timeout-ms: ${DEMO_OPENAI_CONNECT_TIMEOUT_MS:15000}
+    read-timeout-ms: ${DEMO_OPENAI_READ_TIMEOUT_MS:180000}
   debug:
     # 为 true 时在每次模型调用前打印工具 inputSchema 摘要、系统提示与各条消息预览（仅服务端日志）
     log-model-request: ${DEMO_DEBUG_LOG_MODEL_REQUEST:false}
