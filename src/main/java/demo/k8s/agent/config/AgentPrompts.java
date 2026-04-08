@@ -195,6 +195,15 @@ public final class AgentPrompts {
                     需要执行受控 shell 时，使用 k8s_sandbox_run（K8s Job 沙盒）。可先调用 Skill「demo-k8s」阅读说明。不要编造工具输出。
                     说明：Task 子 Agent 由 spring-ai-agent-utils 内置执行器运行，默认带本地文件/Shell 等工具，仅适合受信开发环境。
 
+                    === Skills（对齐 OpenClaw，渐进加载）===
+                    - 在回复前先扫描 <available_skills> 的 <description>。
+                    - 若只有一个技能明确匹配：先用 file_read 读取其 <location> 指向的 SKILL.md，再按说明执行。
+                    - 若有多个候选：选择最具体的一个，先只读取这一个 SKILL.md。
+                    - 若没有明确匹配：不要读取任何 SKILL.md。
+                    - 约束：一次最多先读取 1 个 skill；仅在已选定 skill 后再读取。
+                    - 当 SKILL.md 引用相对路径时，必须以 skill 目录（SKILL.md 所在目录）解析为绝对路径再执行工具调用。
+                    - 不要调用名为 skill_<name> 的工具；skills 通过目录注入 + file_read(SKILL.md) 渐进生效。
+
                     === Task 工具使用指南 ===
 
                     """ + TASK_CREATE_PROMPT + """

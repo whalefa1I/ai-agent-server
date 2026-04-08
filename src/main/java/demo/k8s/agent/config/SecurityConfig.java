@@ -3,6 +3,7 @@ package demo.k8s.agent.config;
 import demo.k8s.agent.apikey.ApiKeyAuthFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -29,13 +30,27 @@ import java.util.List;
 public class SecurityConfig {
 
     private final ApiKeyAuthFilter apiKeyAuthFilter;
+    private final boolean disableAuth;
 
-    public SecurityConfig(ApiKeyAuthFilter apiKeyAuthFilter) {
+    public SecurityConfig(
+            ApiKeyAuthFilter apiKeyAuthFilter,
+            @Value("${demo.dev.disable-auth:true}") boolean disableAuth) {
         this.apiKeyAuthFilter = apiKeyAuthFilter;
+        this.disableAuth = disableAuth;
     }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        if (disableAuth) {
+            http
+                .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+                .httpBasic(basic -> basic.disable());
+            return http.build();
+        }
+
         http
             // 禁用 CSRF（API 服务，使用 Token 认证）
             .csrf(csrf -> csrf.disable())
@@ -56,6 +71,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**").permitAll()        // 认证相关
                 .requestMatchers("/api/commands/**").permitAll()    // 斜杠命令
                 .requestMatchers("/api/skills/**").permitAll()      // 技能管理
+                .requestMatchers("/api/permissions/**").permitAll() // 权限面板（开发阶段）
                 .requestMatchers("/actuator/**").permitAll()        // 监控端点
                 .requestMatchers("/error").permitAll()              // 错误页面
                 .requestMatchers("/h2-console/**").permitAll()      // H2 控制台（开发环境）

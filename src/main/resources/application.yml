@@ -79,6 +79,8 @@ demo:
   dev:
     # 开发环境跳过配额检查
     skip-quota-check: true
+    # 开发阶段可关闭全部鉴权（仅本地联调使用）
+    disable-auth: ${DEMO_DEV_DISABLE_AUTH:true}
   # 记忆系统配置
   memory:
     # 是否启用记忆系统（包括语义搜索和 Embedding）

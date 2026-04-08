@@ -4,8 +4,6 @@ import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-import demo.k8s.agent.skills.SkillRegistry;
-import demo.k8s.agent.skills.SkillExecutorRegistry;
 import demo.k8s.agent.skills.SkillService;
 import demo.k8s.agent.skills.SkillsWatchService;
 import demo.k8s.agent.toolsystem.McpToolProvider;
@@ -39,8 +37,6 @@ public class AgentConfiguration {
             ToolPermissionContext toolPermissionContext,
             ToolFeatureFlags toolFeatureFlags,
             McpToolProvider mcpToolProvider,
-            SkillRegistry skillRegistry,
-            SkillExecutorRegistry skillExecutorRegistry,
             SkillService skillService,
             SkillsWatchService skillsWatchService,
             DemoCoordinatorProperties coordinatorProperties) {
@@ -53,29 +49,10 @@ public class AgentConfiguration {
                 .map(demo.k8s.agent.toolsystem.ToolModule::callback)
                 .toList();
 
-        // 加载 Skill 工具（带执行函数）
-        List<org.springframework.ai.tool.ToolCallback> skillTools = new java.util.ArrayList<>();
-        if (skillRegistry != null) {
-            skillTools = skillRegistry.getSkillTools().stream()
-                    .map(tool -> {
-                        try {
-                            // 获取工具执行器（如果已注册）
-                            java.util.function.Function<String, String> executor =
-                                demo.k8s.agent.skills.SkillService.getToolExecutor(tool.name());
-                            return demo.k8s.agent.toolsystem.ClaudeToolFactory.toToolCallback(tool, executor);
-                        } catch (Exception e) {
-                            log.error("转换技能工具失败：{}", tool.name(), e);
-                            return null;
-                        }
-                    })
-                    .filter(t -> t != null)
-                    .toList();
-        }
-
-        // 合并所有工具
+        // 仅注入常规工具，不向模型直接暴露 skill_<name> 动态工具；
+        // skills 通过 system prompt catalog + file_read(SKILL.md) 渐进加载（对齐 OpenClaw）。
         List<org.springframework.ai.tool.ToolCallback> allTools = new java.util.ArrayList<>(
                 demoToolRegistry.filteredCallbacks(toolPermissionContext, toolFeatureFlags, mcpToolProvider.loadMcpTools()));
-        allTools.addAll(skillTools);
 
         // 构建系统提示词，动态注入技能提示词
         String baseSystem =
