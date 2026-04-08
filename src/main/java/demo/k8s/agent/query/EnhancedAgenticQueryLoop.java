@@ -21,6 +21,9 @@ import demo.k8s.agent.observability.logging.StructuredLogger;
 import demo.k8s.agent.observability.tracing.TraceContext;
 import demo.k8s.agent.observability.metrics.MetricsCollector;
 import demo.k8s.agent.skills.SkillService;
+import demo.k8s.agent.state.ChatMessage;
+import demo.k8s.agent.state.ConversationManager;
+import demo.k8s.agent.state.MessageType;
 import demo.k8s.agent.tools.UnifiedToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolResult;
 import demo.k8s.agent.toolsystem.*;
@@ -92,6 +95,7 @@ public class EnhancedAgenticQueryLoop {
     private final SkillService skillService;
     private final UnifiedToolExecutor unifiedToolExecutor;
     private final DemoDebugProperties demoDebugProperties;
+    private final ConversationManager conversationManager;
 
     // 权限确认回调（用于 WebSocket TUI）
     private Function<PermissionRequest, CompletableFuture<PermissionResult>> permissionCallback;
@@ -118,7 +122,8 @@ public class EnhancedAgenticQueryLoop {
             ToolCallingManager toolCallingManager,
             SkillService skillService,
             UnifiedToolExecutor unifiedToolExecutor,
-            DemoDebugProperties demoDebugProperties) {
+            DemoDebugProperties demoDebugProperties,
+            ConversationManager conversationManager) {
         this.chatModel = chatModel;
         this.compactionPipeline = compactionPipeline;
         this.retryPolicy = retryPolicy;
@@ -139,6 +144,7 @@ public class EnhancedAgenticQueryLoop {
         this.skillService = skillService;
         this.unifiedToolExecutor = unifiedToolExecutor;
         this.demoDebugProperties = demoDebugProperties;
+        this.conversationManager = conversationManager;
 
         // 订阅 ToolCalledEvent 事件，用于在工具执行时创建 artifact
         // 注意：这是在工具执行之后，但可以用来记录工具调用历史
@@ -246,6 +252,7 @@ public class EnhancedAgenticQueryLoop {
 
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(system));
+        messages.addAll(buildConversationHistory(userMessage));
         messages.add(new UserMessage(userMessage));
 
         QueryLoopState state = QueryLoopState.initial();
@@ -756,6 +763,38 @@ public class EnhancedAgenticQueryLoop {
             return input;
         }
         return new ArrayList<>(input.subList(boundaryIdx + 1, input.size()));
+    }
+
+    private List<Message> buildConversationHistory(String currentUserMessage) {
+        int limit = Math.max(0, queryProperties.getHistoryWindowMessages());
+        if (limit <= 0 || conversationManager == null) {
+            return List.of();
+        }
+        List<ChatMessage> recent = conversationManager.getHistory(limit);
+        if (recent == null || recent.isEmpty()) {
+            return List.of();
+        }
+        List<Message> history = new ArrayList<>();
+        for (ChatMessage msg : recent) {
+            if (msg == null || msg.content() == null || msg.content().isBlank()) {
+                continue;
+            }
+            if (msg.type() == MessageType.USER) {
+                history.add(new UserMessage(msg.content()));
+            } else if (msg.type() == MessageType.ASSISTANT) {
+                history.add(new AssistantMessage(msg.content()));
+            }
+        }
+        // 某些入口会先调用 ConversationManager.startTurn(currentUserMessage)，这里去掉尾部重复用户消息。
+        if (!history.isEmpty()) {
+            Message last = history.get(history.size() - 1);
+            if (last instanceof UserMessage um
+                    && um.getText() != null
+                    && um.getText().trim().equals(currentUserMessage == null ? "" : currentUserMessage.trim())) {
+                history.remove(history.size() - 1);
+            }
+        }
+        return history;
     }
 
     private TrimOutcome trimLargeToolResponses(List<Message> input, int maxCharsPerResponse) {

@@ -117,6 +117,8 @@ demo:
     time-based-compaction-keep-recent: 3
     # Tier 3: autocompact - 总字符阈值
     full-compact-threshold-chars: 120000
+    # 跨用户轮次保留的历史窗口（USER/ASSISTANT 消息条数）
+    history-window-messages: ${DEMO_QUERY_HISTORY_WINDOW_MESSAGES:16}
     # Tier 3: autocompact - 开关
     full-compact-enabled: ${DEMO_QUERY_FULL_COMPACT:false}
     retry:

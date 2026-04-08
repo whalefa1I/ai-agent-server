@@ -23,6 +23,9 @@ public class DemoQueryProperties {
     /** 估算总字符超过则尝试 Tier3 摘要（autocompact 类比，需开启 full-compact-enabled） */
     private int fullCompactThresholdChars = 120_000;
 
+    /** 跨用户轮次拼接的历史窗口消息数（仅 USER/ASSISTANT） */
+    private int historyWindowMessages = 16;
+
     /** 是否启用「子 LLM 摘要」式全量压缩（额外 API 调用） */
     private boolean fullCompactEnabled = false;
 
@@ -74,6 +77,14 @@ public class DemoQueryProperties {
 
     public void setFullCompactEnabled(boolean fullCompactEnabled) {
         this.fullCompactEnabled = fullCompactEnabled;
+    }
+
+    public int getHistoryWindowMessages() {
+        return historyWindowMessages;
+    }
+
+    public void setHistoryWindowMessages(int historyWindowMessages) {
+        this.historyWindowMessages = historyWindowMessages;
     }
 
     public Retry getRetry() {

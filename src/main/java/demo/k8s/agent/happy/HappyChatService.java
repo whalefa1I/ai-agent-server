@@ -14,7 +14,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -68,17 +70,20 @@ public class HappyChatService {
 
             String sessionId = artifact.getSessionId();
             String accountId = artifact.getAccountId();
+            String userTurnId = "user-turn-" + UUID.randomUUID();
+            ConversationManager.TurnContext turnContext = conversationManager.startTurn(content);
 
-            log.info("收到用户消息：sessionId={}, content={}", sessionId, content);
+            log.info("收到用户消息：sessionId={}, userTurnId={}, content={}", sessionId, userTurnId, content);
 
             // 创建"正在生成中"的 assistant-message artifact（用于流式输出）
-            String assistantArtifactId = createStreamingAssistantMessage(accountId, sessionId);
+            String assistantArtifactId = createStreamingAssistantMessage(accountId, sessionId, userTurnId);
 
             // 调用 AI，支持流式输出和工具调用
-            String replyText = callAIWithToolCallbacks(accountId, sessionId, content, assistantArtifactId);
+            String replyText = callAIWithToolCallbacks(accountId, sessionId, userTurnId, content, assistantArtifactId);
 
             // 更新最终消息
-            updateAssistantMessage(assistantArtifactId, replyText, true);
+            updateAssistantMessage(assistantArtifactId, replyText, true, userTurnId);
+            conversationManager.completeTurn(turnContext, replyText, java.util.List.of());
 
             log.info("已创建 AI 回复：sessionId={}", sessionId);
 
@@ -87,7 +92,7 @@ public class HappyChatService {
         }
     }
 
-    private String createStreamingThinkingMessage(String accountId, String sessionId) {
+    private String createStreamingThinkingMessage(String accountId, String sessionId, String userTurnId) {
         try {
             String id = "thinking-" + System.currentTimeMillis();
             Map<String, Object> header = Map.of(
@@ -101,7 +106,8 @@ public class HappyChatService {
                 "type", "thinking-message",
                 "content", "",
                 "timestamp", System.currentTimeMillis(),
-                "status", "streaming"
+                "status", "streaming",
+                "metadata", Map.of("userTurnId", userTurnId)
             );
             ToolArtifact artifact = new ToolArtifact();
             artifact.setId(id);
@@ -122,8 +128,10 @@ public class HappyChatService {
         }
     }
 
-    private void createAssistantProgressMessage(String accountId, String sessionId, String content) {
-        createAssistantProgressMessage(accountId, sessionId, content, "assistant-progress-message", "Assistant Progress Message");
+    private void createAssistantProgressMessage(String accountId, String sessionId, String content, String userTurnId) {
+        createAssistantProgressMessage(
+                accountId, sessionId, content, "assistant-progress-message", "Assistant Progress Message",
+                Map.of("userTurnId", userTurnId));
     }
 
     private void createAssistantProgressMessage(
@@ -179,7 +187,7 @@ public class HappyChatService {
     /**
      * 创建"正在生成中"的助手消息 artifact
      */
-    private String createStreamingAssistantMessage(String accountId, String sessionId) {
+    private String createStreamingAssistantMessage(String accountId, String sessionId, String userTurnId) {
         try {
             String id = "assistant-" + System.currentTimeMillis();
 
@@ -195,7 +203,8 @@ public class HappyChatService {
                 "type", "assistant-message",
                 "content", "",  // 初始内容为空
                 "timestamp", System.currentTimeMillis(),
-                "status", "streaming"
+                "status", "streaming",
+                "metadata", Map.of("userTurnId", userTurnId)
             );
 
             ToolArtifact artifact = new ToolArtifact();
@@ -226,7 +235,7 @@ public class HappyChatService {
     /**
      * 更新助手消息内容（流式更新）
      */
-    private void updateAssistantMessage(String artifactId, String content, boolean isFinal) {
+    private void updateAssistantMessage(String artifactId, String content, boolean isFinal, String userTurnId) {
         if (artifactId == null) return;
 
         try {
@@ -245,7 +254,8 @@ public class HappyChatService {
                 "type", "assistant-message",
                 "content", content != null ? content : "",
                 "timestamp", System.currentTimeMillis(),
-                "status", isFinal ? "completed" : "streaming"
+                "status", isFinal ? "completed" : "streaming",
+                "metadata", Map.of("userTurnId", userTurnId)
             );
 
             artifact.setHeader(Base64.getEncoder().encodeToString(
@@ -264,7 +274,7 @@ public class HappyChatService {
         }
     }
 
-    private void updateThinkingMessage(String artifactId, String content, boolean isFinal) {
+    private void updateThinkingMessage(String artifactId, String content, boolean isFinal, String userTurnId) {
         if (artifactId == null) return;
         try {
             ToolArtifact artifact = repository.findById(artifactId).orElse(null);
@@ -280,7 +290,8 @@ public class HappyChatService {
                 "type", "thinking-message",
                 "content", content != null ? content : "",
                 "timestamp", System.currentTimeMillis(),
-                "status", isFinal ? "completed" : "streaming"
+                "status", isFinal ? "completed" : "streaming",
+                "metadata", Map.of("userTurnId", userTurnId)
             );
             artifact.setHeader(Base64.getEncoder().encodeToString(objectMapper.writeValueAsBytes(header)));
             artifact.setBody(Base64.getEncoder().encodeToString(objectMapper.writeValueAsBytes(body)));
@@ -292,7 +303,12 @@ public class HappyChatService {
         }
     }
 
-    private String callAIWithToolCallbacks(String accountId, String sessionId, String content, String assistantArtifactId) {
+    private String callAIWithToolCallbacks(
+            String accountId,
+            String sessionId,
+            String userTurnId,
+            String content,
+            String assistantArtifactId) {
         try {
             demo.k8s.agent.observability.tracing.TraceContext.setSessionId(sessionId);
             demo.k8s.agent.observability.tracing.TraceContext.setUserId(accountId);
@@ -303,7 +319,7 @@ public class HappyChatService {
 
             log.info("[DEBUG] 开始调用 agenticQueryLoop.runWithCallbacks");
             AtomicReference<StringBuilder> thinkingBuffer = new AtomicReference<>(new StringBuilder());
-            String thinkingArtifactId = createStreamingThinkingMessage(accountId, sessionId);
+            String thinkingArtifactId = createStreamingThinkingMessage(accountId, sessionId, userTurnId);
             AgenticTurnResult result = agenticQueryLoop.runWithCallbacks(
                 content,
                 (toolName, input) -> {
@@ -315,17 +331,17 @@ public class HappyChatService {
                     // 流式输出回调：累积内容并更新 artifact
                     if (delta != null && !delta.isEmpty()) {
                         contentBuffer.get().append(delta);
-                        updateAssistantMessage(assistantArtifactId, contentBuffer.get().toString(), false);
+                        updateAssistantMessage(assistantArtifactId, contentBuffer.get().toString(), false, userTurnId);
                     }
                 },
                 (reasoningDelta) -> {
                     if (reasoningDelta != null && !reasoningDelta.isEmpty()) {
                         thinkingBuffer.get().append(reasoningDelta);
-                        updateThinkingMessage(thinkingArtifactId, thinkingBuffer.get().toString(), false);
+                        updateThinkingMessage(thinkingArtifactId, thinkingBuffer.get().toString(), false, userTurnId);
                     }
                 },
                 (intermediateText) -> {
-                    createAssistantProgressMessage(accountId, sessionId, intermediateText);
+                    createAssistantProgressMessage(accountId, sessionId, intermediateText, userTurnId);
                 },
                 (stateEvent) -> {
                     String subtype = stateEvent != null && stateEvent.subtype() != null
@@ -336,10 +352,12 @@ public class HappyChatService {
                     Map<String, Object> metadata = stateEvent != null && stateEvent.metadata() != null
                             ? stateEvent.metadata()
                             : Map.of();
-                    createAssistantProgressMessage(accountId, sessionId, text, subtype, title, metadata);
+                    Map<String, Object> mergedMetadata = new HashMap<>(metadata);
+                    mergedMetadata.put("userTurnId", userTurnId);
+                    createAssistantProgressMessage(accountId, sessionId, text, subtype, title, mergedMetadata);
                 }
             );
-            updateThinkingMessage(thinkingArtifactId, thinkingBuffer.get().toString(), true);
+            updateThinkingMessage(thinkingArtifactId, thinkingBuffer.get().toString(), true, userTurnId);
             log.info("[DEBUG] agenticQueryLoop.runWithCallbacks 完成，replyText={}", result.replyText());
             return result.replyText();
 
