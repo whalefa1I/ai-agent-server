@@ -1,6 +1,7 @@
 package demo.k8s.agent.observability.events;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -144,13 +145,7 @@ public abstract class Event {
     public static class ToolCalledEvent extends Event {
         public ToolCalledEvent(String sessionId, String userId, String toolName,
                                 String input, String output, long durationMs, boolean success) {
-            super(sessionId, userId, Map.of(
-                    "toolName", toolName,
-                    "input", truncate(input, 500),
-                    "output", truncate(output, 1000),
-                    "durationMs", durationMs,
-                    "success", success
-            ));
+            super(sessionId, userId, buildPayload(toolName, input, output, durationMs, success));
         }
 
         @Override
@@ -159,8 +154,19 @@ public abstract class Event {
         }
 
         private static String truncate(String s, int maxLen) {
-            if (s == null) return null;
+            if (s == null) return "";
             return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
+        }
+
+        private static Map<String, Object> buildPayload(
+                String toolName, String input, String output, long durationMs, boolean success) {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("toolName", toolName == null ? "" : toolName);
+            payload.put("input", truncate(input, 500));
+            payload.put("output", truncate(output, 1000));
+            payload.put("durationMs", durationMs);
+            payload.put("success", success);
+            return payload;
         }
     }
 
