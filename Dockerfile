@@ -20,6 +20,12 @@ FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
+# 开发/回归场景需要本地 bash 可直接执行 python 脚本
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-pip \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
 # 复制构建产物
 COPY --from=builder /app/target/minimal-k8s-agent-demo-*.jar app.jar
 

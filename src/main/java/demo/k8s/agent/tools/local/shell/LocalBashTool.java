@@ -142,10 +142,7 @@ public class LocalBashTool {
                 }
             }
 
-            // 2. 检查命令注入（多行命令、后台执行）
-            if (command.contains("\n")) {
-                return PermissionResult.deny("Multi-line commands are not supported", PermissionLevel.MODIFY_STATE);
-            }
+            // 2. 多行命令在开发阶段允许，交由 bash -c 原生解析
 
             // 3. 检查路径约束（可选：检查工作目录是否在允许范围内）
             String workdir = input.has("workdir") ? input.get("workdir").asText("") : "";
@@ -238,13 +235,8 @@ public class LocalBashTool {
                 }
             }
 
-            // 检查注入（允许多种合法 shell 语法，但阻止多行命令和后台执行）
-            // 允许：|, ||, &&, >, <, 2>&1, $(...) 等合法语法
-            // 阻止：换行符（多行命令）、&（后台执行，与后台模式冲突）
-            if (command.contains("\n")) {
-                return LocalToolResult.error("Multi-line commands are not supported. Please run commands separately.");
-            }
-            // 只阻止单独的 &（后台执行），允许 && 和 2>&1
+            // 允许：多行、|, ||, &&, >, <, 2>&1, $(...) 等常见 shell 语法。
+            // 仅阻止单独的 &（后台执行，与 run_in_background 模式冲突）。
             if (command.matches(".*[^&]&([^=].*|$)") && !command.contains("&&") && !command.contains("2>&1")) {
                 return LocalToolResult.error("Background execution (&) is not supported in sync mode. Use run_in_background=true instead.");
             }
