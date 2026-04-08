@@ -79,22 +79,26 @@ public class LocalFileWriteTool {
         try {
             JsonNode input = new com.fasterxml.jackson.databind.ObjectMapper().readTree(argumentsJson);
             String filePath = FileToolArgs.readFilePath(input);
-            if (filePath == null) {
-                filePath = "";
-            }
+            if (filePath == null) filePath = "";
 
             if (filePath.isBlank()) {
                 return PermissionResult.deny("file_path is required");
             }
 
+            WorkspacePathPolicy.ResolvedPath rp = WorkspacePathPolicy.resolveToWorkspace(filePath);
+            if (!rp.ok()) {
+                return PermissionResult.deny("Invalid file_path: " + rp.error(), PermissionLevel.MODIFY_STATE);
+            }
+            String resolvedPath = rp.resolved();
+
             // 1. 检查路径约束
-            if (!isPathAllowed(filePath)) {
-                return PermissionResult.deny("File path is not allowed: " + filePath, PermissionLevel.MODIFY_STATE);
+            if (!isPathAllowed(resolvedPath)) {
+                return PermissionResult.deny("File path is not allowed: " + resolvedPath, PermissionLevel.MODIFY_STATE);
             }
 
             // 2. 检查是否在敏感目录
-            if (isSensitivePath(filePath)) {
-                return PermissionResult.deny("Cannot write to sensitive system file: " + filePath, PermissionLevel.DESTRUCTIVE);
+            if (isSensitivePath(resolvedPath)) {
+                return PermissionResult.deny("Cannot write to sensitive system file: " + resolvedPath, PermissionLevel.DESTRUCTIVE);
             }
 
             // 3. 允许（需要用户确认，除非有规则匹配）
@@ -135,14 +139,8 @@ public class LocalFileWriteTool {
             return false;
         }
 
-        // 必须是绝对路径
-        if (!path.startsWith("/") && !path.matches("^[A-Za-z]:\\\\.*")) {
-            return false;
-        }
-
-        // 不允许在项目目录外
-        String cwd = System.getProperty("user.dir");
-        return path.startsWith(cwd);
+        WorkspacePathPolicy.ResolvedPath rp = WorkspacePathPolicy.resolveToWorkspace(path);
+        return rp.ok();
     }
 
     /**
@@ -186,7 +184,13 @@ public class LocalFileWriteTool {
                 return LocalToolResult.error("content is required");
             }
 
-            Path path = Paths.get(filePath);
+            WorkspacePathPolicy.ResolvedPath rp = WorkspacePathPolicy.resolveToWorkspace(filePath);
+            if (!rp.ok()) {
+                return LocalToolResult.error("Invalid file_path: " + rp.error());
+            }
+            String resolvedPath = rp.resolved();
+
+            Path path = Paths.get(resolvedPath);
             Path parent = path.getParent();
             if (parent != null && !Files.exists(parent)) {
                 Files.createDirectories(parent);
@@ -218,7 +222,7 @@ public class LocalFileWriteTool {
 
             boolean overwritten = Files.exists(path) && Files.size(path) > 0;
             StringBuilder result = new StringBuilder();
-            result.append("Successfully wrote ").append(content.length()).append(" bytes to ").append(filePath);
+            result.append("Successfully wrote ").append(content.length()).append(" bytes to ").append(resolvedPath);
             if (overwritten) {
                 result.append(" (overwritten)");
             }

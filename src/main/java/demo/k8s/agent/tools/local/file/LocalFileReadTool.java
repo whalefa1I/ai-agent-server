@@ -99,9 +99,16 @@ public class LocalFileReadTool {
                 return LocalToolResult.error("file_path is required");
             }
 
-            Path path = Paths.get(filePath);
+            WorkspacePathPolicy.ResolvedPath rp = WorkspacePathPolicy.resolveToWorkspace(filePath);
+            if (!rp.ok()) {
+                return LocalToolResult.error("Invalid file_path: " + rp.error());
+            }
+            String resolvedPath = rp.resolved();
+
+            Path path = Paths.get(resolvedPath);
             if (!Files.exists(path)) {
-                return LocalToolResult.error("File does not exist: " + filePath);
+                return LocalToolResult.error("File does not exist: " + filePath
+                        + " (resolved=" + resolvedPath + ", workspaceRoot=" + rp.workspaceRoot() + ")");
             }
 
             if (Files.isDirectory(path)) {
@@ -125,7 +132,7 @@ public class LocalFileReadTool {
             }
 
             StringBuilder content = new StringBuilder();
-            content.append("File: ").append(filePath).append(" (").append(allLines.size()).append(" lines)\n");
+            content.append("File: ").append(resolvedPath).append(" (").append(allLines.size()).append(" lines)\n");
             content.append("Lines ").append(offset).append("-").append(end - 1).append(":\n\n");
             for (String line : lines) {
                 content.append(line).append("\n");

@@ -104,14 +104,20 @@ public class LocalFileEditTool {
                 return PermissionResult.deny("file_path is required");
             }
 
+            WorkspacePathPolicy.ResolvedPath rp = WorkspacePathPolicy.resolveToWorkspace(filePath);
+            if (!rp.ok()) {
+                return PermissionResult.deny("Invalid file_path: " + rp.error(), PermissionLevel.MODIFY_STATE);
+            }
+            String resolvedPath = rp.resolved();
+
             // 1. 检查路径约束
-            if (!isPathAllowed(filePath)) {
-                return PermissionResult.deny("File path is not allowed: " + filePath, PermissionLevel.MODIFY_STATE);
+            if (!isPathAllowed(resolvedPath)) {
+                return PermissionResult.deny("File path is not allowed: " + resolvedPath, PermissionLevel.MODIFY_STATE);
             }
 
             // 2. 检查是否在敏感目录
-            if (isSensitivePath(filePath)) {
-                return PermissionResult.deny("Cannot modify sensitive system file: " + filePath, PermissionLevel.DESTRUCTIVE);
+            if (isSensitivePath(resolvedPath)) {
+                return PermissionResult.deny("Cannot modify sensitive system file: " + resolvedPath, PermissionLevel.DESTRUCTIVE);
             }
 
             // 3. 允许（需要用户确认，除非有规则匹配）
@@ -219,9 +225,16 @@ public class LocalFileEditTool {
 
             boolean replaceAll = getBoolean(input, "replace_all", false);
 
-            Path path = Paths.get(filePath);
+            WorkspacePathPolicy.ResolvedPath rp = WorkspacePathPolicy.resolveToWorkspace(filePath);
+            if (!rp.ok()) {
+                return LocalToolResult.error("Invalid file_path: " + rp.error());
+            }
+            String resolvedPath = rp.resolved();
+
+            Path path = Paths.get(resolvedPath);
             if (!Files.exists(path)) {
-                return LocalToolResult.error("File does not exist: " + filePath);
+                return LocalToolResult.error("File does not exist: " + filePath
+                        + " (resolved=" + resolvedPath + ", workspaceRoot=" + rp.workspaceRoot() + ")");
             }
 
             long fileSize = Files.size(path);

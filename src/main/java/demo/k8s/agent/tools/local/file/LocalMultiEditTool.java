@@ -105,12 +105,18 @@ public class LocalMultiEditTool {
                     return PermissionResult.deny("file_path is required for all edits");
                 }
 
-                if (!isPathAllowed(filePath)) {
-                    return PermissionResult.deny("File path is not allowed: " + filePath, PermissionLevel.MODIFY_STATE);
+                WorkspacePathPolicy.ResolvedPath rp = WorkspacePathPolicy.resolveToWorkspace(filePath);
+                if (!rp.ok()) {
+                    return PermissionResult.deny("Invalid file_path: " + rp.error(), PermissionLevel.MODIFY_STATE);
+                }
+                String resolvedPath = rp.resolved();
+
+                if (!isPathAllowed(resolvedPath)) {
+                    return PermissionResult.deny("File path is not allowed: " + resolvedPath, PermissionLevel.MODIFY_STATE);
                 }
 
-                if (isSensitivePath(filePath)) {
-                    return PermissionResult.deny("Cannot modify sensitive system file: " + filePath, PermissionLevel.DESTRUCTIVE);
+                if (isSensitivePath(resolvedPath)) {
+                    return PermissionResult.deny("Cannot modify sensitive system file: " + resolvedPath, PermissionLevel.DESTRUCTIVE);
                 }
             }
 
@@ -172,13 +178,8 @@ public class LocalMultiEditTool {
         if (path == null || path.isBlank()) {
             return false;
         }
-
-        if (!path.startsWith("/") && !path.matches("^[A-Za-z]:\\\\.*")) {
-            return false;
-        }
-
-        String cwd = System.getProperty("user.dir");
-        return path.startsWith(cwd) || path.startsWith(cwd.replace("\\", "/"));
+        WorkspacePathPolicy.ResolvedPath rp = WorkspacePathPolicy.resolveToWorkspace(path);
+        return rp.ok();
     }
 
     /**
@@ -220,16 +221,31 @@ public class LocalMultiEditTool {
             // 按文件分组编辑操作
             Map<String, List<EditOperation>> editsByFile = groupEditsByFile(edits);
 
+            // 规范化：相对路径拼到 workspaceRoot，并防止越界
+            Map<String, List<EditOperation>> normalizedEditsByFile = new java.util.HashMap<>();
+            for (Map.Entry<String, List<EditOperation>> entry : editsByFile.entrySet()) {
+                String filePath = entry.getKey();
+                WorkspacePathPolicy.ResolvedPath rp = WorkspacePathPolicy.resolveToWorkspace(filePath);
+                if (!rp.ok()) {
+                    return LocalToolResult.error("Invalid file_path: " + rp.error());
+                }
+                normalizedEditsByFile
+                        .computeIfAbsent(rp.resolved(), k -> new ArrayList<>())
+                        .addAll(entry.getValue());
+            }
+            editsByFile = normalizedEditsByFile;
+
             // 验证所有文件存在且大小合适
-            for (String filePath : editsByFile.keySet()) {
-                Path path = Paths.get(filePath);
+            for (String resolvedPath : editsByFile.keySet()) {
+                Path path = Paths.get(resolvedPath);
                 if (!Files.exists(path)) {
-                    return LocalToolResult.error("File does not exist: " + filePath);
+                    return LocalToolResult.error("File does not exist: " + resolvedPath
+                            + " (workspaceRoot=" + WorkspacePathPolicy.workspaceRoot() + ")");
                 }
 
                 long fileSize = Files.size(path);
                 if (fileSize > MAX_FILE_SIZE) {
-                    return LocalToolResult.error("File too large: " + filePath + " (" + fileSize + " bytes)");
+                    return LocalToolResult.error("File too large: " + resolvedPath + " (" + fileSize + " bytes)");
                 }
             }
 
