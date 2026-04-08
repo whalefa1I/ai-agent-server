@@ -350,6 +350,15 @@ public class EnhancedAgenticQueryLoop {
 
             // 开始模型调用指标追踪
             ModelCallMetrics modelCallMetrics = sessionStats.startModelCall("unknown");
+            if (onStateTransition != null) {
+                onStateTransition.accept(new LoopStateEvent(
+                        "assistant-wait-message",
+                        String.format("[Wait] 第 %d 轮正在等待模型返回...", state.turnCount()),
+                        Map.of(
+                                "turnId", turnId,
+                                "turnCount", state.turnCount(),
+                                "phase", "await_model")));
+            }
 
             // 注意：Spring AI 会在内部自动执行工具调用
             // 为了在工具执行之前拦截，我们需要在调用 chatModel 之前设置回调
