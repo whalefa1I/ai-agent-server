@@ -188,6 +188,80 @@ public final class AgentPrompts {
             说明：file_read / file_write / file_edit 在 FileToolArgs 中会将 **filePath**、**path** 与 **file_path** 视作同一路径；对外 Schema 仍以 **file_path** 为准。
             """;
 
+    /**
+     * spawn_subagent 工具提示词（与 Claude Code / OpenCLaw 的 delegate / spawn 对齐）
+     */
+    public static final String SPAWN_SUBAGENT_PROMPT = """
+            === spawn_subagent ===
+
+            Use this tool to spawn a subagent that handles complex or parallelizable tasks.
+
+            ## When to Use spawn_subagent
+
+            Spawn a subagent when:
+            - You need to process multiple independent items in parallel (e.g., "Translate to 5 languages", "Process 10 files")
+            - The task can be split into parallel branches that do not depend on each other
+            - You want to leverage parallel execution for speed
+            - The task is complex enough to benefit from independent execution
+
+            ## When NOT to Use spawn_subagent
+
+            Do NOT spawn a subagent for:
+            - Simple sequential tasks (e.g., "Read this file, then edit it, then save")
+            - Tasks that must be done one after another due to dependencies
+            - When you want to handle the task directly with the main agent
+
+            ## Key Difference from TaskCreate
+
+            - **spawn_subagent**: Direct spawning, designed for "do X for N items" patterns
+              - Example: "Translate this text to Spanish, French, German, Japanese, and Korean"
+              - One tool call, subagent handles all parallel work internally
+
+            - **TaskCreate**: Task tracking and management, use for sequential multi-step work
+              - Example: "Step 1: Read file, Step 2: Analyze, Step 3: Write report"
+              - Multiple TaskCreate calls, each step tracked separately
+
+            ## Parameters
+
+            - **goal** (required): Clear, specific description of what the subagent should accomplish
+            - **agentType** (optional): Type of agent to spawn
+              - "general": General-purpose agent (default)
+              - "worker": Worker agent with full tool access
+              - "bash": Shell specialist for command execution
+              - "explore": Code explorer for reading/searching code
+              - "edit": Code editor for file modifications
+              - "plan": Planning specialist for complex task breakdown
+
+            ## Examples
+
+            Good use cases (spawn subagent):
+            ```json
+            {
+              "goal": "Translate the following text to Spanish, Japanese, French, German, and Korean. Each translation should be saved to a separate file: [original text]",
+              "agentType": "worker"
+            }
+            ```
+
+            ```json
+            {
+              "goal": "Generate monthly reports for each of the 12 sales regions",
+              "agentType": "worker"
+            }
+            ```
+
+            ```json
+            {
+              "goal": "Find all TODO comments in TypeScript files and summarize by category",
+              "agentType": "explore"
+            }
+            ```
+
+            Bad use cases (do NOT spawn):
+            - "Read the config file and tell me what it contains"
+            - "Fix the bug in the login function"
+            - "Write a new feature that adds user profile"
+            """;
+
     /** 默认（非 Coordinator Mode）：主会话可 Task + k8s + Skill */
     public static final String DEMO_COORDINATOR_SYSTEM =
             """
@@ -207,6 +281,10 @@ public final class AgentPrompts {
                     === Task 工具使用指南 ===
 
                     """ + TASK_CREATE_PROMPT + """
+
+                    === spawn_subagent（并行任务专用） ===
+
+                    """ + SPAWN_SUBAGENT_PROMPT + """
 
                     === TaskList ===
 

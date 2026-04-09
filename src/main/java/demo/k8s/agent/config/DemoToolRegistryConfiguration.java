@@ -1,6 +1,7 @@
 package demo.k8s.agent.config;
 
 import demo.k8s.agent.contextobject.ContextObjectReadService;
+import demo.k8s.agent.tools.local.planning.SpawnSubagentTool;
 import demo.k8s.agent.tools.local.planning.TaskCreateMultiAgentRouter;
 import demo.k8s.agent.tools.UnifiedToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolExecutor;
@@ -57,7 +58,8 @@ public class DemoToolRegistryConfiguration {
     ToolRegistry demoToolRegistry(
             UnifiedToolExecutor unifiedToolExecutor,
             PermissionManager permissionManager,
-            ToolPermissionContext toolPermissionContext) {
+            ToolPermissionContext toolPermissionContext,
+            SpawnSubagentTool spawnSubagentTool) {
         // 注册本地工具（基本工具 + Task 工具集）
         ToolRegistry full = new ToolRegistry();
         full.register(new ToolModule(DemoToolSpecs.glob(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "glob")));
@@ -74,6 +76,29 @@ public class DemoToolRegistryConfiguration {
         full.register(new ToolModule(createTaskUpdateToolSpec(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "TaskUpdate")));
         full.register(new ToolModule(createTaskStopToolSpec(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "TaskStop")));
         full.register(new ToolModule(createTaskOutputToolSpec(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "TaskOutput")));
+        // spawn_subagent 工具（直接派生子 Agent）
+        full.register(new ToolModule(
+                spawnSubagentTool.createSpawnSubagentToolSpec(),
+                (Map<String, Object> input) -> {
+                    log.info("[TOOL CALLBACK] spawn_subagent 调用开始：input={}", input);
+                    var result = spawnSubagentTool.executeSpawnSubagent(input);
+                    log.info("[TOOL CALLBACK] spawn_subagent 执行完成：success={}", result.isSuccess());
+                    var resultMap = new java.util.HashMap<String, Object>();
+                    resultMap.put("success", result.isSuccess());
+                    if (result.getContent() != null) {
+                        resultMap.put("content", result.getContent());
+                    }
+                    if (result.getExecutionLocation() != null) {
+                        resultMap.put("location", result.getExecutionLocation());
+                    }
+                    if (result.getError() != null) {
+                        resultMap.put("error", result.getError());
+                    }
+                    if (result.getMetadata() != null) {
+                        resultMap.put("metadata", result.getMetadata());
+                    }
+                    return resultMap;
+                }));
 
         return full;
     }
