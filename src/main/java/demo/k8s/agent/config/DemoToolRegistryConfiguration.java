@@ -240,7 +240,8 @@ public class DemoToolRegistryConfiguration {
     @Bean
     LocalToolExecutor localToolExecutor(
             ContextObjectReadService contextObjectReadService,
-            TaskCreateMultiAgentRouter taskCreateMultiAgentRouter) {
-        return new LocalToolExecutor(contextObjectReadService, taskCreateMultiAgentRouter);
+            TaskCreateMultiAgentRouter taskCreateMultiAgentRouter,
+            SpawnSubagentTool spawnSubagentTool) {
+        return new LocalToolExecutor(contextObjectReadService, taskCreateMultiAgentRouter, spawnSubagentTool);
     }
 }

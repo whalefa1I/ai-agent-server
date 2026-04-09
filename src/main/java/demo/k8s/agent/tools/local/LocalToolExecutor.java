@@ -6,6 +6,7 @@ import demo.k8s.agent.tools.local.file.LocalGlobTool;
 import demo.k8s.agent.tools.local.file.LocalFileReadTool;
 import demo.k8s.agent.tools.local.file.LocalFileWriteTool;
 import demo.k8s.agent.tools.local.file.LocalFileEditTool;
+import demo.k8s.agent.tools.local.planning.SpawnSubagentTool;
 import demo.k8s.agent.tools.local.planning.TaskCreateMultiAgentRouter;
 import demo.k8s.agent.tools.local.planning.TaskTools;
 import demo.k8s.agent.tools.local.search.LocalGrepTool;
@@ -24,19 +25,27 @@ public class LocalToolExecutor {
 
     private final ContextObjectReadService contextObjectReadService;
     private final TaskCreateMultiAgentRouter taskCreateMultiAgentRouter;
+    private final SpawnSubagentTool spawnSubagentTool;
 
     public LocalToolExecutor() {
-        this(null, null);
+        this(null, null, null);
     }
 
     public LocalToolExecutor(ContextObjectReadService contextObjectReadService) {
-        this(contextObjectReadService, null);
+        this(contextObjectReadService, null, null);
     }
 
     public LocalToolExecutor(ContextObjectReadService contextObjectReadService,
                              TaskCreateMultiAgentRouter taskCreateMultiAgentRouter) {
+        this(contextObjectReadService, taskCreateMultiAgentRouter, null);
+    }
+
+    public LocalToolExecutor(ContextObjectReadService contextObjectReadService,
+                             TaskCreateMultiAgentRouter taskCreateMultiAgentRouter,
+                             SpawnSubagentTool spawnSubagentTool) {
         this.contextObjectReadService = contextObjectReadService;
         this.taskCreateMultiAgentRouter = taskCreateMultiAgentRouter;
+        this.spawnSubagentTool = spawnSubagentTool;
     }
 
     /**
@@ -71,6 +80,10 @@ public class LocalToolExecutor {
             case "TaskUpdate" -> TaskTools.executeTaskUpdate(input);
             case "TaskStop" -> TaskTools.executeTaskStop(input);
             case "TaskOutput" -> TaskTools.executeTaskOutput(input);
+            // spawn_subagent 工具
+            case "spawn_subagent" -> spawnSubagentTool != null
+                    ? spawnSubagentTool.executeSpawnSubagent(input)
+                    : LocalToolResult.error("spawn_subagent tool not initialized");
             default -> LocalToolResult.error("Unknown tool: " + toolName);
         };
     }
