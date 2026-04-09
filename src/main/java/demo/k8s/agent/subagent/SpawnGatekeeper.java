@@ -4,6 +4,7 @@ import demo.k8s.agent.config.DemoMultiAgentProperties;
 import demo.k8s.agent.toolsystem.ToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -29,7 +30,7 @@ public class SpawnGatekeeper {
     private static final Logger log = LoggerFactory.getLogger(SpawnGatekeeper.class);
 
     private final DemoMultiAgentProperties props;
-    private final demo.k8s.agent.toolsystem.ToolRegistry toolRegistry;
+    private final ObjectProvider<ToolRegistry> toolRegistryProvider;
 
     /**
      * 会话维度的嵌套深度（由 {@link #onSpawnStart}/{@link #onSpawnEnd} 维护）
@@ -41,9 +42,9 @@ public class SpawnGatekeeper {
      */
     private final ConcurrentHashMap<String, AtomicInteger> sessionConcurrentCounter = new ConcurrentHashMap<>();
 
-    public SpawnGatekeeper(DemoMultiAgentProperties props, demo.k8s.agent.toolsystem.ToolRegistry toolRegistry) {
+    public SpawnGatekeeper(DemoMultiAgentProperties props, ObjectProvider<ToolRegistry> toolRegistryProvider) {
         this.props = props;
-        this.toolRegistry = toolRegistry;
+        this.toolRegistryProvider = toolRegistryProvider;
     }
 
     /**
@@ -143,7 +144,13 @@ public class SpawnGatekeeper {
      * v1: 返回所有已注册工具名称；未来可扩展为按租户/会话过滤的白名单子集。
      */
     private Set<String> getGlobalSafeTools() {
-        return toolRegistry.getAllToolNames();
+        ToolRegistry registry = toolRegistryProvider.getIfAvailable();
+        if (registry == null) {
+            // 容器早期阶段/异常场景兜底：不在创建期强依赖 ToolRegistry，避免循环依赖导致启动失败。
+            log.warn("[Gatekeeper] ToolRegistry unavailable, fallback to conservative allowlist");
+            return Set.of("TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TaskStop", "TaskOutput");
+        }
+        return registry.getAllToolNames();
     }
 
     /**

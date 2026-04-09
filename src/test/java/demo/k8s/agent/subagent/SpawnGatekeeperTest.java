@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -29,12 +30,15 @@ class SpawnGatekeeperTest {
     private DemoMultiAgentProperties props;
     @Mock
     private ToolRegistry toolRegistry;
+    @Mock
+    private ObjectProvider<ToolRegistry> toolRegistryProvider;
 
     private SpawnGatekeeper gatekeeper;
 
     @BeforeEach
     void setUp() {
-        gatekeeper = new SpawnGatekeeper(props, toolRegistry);
+        gatekeeper = new SpawnGatekeeper(props, toolRegistryProvider);
+        when(toolRegistryProvider.getIfAvailable()).thenReturn(toolRegistry);
         when(toolRegistry.getAllToolNames()).thenReturn(Set.of("file_read", "task"));
     }
 
