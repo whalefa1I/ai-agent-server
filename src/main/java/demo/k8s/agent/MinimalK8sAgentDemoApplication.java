@@ -9,9 +9,13 @@ import demo.k8s.agent.config.DemoQueryProperties;
 import demo.k8s.agent.config.DemoToolsProperties;
 import demo.k8s.agent.k8s.DemoK8sProperties;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextRefreshedEvent;
 
 @SpringBootApplication(exclude = {
     org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration.class,
@@ -33,7 +37,19 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 })
 public class MinimalK8sAgentDemoApplication {
 
+    private static final Logger log = LoggerFactory.getLogger(MinimalK8sAgentDemoApplication.class);
+
     public static void main(String[] args) {
-        SpringApplication.run(MinimalK8sAgentDemoApplication.class, args);
+        SpringApplication app = new SpringApplication(MinimalK8sAgentDemoApplication.class);
+        app.addListeners((ApplicationListener<ContextRefreshedEvent>) event -> {
+            DemoMultiAgentProperties multiAgent = event.getApplicationContext().getBean(DemoMultiAgentProperties.class);
+            log.info("[MultiAgentConfig] enabled={}, mode={}, maxSpawnDepth={}, maxConcurrentSpawns={}, wallclockTtl={}s",
+                    multiAgent.isEnabled(),
+                    multiAgent.getMode(),
+                    multiAgent.getMaxSpawnDepth(),
+                    multiAgent.getMaxConcurrentSpawns(),
+                    multiAgent.getWallclockTtlSeconds());
+        });
+        app.run(args);
     }
 }

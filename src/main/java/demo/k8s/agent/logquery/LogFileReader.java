@@ -62,6 +62,15 @@ public class LogFileReader {
         this.lokiPassword = lokiPassword != null ? lokiPassword.trim() : "";
         this.lokiTimeoutSeconds = lokiTimeoutSeconds <= 0 ? 15 : lokiTimeoutSeconds;
         this.httpClient = HttpClient.newBuilder().build();
+
+        // 打印 Loki 配置信息，用于调试
+        log.info("[LokiConfig] query-source={}, lokiUrl={}, lokiUsername={}, lokiPassword={}, timeout={}s",
+                this.querySource,
+                this.lokiUrl,
+                this.lokiUsername,
+                this.lokiPassword != null && !this.lokiPassword.isEmpty() ? "***configured***" : "<empty>",
+                this.lokiTimeoutSeconds);
+        log.info("[LokiConfig] isLokiConfigured={}", isLokiConfigured());
     }
 
     /**
