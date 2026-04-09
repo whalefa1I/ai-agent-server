@@ -81,8 +81,8 @@ public class LogFileReader {
             }
         }
 
-        // 排序
-        results.sort(Comparator.comparing(LogEntry::timestamp).reversed());
+        // 排序（兼容部分日志缺失 timestamp 的情况，避免全量查询时 500）
+        results.sort(Comparator.comparing(LogEntry::timestamp, Comparator.nullsLast(String::compareTo)).reversed());
 
         // 分页
         int fromIndex = (query.page() - 1) * query.size();
