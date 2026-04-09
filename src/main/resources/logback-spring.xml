@@ -6,6 +6,12 @@
 
     <!-- 日志目录 -->
     <property name="LOG_DIR" value="${LOG_DIR:-./logs}"/>
+    <property name="LOKI_URL" value="${LOKI_URL:-}"/>
+    <property name="LOKI_USERNAME" value="${LOKI_USERNAME:-}"/>
+    <property name="LOKI_PASSWORD" value="${LOKI_PASSWORD:-}"/>
+    <property name="LOKI_JOB" value="${LOKI_JOB:-minimal-k8s-agent-demo}"/>
+    <property name="LOKI_SERVICE_NAME" value="${LOKI_SERVICE_NAME:-minimal-k8s-agent-demo}"/>
+    <property name="LOKI_TIMEOUT_SECONDS" value="${DEMO_LOG_LOKI_TIMEOUT_SECONDS:-5}"/>
 
     <!-- 控制台输出 -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
@@ -40,10 +46,21 @@
         </encoder>
     </appender>
 
+    <!-- 结构化日志推送到 Loki（仅在 Loki 参数完整时启用） -->
+    <appender name="STRUCTURED_LOKI" class="demo.k8s.agent.logquery.LokiPushAppender">
+        <url>${LOKI_URL}</url>
+        <username>${LOKI_USERNAME}</username>
+        <password>${LOKI_PASSWORD}</password>
+        <job>${LOKI_JOB}</job>
+        <serviceName>${LOKI_SERVICE_NAME}</serviceName>
+        <timeoutSeconds>${LOKI_TIMEOUT_SECONDS}</timeoutSeconds>
+    </appender>
+
     <!-- 应用日志级别配置 -->
     <logger name="demo.k8s.agent" level="INFO"/>
     <logger name="demo.k8s.agent.observability.logging.StructuredLogger" level="INFO" additivity="false">
         <appender-ref ref="STRUCTURED_FILE"/>
+        <appender-ref ref="STRUCTURED_LOKI"/>
         <appender-ref ref="CONSOLE"/>
     </logger>
     <logger name="org.springframework" level="WARN"/>
