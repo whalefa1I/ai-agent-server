@@ -1,5 +1,7 @@
 package demo.k8s.agent.observability.tracing;
 
+import org.slf4j.MDC;
+
 import java.util.UUID;
 
 /**
@@ -48,10 +50,13 @@ public class TraceContext {
      */
     public static void init(String traceId, String spanId) {
         TRACE_ID.set(traceId);
+        MDC.put("traceId", traceId != null ? traceId : "-");
         SPAN_ID.set(spanId);
+        MDC.put("spanId", spanId != null ? spanId : "-");
         if (REQUEST_ID.get() == null) {
             REQUEST_ID.set(generateRequestId());
         }
+        MDC.put("requestId", getRequestId());
     }
 
     /**
@@ -70,6 +75,7 @@ public class TraceContext {
      */
     public static void setTenantId(String tenantId) {
         TENANT_ID.set(tenantId);
+        MDC.put("tenantId", tenantId != null ? tenantId : "-");
     }
 
     /**
@@ -77,13 +83,15 @@ public class TraceContext {
      */
     public static void setAppId(String appId) {
         APP_ID.set(appId);
+        MDC.put("appId", appId != null ? appId : "-");
     }
 
     /**
-     * 设置当前运行 ID（用于子 agent 派生时追溯父子关系）
+     * 设置运行 ID（用于子 agent 派生时追溯父子关系）
      */
     public static void setRunId(String runId) {
         RUN_ID.set(runId);
+        MDC.put("runId", runId != null ? runId : "-");
     }
 
     /**
@@ -98,6 +106,7 @@ public class TraceContext {
      */
     public static void setUserId(String userId) {
         USER_ID.set(userId);
+        MDC.put("userId", userId != null ? userId : "-");
     }
 
     /**
@@ -105,6 +114,7 @@ public class TraceContext {
      */
     public static void setSessionId(String sessionId) {
         SESSION_ID.set(sessionId);
+        MDC.put("sessionId", sessionId != null ? sessionId : "-");
     }
 
     /**
@@ -206,6 +216,7 @@ public class TraceContext {
         TENANT_ID.remove();
         APP_ID.remove();
         RUN_ID.remove();
+        MDC.clear();
     }
 
     /**
