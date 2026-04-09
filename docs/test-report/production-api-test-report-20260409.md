@@ -3,6 +3,7 @@
 **测试日期**: 2026-04-09  
 **测试环境**: Railway 生产环境 (`ai-agent-server-production-d28a.up.railway.app`)  
 **测试人**: Claude Code Agent  
+**代码版本**: `d255545` (feature/subsystem)
 
 ---
 
@@ -44,7 +45,73 @@
 
 ---
 
-## 3. 详细测试结果
+## 3. 代码改动说明
+
+### 3.1 问题背景
+
+此前所有 `TaskCreate` 在子 Agent 启用时都会自动派生子 Agent，没有判断任务是否需要并行执行。
+
+### 3.2 改动内容
+
+**文件 1**: `src/main/java/demo/k8s/agent/tools/local/planning/TaskCreateMultiAgentRouter.java`
+
+- 添加 `shouldUseSubagent(Map<String, Object> metadata)` 方法
+- 修改 `routeTaskCreate()` 逻辑，检查 `metadata.useSubagent` 字段
+- 仅当 `useSubagent=true` 时才派生子 Agent
+
+**文件 2**: `src/main/java/demo/k8s/agent/tools/local/planning/TaskTools.java`
+
+- 更新 `TASK_CREATE_INPUT_SCHEMA`，添加 `useSubagent` 字段定义
+- 更新 `TASK_CREATE_PROMPT`，添加子 Agent 并行执行说明和示例
+
+### 3.3 使用示例
+
+```json
+// 简单任务 - 不使用子 Agent
+{
+  "subject": "读取配置文件",
+  "description": "读取 config.json 文件内容"
+}
+
+// 复杂并行任务 - 使用子 Agent
+{
+  "subject": "处理 5 个数据文件",
+  "description": "并行处理每个 CSV 文件并生成汇总报告",
+  "metadata": {
+    "useSubagent": true,
+    "reason": "Multiple independent files can be processed in parallel"
+  }
+}
+```
+
+### 3.4 验证步骤
+
+生产环境部署后，需验证以下场景：
+
+| 场景 | 输入 | 期望行为 |
+|------|------|----------|
+| 简单任务 | `useSubagent=false` 或未设置 | 走传统单 Agent 路径，日志中无 `Spawn` 相关记录 |
+| 并行任务 | `useSubagent=true` | 派生子 Agent，日志中有 `[TaskCreateRouter] useSubagent=true, spawning subagent` |
+| 子 Agent 启用但标记为 false | `useSubagent=false` | 走传统路径，日志中有 `useSubagent=false, using local execution` |
+
+### 3.5 Loki 日志验证命令
+
+```bash
+# 验证 useSubagent=false 的任务（应无 spawn 日志）
+curl -G "https://ai-agent-server-production-d28a.up.railway.app/api/logs/chain" \
+  -d urlencoded keyword="useSubagent=false" \
+  -d urlencoded date=2026-04-09
+
+# 验证 useSubagent=true 的任务（应有 spawn 日志）
+curl -G "https://ai-agent-server-production-d28a.up.railway.app/api/logs/chain" \
+  -d urlencoded keyword="useSubagent=true, spawning subagent" \
+  -d urlencoded date=2026-04-09
+
+# 验证传统路径执行（无子 Agent）
+curl -G "https://ai-agent-server-production-d28a.up.railway.app/api/logs/chain" \
+  -d urlencoded keyword="using local execution" \
+  -d urlencoded date=2026-04-09
+```
 
 ### 3.1 API 连通性测试
 
