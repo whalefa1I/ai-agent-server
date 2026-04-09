@@ -1,6 +1,7 @@
 package demo.k8s.agent.ws;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import demo.k8s.agent.observability.tracing.TraceContext;
 import demo.k8s.agent.query.AgenticTurnResult;
 import demo.k8s.agent.query.EnhancedAgenticQueryLoop;
 import demo.k8s.agent.query.LoopTerminalReason;
@@ -27,6 +28,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.*;
 
 /**
@@ -109,7 +111,8 @@ public class HttpApiV2Controller {
                 request.sessionId, truncate(request.message, 50));
 
         try {
-            // 执行 query loop
+            applyChatTraceContext(request);
+            // 执行 query loop（TaskCreate → MultiAgentFacade 等依赖 TraceContext.sessionId）
             AgenticTurnResult result = queryLoop.runWithCallbacks(
                     request.message,
                     (toolName, input) -> {
@@ -137,6 +140,25 @@ public class HttpApiV2Controller {
             log.error("处理聊天请求失败", e);
             return ResponseEntity.internalServerError()
                     .body(new SimpleChatResponse("Error: " + e.getMessage(), 0, 0, 0));
+        }
+    }
+
+    /**
+     * 为 HTTP 聊天补全会话维度，便于子 Agent / TaskCreate 与 {@link SubagentRun} 按 session 关联。
+     */
+    private static void applyChatTraceContext(ChatRequest request) {
+        String sid = (request != null && request.sessionId != null && !request.sessionId.isBlank())
+                ? request.sessionId
+                : "http-chat-" + UUID.randomUUID();
+        TraceContext.setSessionId(sid);
+        if (TraceContext.getUserId() == null || TraceContext.getUserId().isBlank()) {
+            TraceContext.setUserId(sid);
+        }
+        if (TraceContext.getTenantId() == null || TraceContext.getTenantId().isBlank()) {
+            TraceContext.setTenantId("default");
+        }
+        if (TraceContext.getAppId() == null || TraceContext.getAppId().isBlank()) {
+            TraceContext.setAppId("http-v2-chat");
         }
     }
 

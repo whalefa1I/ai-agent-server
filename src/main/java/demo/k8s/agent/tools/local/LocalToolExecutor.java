@@ -1,9 +1,12 @@
 package demo.k8s.agent.tools.local;
 
+import demo.k8s.agent.contextobject.ContextObjectReadService;
+import demo.k8s.agent.tools.local.context.ReadContextObjectTool;
 import demo.k8s.agent.tools.local.file.LocalGlobTool;
 import demo.k8s.agent.tools.local.file.LocalFileReadTool;
 import demo.k8s.agent.tools.local.file.LocalFileWriteTool;
 import demo.k8s.agent.tools.local.file.LocalFileEditTool;
+import demo.k8s.agent.tools.local.planning.TaskCreateMultiAgentRouter;
 import demo.k8s.agent.tools.local.planning.TaskTools;
 import demo.k8s.agent.tools.local.search.LocalGrepTool;
 import demo.k8s.agent.tools.local.shell.LocalBashTool;
@@ -18,6 +21,23 @@ import java.util.Map;
  * 未来扩展：可通过实现 {@link RemoteToolExecutor} 支持 HTTP 远程调用。
  */
 public class LocalToolExecutor {
+
+    private final ContextObjectReadService contextObjectReadService;
+    private final TaskCreateMultiAgentRouter taskCreateMultiAgentRouter;
+
+    public LocalToolExecutor() {
+        this(null, null);
+    }
+
+    public LocalToolExecutor(ContextObjectReadService contextObjectReadService) {
+        this(contextObjectReadService, null);
+    }
+
+    public LocalToolExecutor(ContextObjectReadService contextObjectReadService,
+                             TaskCreateMultiAgentRouter taskCreateMultiAgentRouter) {
+        this.contextObjectReadService = contextObjectReadService;
+        this.taskCreateMultiAgentRouter = taskCreateMultiAgentRouter;
+    }
 
     /**
      * 执行本地工具
@@ -41,8 +61,11 @@ public class LocalToolExecutor {
             case "file_edit" -> LocalFileEditTool.execute(input);
             case "grep" -> LocalGrepTool.execute(input);
             case "bash" -> LocalBashTool.execute(input);
+            case "read_context_object" -> ReadContextObjectTool.execute(input, contextObjectReadService);
             // Task 工具集
-            case "TaskCreate" -> TaskTools.executeTaskCreate(input);
+            case "TaskCreate" -> taskCreateMultiAgentRouter != null
+                    ? taskCreateMultiAgentRouter.routeTaskCreate(input)
+                    : TaskTools.executeTaskCreate(input);
             case "TaskList" -> TaskTools.executeTaskList(input);
             case "TaskGet" -> TaskTools.executeTaskGet(input);
             case "TaskUpdate" -> TaskTools.executeTaskUpdate(input);

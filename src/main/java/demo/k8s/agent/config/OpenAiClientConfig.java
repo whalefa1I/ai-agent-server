@@ -21,7 +21,7 @@ import org.slf4j.LoggerFactory;
  *
  * Configuration via environment variables:
  * - DASHSCOPE_API_KEY: API key for Bailian (required)
- * - DASHSCOPE_BASE_URL: Base URL (optional, defaults to https://coding.dashscope.aliyuncs.com)
+ * - DASHSCOPE_BASE_URL: 仅协议+主机，不要带 {@code /v1}（Spring AI 会拼接 {@code /v1/chat/completions} 等路径）
  * - DASHSCOPE_MODEL: Model name (optional, defaults to qwen3.5-plus)
  */
 @Configuration

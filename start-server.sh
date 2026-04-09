@@ -10,7 +10,8 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 # 百炼平台配置
 export DASHSCOPE_API_KEY="sk-sp-ab63f62c8df3494a8763982b1a741081"
-export DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+# 不要带 /v1（Spring AI 会拼接 /v1/chat/completions）
+export DASHSCOPE_BASE_URL="https://coding.dashscope.aliyuncs.com"
 export DASHSCOPE_MODEL="qwen-plus"
 
 echo "╔════════════════════════════════════════════════╗"

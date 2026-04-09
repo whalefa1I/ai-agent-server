@@ -34,6 +34,7 @@ spring:
   ai:
     openai:
       api-key: ${DASHSCOPE_API_KEY:sk-sp-ab63f62c8df3494a8763982b1a741081}
+      # 仅填协议+主机（不要带 /v1）：Spring AI OpenAiApi 会拼接 /v1/chat/completions、/v1/embeddings
       base-url: ${DASHSCOPE_BASE_URL:https://coding.dashscope.aliyuncs.com}
       chat:
         options:
@@ -91,6 +92,28 @@ demo:
   coordinator:
     # true 时主会话仅 Task + SendMessage + TaskStop（占位），对齐 Claude Code Coordinator 工具分区思路
     enabled: ${DEMO_COORDINATOR_MODE:false}
+  # 外置超长工具结果（context_object 表 + read_context_object）；表由 Flyway 始终创建，读取由开关控制
+  context-object:
+    enabled: ${DEMO_CONTEXT_OBJECT_ENABLED:false}
+    default-tenant-id: ${DEMO_CONTEXT_OBJECT_TENANT_ID:default}
+    read-max-chars: ${DEMO_CONTEXT_OBJECT_READ_MAX_CHARS:200000}
+    read-max-token-estimate: ${DEMO_CONTEXT_OBJECT_READ_MAX_TOKEN_ESTIMATE:50000}
+    # 写入路径配置（M1 实现）
+    write-enabled: ${DEMO_CONTEXT_OBJECT_WRITE_ENABLED:false}
+    write-threshold-chars: ${DEMO_CONTEXT_OBJECT_WRITE_THRESHOLD_CHARS:10000}
+    fallback-head-chars: ${DEMO_CONTEXT_OBJECT_FALLBACK_HEAD_CHARS:2000}
+    fallback-tail-chars: ${DEMO_CONTEXT_OBJECT_FALLBACK_TAIL_CHARS:2000}
+    default-ttl-hours: ${DEMO_CONTEXT_OBJECT_DEFAULT_TTL_HOURS:24}
+  # 多 Agent 子系统配置（M3 实现）
+  multi-agent:
+    enabled: ${DEMO_MULTI_AGENT_ENABLED:false}
+    mode: ${DEMO_MULTI_AGENT_MODE:off}  # off | shadow | on
+    max-spawn-depth: ${DEMO_MULTI_AGENT_MAX_SPAWN_DEPTH:3}
+    max-concurrent-spawns: ${DEMO_MULTI_AGENT_MAX_CONCURRENT_SPAWNS:5}
+    wallclock-ttl-seconds: ${DEMO_MULTI_AGENT_WALLCLOCK_TTL:180}
+    default-tenant-id: ${DEMO_MULTI_AGENT_DEFAULT_TENANT_ID:default}
+    # 子 Agent Worker 是否注册 TaskCreate/TaskList 等；默认 false，避免子内再嵌 Task
+    worker-expose-task-tools: ${DEMO_MULTI_AGENT_WORKER_TASK_TOOLS:false}
   tools:
     # default | read_only | bypass — 与 ToolPermissionContext 对齐；read_only 时仅保留只读类工具（如 Skill）
     permission-mode: ${DEMO_TOOLS_PERMISSION_MODE:bypass}

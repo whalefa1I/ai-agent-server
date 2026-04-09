@@ -87,6 +87,8 @@ public class LogFileReader {
         return new JsonEntry(
                 node.has("timestamp") ? node.get("timestamp").asText() : null,
                 node.has("event") ? node.get("event").asText() : null,
+                node.has("traceId") ? node.get("traceId").asText() : null,
+                node.has("requestId") ? node.get("requestId").asText() : null,
                 node.has("userId") ? node.get("userId").asText() : null,
                 node.has("sessionId") ? node.get("sessionId").asText() : null,
                 node.has("eventType") ? node.get("eventType").asText() : null,
@@ -94,8 +96,24 @@ public class LogFileReader {
                 node.has("skillType") ? node.get("skillType").asText() : null,
                 node.has("feature") ? node.get("feature").asText() : null,
                 node.has("errorCode") ? node.get("errorCode").asText() : null,
+                getNestedString(node, "data", "runId"),
+                getNestedString(node, "metadata", "runId"),
+                getNestedString(node, "data", "taskId"),
+                getNestedString(node, "metadata", "taskId"),
                 node
         );
+    }
+
+    private static String getNestedString(JsonNode root, String parent, String child) {
+        JsonNode p = root.get(parent);
+        if (p == null || p.isNull()) {
+            return null;
+        }
+        JsonNode c = p.get(child);
+        if (c == null || c.isNull()) {
+            return null;
+        }
+        return c.asText();
     }
 
     /**
@@ -105,7 +123,19 @@ public class LogFileReader {
         if (query.userId() != null && !query.userId().equals(entry.userId())) {
             return false;
         }
+        if (query.traceId() != null && !query.traceId().equals(entry.traceId())) {
+            return false;
+        }
+        if (query.requestId() != null && !query.requestId().equals(entry.requestId())) {
+            return false;
+        }
         if (query.sessionId() != null && !query.sessionId().equals(entry.sessionId())) {
+            return false;
+        }
+        if (query.runId() != null && !query.runId().equals(entry.runId())) {
+            return false;
+        }
+        if (query.taskId() != null && !query.taskId().equals(entry.taskId())) {
             return false;
         }
         if (query.eventType() != null && !query.eventType().equals(entry.eventType())) {
@@ -120,6 +150,13 @@ public class LogFileReader {
         if (query.errorCode() != null && !query.errorCode().equals(entry.errorCode())) {
             return false;
         }
+        if (query.keyword() != null && !query.keyword().isBlank()) {
+            String s = query.keyword().toLowerCase();
+            String raw = entry.node().toString().toLowerCase();
+            if (!raw.contains(s)) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -130,8 +167,12 @@ public class LogFileReader {
         return new LogEntry(
                 json.timestamp,
                 json.event,
+                json.traceId,
+                json.requestId,
                 json.userId,
                 json.sessionId,
+                json.runId(),
+                json.taskId(),
                 json.eventType,
                 json.skill,
                 json.skillType,
@@ -176,11 +217,16 @@ public class LogFileReader {
     public record LogQuery(
             LocalDate date,
             String userId,
+            String traceId,
+            String requestId,
             String sessionId,
+            String runId,
+            String taskId,
             String eventType,
             String event,
             String skill,
             String errorCode,
+            String keyword,
             int page,
             int size
     ) {
@@ -198,11 +244,16 @@ public class LogFileReader {
     public static class LogQueryBuilder {
         private LocalDate date = LocalDate.now();
         private String userId;
+        private String traceId;
+        private String requestId;
         private String sessionId;
+        private String runId;
+        private String taskId;
         private String eventType;
         private String event;
         private String skill;
         private String errorCode;
+        private String keyword;
         private int page = 1;
         private int size = 50;
 
@@ -216,8 +267,28 @@ public class LogFileReader {
             return this;
         }
 
+        public LogQueryBuilder traceId(String traceId) {
+            this.traceId = traceId;
+            return this;
+        }
+
+        public LogQueryBuilder requestId(String requestId) {
+            this.requestId = requestId;
+            return this;
+        }
+
         public LogQueryBuilder sessionId(String sessionId) {
             this.sessionId = sessionId;
+            return this;
+        }
+
+        public LogQueryBuilder runId(String runId) {
+            this.runId = runId;
+            return this;
+        }
+
+        public LogQueryBuilder taskId(String taskId) {
+            this.taskId = taskId;
             return this;
         }
 
@@ -241,6 +312,11 @@ public class LogFileReader {
             return this;
         }
 
+        public LogQueryBuilder keyword(String keyword) {
+            this.keyword = keyword;
+            return this;
+        }
+
         public LogQueryBuilder page(int page) {
             this.page = page;
             return this;
@@ -252,7 +328,8 @@ public class LogFileReader {
         }
 
         public LogQuery build() {
-            return new LogQuery(date, userId, sessionId, eventType, event, skill, errorCode, page, size);
+            return new LogQuery(date, userId, traceId, requestId, sessionId, runId, taskId,
+                    eventType, event, skill, errorCode, keyword, page, size);
         }
     }
 
@@ -262,8 +339,12 @@ public class LogFileReader {
     public record LogEntry(
             String timestamp,
             String event,
+            String traceId,
+            String requestId,
             String userId,
             String sessionId,
+            String runId,
+            String taskId,
             String eventType,
             String skill,
             String skillType,
@@ -272,7 +353,11 @@ public class LogFileReader {
             String rawLine
     ) {
         public String userId() { return userId; }
+        public String traceId() { return traceId; }
+        public String requestId() { return requestId; }
         public String sessionId() { return sessionId; }
+        public String runId() { return runId; }
+        public String taskId() { return taskId; }
         public String eventType() { return eventType; }
         public String event() { return event; }
         public String skill() { return skill; }
@@ -285,6 +370,8 @@ public class LogFileReader {
     private record JsonEntry(
             String timestamp,
             String event,
+            String traceId,
+            String requestId,
             String userId,
             String sessionId,
             String eventType,
@@ -292,6 +379,18 @@ public class LogFileReader {
             String skillType,
             String feature,
             String errorCode,
+            String dataRunId,
+            String metadataRunId,
+            String dataTaskId,
+            String metadataTaskId,
             JsonNode node
-    ) {}
+    ) {
+        public String runId() {
+            return dataRunId != null ? dataRunId : metadataRunId;
+        }
+
+        public String taskId() {
+            return dataTaskId != null ? dataTaskId : metadataTaskId;
+        }
+    }
 }

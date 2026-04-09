@@ -1,9 +1,9 @@
 package demo.k8s.agent.coordinator;
 
+import demo.k8s.agent.observability.tracing.TraceContext;
 import demo.k8s.agent.subagent.SpawnPath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -12,14 +12,17 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 异步子 Agent 执行器，与 Claude Code 的 AgentTool 派发路径对齐。
+ * 子 Agent <strong>Worker 引擎</strong>：驱动 {@link CoordinatorState} 与底层 Worker 循环。
  * <p>
- * 支持完整的 {@link SpawnPath}：
+ * <strong>编排唯一入口</strong>为 {@link demo.k8s.agent.subagent.MultiAgentFacade}（门控、{@code SubagentRun}、模式开关）。
+ * 本类仅供 {@link demo.k8s.agent.subagent.SubAgentRuntime} 实现（当前为 {@link demo.k8s.agent.subagent.LocalSubAgentRuntime}）注入调用；
+ * 禁止再新增 Spring Bean、工具类或 HTTP 层对其直连，以免绕过 Gatekeeper 与持久化语义。
+ * <p>
+ * 能力划分与 {@link SpawnPath} 对齐（由 Runtime 选择调用方式）：
  * <ul>
- *   <li>{@link SpawnPath#SYNCHRONOUS_TYPED_AGENT} - 阻塞父回合直到子 Agent 结束</li>
- *   <li>{@link SpawnPath#ASYNC_BACKGROUND} - 后台启动子 Agent，立即返回 TaskHandle</li>
- *   <li>{@link SpawnPath#TEAMMATE} - 队友/多 Agent 终端派发（预留）</li>
- *   <li>{@link SpawnPath#FORK_CACHE_ALIGNED} - fork 实验路径（预留）</li>
+ *   <li>{@link SpawnPath#SYNCHRONOUS_TYPED_AGENT} — {@link #runSynchronousAgent}</li>
+ *   <li>{@link SpawnPath#ASYNC_BACKGROUND} — 后台 API（预留由 Runtime/Facade 扩展时调用）</li>
+ *   <li>{@link SpawnPath#TEAMMATE}、{@link SpawnPath#FORK_CACHE_ALIGNED} — 预留</li>
  * </ul>
  */
 @Service
@@ -38,10 +41,12 @@ public class AsyncSubagentExecutor {
         this.workerExecutor = workerExecutor;
         this.executorService = Executors.newCachedThreadPool(r -> {
             Thread t = new Thread(r);
-            t.setName("subagent-" + t.getId());
+            t.setName("subagent-" + t.threadId());
             t.setDaemon(true);
             return t;
         });
+        log.info("[SubagentExec] CoordinatorState wired: instanceId={}",
+                System.identityHashCode(coordinatorState));
     }
 
     /**
@@ -64,12 +69,17 @@ public class AsyncSubagentExecutor {
 
         log.info("启动同步子 Agent: name={}, goal={}, agentType={}", name, truncate(goal, 50), agentType);
 
+        TraceContext.TraceInfo callerTrace = TraceContext.getTraceInfo();
+
         // 创建任务
         CoordinatorState.TaskHandle handle = coordinatorState.createTask(name, goal, agentType);
+        log.info("[SubagentExec] task created: taskId={}, agentType={}, sessionId={}, traceId={}",
+                handle.taskId(), agentType, callerTrace != null ? callerTrace.sessionId() : null,
+                callerTrace != null ? callerTrace.traceId() : null);
 
-        // 异步执行 Worker
+        // 异步执行 Worker（在子线程恢复 callerTrace，使 Worker 内工具回调与主会话一致）
         CompletableFuture<CoordinatorState.TaskResult> future =
-                runBackgroundAgentInternal(handle.taskId(), agentType);
+                runBackgroundAgentInternal(handle.taskId(), agentType, callerTrace);
 
         // 阻塞等待完成
         try {
@@ -79,9 +89,14 @@ public class AsyncSubagentExecutor {
             return result;
         } catch (java.util.concurrent.TimeoutException e) {
             coordinatorState.failTask(handle.taskId(), "timeout");
+            log.warn("[SubagentExec] synchronous worker timeout: taskId={}, agentType={}, timeoutSec={}",
+                    handle.taskId(), agentType, timeout.toSeconds());
             throw new Exception("子 Agent 超时：" + handle.taskId(), e);
         } catch (java.util.concurrent.ExecutionException e) {
             coordinatorState.failTask(handle.taskId(), e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+            log.error("[SubagentExec] synchronous worker failed: taskId={}, agentType={}, err={}",
+                    handle.taskId(), agentType,
+                    e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
             throw new Exception("子 Agent 执行失败：" + handle.taskId(), e);
         }
     }
@@ -105,9 +120,10 @@ public class AsyncSubagentExecutor {
 
         // 创建任务
         CoordinatorState.TaskHandle handle = coordinatorState.createTask(name, goal, agentType);
+        log.info("[SubagentExec] background task created: taskId={}, agentType={}", handle.taskId(), agentType);
 
         // 异步执行
-        runBackgroundAgentInternal(handle.taskId(), agentType);
+        runBackgroundAgentInternal(handle.taskId(), agentType, null);
 
         return handle;
     }
@@ -128,7 +144,8 @@ public class AsyncSubagentExecutor {
         log.info("后台启动子 Agent（异步）: name={}, goal={}, agentType={}", name, truncate(goal, 50), agentType);
 
         CoordinatorState.TaskHandle handle = coordinatorState.createTask(name, goal, agentType);
-        return runBackgroundAgentInternal(handle.taskId(), agentType);
+        log.info("[SubagentExec] background-async task created: taskId={}, agentType={}", handle.taskId(), agentType);
+        return runBackgroundAgentInternal(handle.taskId(), agentType, null);
     }
 
     /**
@@ -156,7 +173,7 @@ public class AsyncSubagentExecutor {
                 agentType);
 
         // 启动 Worker
-        runBackgroundAgentInternal(handle.taskId(), agentType);
+        runBackgroundAgentInternal(handle.taskId(), agentType, null);
 
         return handle;
     }
@@ -182,7 +199,7 @@ public class AsyncSubagentExecutor {
                 "fork" + (useExactTools ? "_exact" : ""));
 
         // 启动 Worker
-        runBackgroundAgentInternal(handle.taskId(), handle.taskId());
+        runBackgroundAgentInternal(handle.taskId(), handle.taskId(), null);
 
         return handle;
     }
@@ -246,16 +263,16 @@ public class AsyncSubagentExecutor {
 
     private CompletableFuture<CoordinatorState.TaskResult> runBackgroundAgentInternal(
             String taskId,
-            String agentType) {
+            String agentType,
+            TraceContext.TraceInfo parentTrace) {
 
         CompletableFuture<CoordinatorState.TaskResult> future = new CompletableFuture<>();
 
         executorService.submit(() -> {
             try {
-                // 执行 Worker
+                applyTraceSnapshotForWorker(parentTrace);
                 workerExecutor.executeWorker(taskId, agentType);
 
-                // 等待任务完成
                 CoordinatorState.TaskResult result = coordinatorState.waitForTask(
                         taskId,
                         Duration.ofMinutes(30)); // 默认 30 分钟超时
@@ -265,10 +282,41 @@ public class AsyncSubagentExecutor {
                 log.error("子 Agent 执行失败：taskId={}", taskId, e);
                 coordinatorState.failTask(taskId, e.getMessage());
                 future.completeExceptionally(e);
+            } finally {
+                TraceContext.clear();
             }
         });
 
         return future;
+    }
+
+    /**
+     * 在 Worker 线程恢复调用方追踪快照（通常为 {@link demo.k8s.agent.subagent.LocalSubAgentRuntime} 已绑定的会话）。
+     */
+    private static void applyTraceSnapshotForWorker(TraceContext.TraceInfo snap) {
+        if (snap == null) {
+            TraceContext.init(TraceContext.generateTraceId(), TraceContext.generateSpanId());
+            return;
+        }
+        String tid = snap.traceId() != null && !snap.traceId().isBlank()
+                ? snap.traceId()
+                : TraceContext.generateTraceId();
+        TraceContext.init(tid, TraceContext.generateSpanId());
+        if (snap.requestId() != null && !snap.requestId().isBlank()) {
+            TraceContext.setRequestId(snap.requestId());
+        }
+        if (snap.sessionId() != null && !snap.sessionId().isBlank()) {
+            TraceContext.setSessionId(snap.sessionId());
+        }
+        if (snap.userId() != null && !snap.userId().isBlank()) {
+            TraceContext.setUserId(snap.userId());
+        }
+        if (snap.tenantId() != null && !snap.tenantId().isBlank()) {
+            TraceContext.setTenantId(snap.tenantId());
+        }
+        if (snap.appId() != null && !snap.appId().isBlank()) {
+            TraceContext.setAppId(snap.appId());
+        }
     }
 
     private static String truncate(String s, int maxLen) {

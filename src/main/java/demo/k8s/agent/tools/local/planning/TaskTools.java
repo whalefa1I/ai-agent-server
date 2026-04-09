@@ -229,74 +229,117 @@ public class TaskTools {
                 });
     }
 
-    public static LocalToolResult executeTaskCreate(Map<String, Object> input) {
-        try {
-            // 兼容多种参数格式
-            String subject = (String) input.get("subject");
-            if (subject == null || subject.isBlank()) {
-                // 尝试从 name 获取
-                subject = (String) input.get("name");
-            }
-            if (subject == null || subject.isBlank()) {
-                // 尝试从 prompt 提取（LLM 可能使用 prompt 字段）
-                String prompt = (String) input.get("prompt");
-                if (prompt != null && !prompt.isBlank()) {
-                    // 从 prompt 中提取简短主题（取前 20 个字符或第一个标点符号前的内容）
-                    subject = prompt.replaceAll("[,.!?.:，。！？：;]", " ").split("\\s+")[0];
-                    if (subject.length() > 30) {
-                        subject = subject.substring(0, 30) + "...";
-                    }
+    public static TaskCreateParseResult parseTaskCreateInput(Map<String, Object> input) {
+        String subject = (String) input.get("subject");
+        if (subject == null || subject.isBlank()) {
+            subject = (String) input.get("name");
+        }
+        if (subject == null || subject.isBlank()) {
+            String prompt = (String) input.get("prompt");
+            if (prompt != null && !prompt.isBlank()) {
+                subject = prompt.replaceAll("[,.!?.:，。！？：;]", " ").split("\\s+")[0];
+                if (subject.length() > 30) {
+                    subject = subject.substring(0, 30) + "...";
                 }
             }
+        }
 
-            String description = (String) input.get("description");
-            if (description == null || description.isBlank()) {
-                // 尝试从 task_instruction 或 input 获取
-                description = (String) input.get("task_instruction");
-            }
-            if (description == null || description.isBlank()) {
-                description = (String) input.get("input");
-            }
-            if (description == null || description.isBlank()) {
-                // 尝试从 prompt 获取
-                description = (String) input.get("prompt");
-            }
+        String description = (String) input.get("description");
+        if (description == null || description.isBlank()) {
+            description = (String) input.get("task_instruction");
+        }
+        if (description == null || description.isBlank()) {
+            description = (String) input.get("input");
+        }
+        if (description == null || description.isBlank()) {
+            description = (String) input.get("prompt");
+        }
 
-            // 最终检查
-            if (subject == null || subject.isBlank()) {
-                return contractError("TaskCreate", "TASK_CREATE_SUBJECT_REQUIRED", "subject (or name) is required", input, List.of("subject", "description"));
-            }
-            if (description == null || description.isBlank()) {
-                return contractError("TaskCreate", "TASK_CREATE_DESCRIPTION_REQUIRED", "description (or task_instruction or input or prompt) is required", input, List.of("subject", "description"));
-            }
+        if (subject == null || subject.isBlank()) {
+            return new TaskCreateParseResult.ParseError(
+                    contractError("TaskCreate", "TASK_CREATE_SUBJECT_REQUIRED", "subject (or name) is required", input, List.of("subject", "description")));
+        }
+        if (description == null || description.isBlank()) {
+            return new TaskCreateParseResult.ParseError(
+                    contractError("TaskCreate", "TASK_CREATE_DESCRIPTION_REQUIRED", "description (or task_instruction or input or prompt) is required", input, List.of("subject", "description")));
+        }
 
-            String activeForm = (String) input.get("activeForm");
-            @SuppressWarnings("unchecked")
-            Map<String, Object> metadata = (Map<String, Object>) input.get("metadata");
+        String activeForm = (String) input.get("activeForm");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> metadata = (Map<String, Object>) input.get("metadata");
+        return new TaskCreateParseResult.Parsed(subject, description, activeForm, metadata);
+    }
 
-            String taskId = String.valueOf(nextTaskId.getAndIncrement());
-            Task task = new Task(taskId, subject, description);
-            task.activeForm = activeForm;
-            if (metadata != null) {
-                task.metadata.putAll(metadata);
-            }
+    /**
+     * Shadow 模式：禁止创建真实子任务（对齐 v1 不注入伪成功）。
+     */
+    public static LocalToolResult taskCreateShadowBlocked(Map<String, Object> input) {
+        return contractError(
+                "TaskCreate",
+                "TASK_CREATE_SHADOW_MODE",
+                "Multi-agent is in shadow mode: do not spawn subtasks. Answer from the current context only.",
+                input,
+                List.of("subject", "description"));
+    }
 
-            tasks.put(taskId, task);
+    /**
+     * 将 subagent_run 终态镜像到 Task 列表，便于 TaskList 与 runId 对齐。
+     */
+    public static void mirrorSubagentRunCompleted(String runId, String subject, String description, String resultPreview) {
+        Task task = new Task(runId, subject, description);
+        task.status = TaskStatus.COMPLETED;
+        task.completedAt = System.currentTimeMillis();
+        task.metadata.put("subagentRun", true);
+        if (resultPreview != null && !resultPreview.isBlank()) {
+            String p = resultPreview.length() > 4000 ? resultPreview.substring(0, 4000) + "…" : resultPreview;
+            task.metadata.put("outputPreview", p);
+        }
+        tasks.put(runId, task);
+    }
 
-            log.info("创建任务：{} - {}", taskId, subject);
+    public static LocalToolResult taskCreateSpawnRejected(Map<String, Object> input, String message) {
+        return contractError("TaskCreate", "TASK_CREATE_SPAWN_REJECTED",
+                message != null ? message : "spawn rejected", input, List.of("subject", "description"));
+    }
 
-            Map<String, Object> output = new LinkedHashMap<>();
-            Map<String, Object> taskInfo = new LinkedHashMap<>();
-            taskInfo.put("id", taskId);
-            taskInfo.put("subject", subject);
-            output.put("task", taskInfo);
+    public static LocalToolResult taskCreateSuccessWithRunId(String runId, String subject) {
+        Map<String, Object> output = new LinkedHashMap<>();
+        Map<String, Object> taskInfo = new LinkedHashMap<>();
+        taskInfo.put("id", runId);
+        taskInfo.put("subject", subject);
+        output.put("task", taskInfo);
+        return contractSuccess("Subagent run completed: runId=" + runId + ", subject=" + subject, "TaskCreate", output);
+    }
 
-            return contractSuccess("Task created successfully: taskId=" + taskId + ", subject=" + subject, "TaskCreate", output);
-
+    public static LocalToolResult executeTaskCreate(Map<String, Object> input) {
+        try {
+            return switch (parseTaskCreateInput(input)) {
+                case TaskCreateParseResult.ParseError e -> e.error();
+                case TaskCreateParseResult.Parsed p -> executeInMemoryTaskCreate(input, p);
+            };
         } catch (Exception e) {
             log.error("TaskCreate 执行失败", e);
             return contractError("TaskCreate", "TASK_CREATE_EXECUTION_ERROR", "Error: " + e.getMessage(), input, List.of("subject", "description"));
         }
+    }
+
+    private static LocalToolResult executeInMemoryTaskCreate(Map<String, Object> input, TaskCreateParseResult.Parsed p) {
+        String taskId = String.valueOf(nextTaskId.getAndIncrement());
+        Task task = new Task(taskId, p.subject(), p.description());
+        task.activeForm = p.activeForm();
+        if (p.metadata() != null) {
+            task.metadata.putAll(p.metadata());
+        }
+        tasks.put(taskId, task);
+        log.info("创建任务：{} - {}", taskId, p.subject());
+
+        Map<String, Object> output = new LinkedHashMap<>();
+        Map<String, Object> taskInfo = new LinkedHashMap<>();
+        taskInfo.put("id", taskId);
+        taskInfo.put("subject", p.subject());
+        output.put("task", taskInfo);
+
+        return contractSuccess("Task created successfully: taskId=" + taskId + ", subject=" + p.subject(), "TaskCreate", output);
     }
 
     // ===== TaskList =====

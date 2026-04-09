@@ -35,10 +35,15 @@ public class LogQueryController {
     @GetMapping("/query")
     public ResponseEntity<Map<String, Object>> queryLogs(
             @RequestParam(required = false) String userId,
+            @RequestParam(required = false) String traceId,
+            @RequestParam(required = false) String requestId,
             @RequestParam(required = false) String sessionId,
+            @RequestParam(required = false) String runId,
+            @RequestParam(required = false) String taskId,
             @RequestParam(required = false) String eventType,
             @RequestParam(required = false) String event,
             @RequestParam(required = false) String skill,
+            @RequestParam(required = false) String keyword,
             @RequestParam(required = false) LocalDate date,
             @RequestParam(required = false, defaultValue = "1") int page,
             @RequestParam(required = false, defaultValue = "50") int size
@@ -47,10 +52,15 @@ public class LogQueryController {
             LogFileReader.LogQuery query = LogFileReader.LogQuery.builder()
                     .date(date)
                     .userId(userId)
+                    .traceId(traceId)
+                    .requestId(requestId)
                     .sessionId(sessionId)
+                    .runId(runId)
+                    .taskId(taskId)
                     .eventType(eventType)
                     .event(event)
                     .skill(skill)
+                    .keyword(keyword)
                     .page(page)
                     .size(size)
                     .build();
@@ -172,6 +182,61 @@ public class LogQueryController {
             Map<String, Object> error = new HashMap<>();
             error.put("success", false);
             error.put("error", "Failed to query session logs: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(error);
+        }
+    }
+
+    /**
+     * 全链路查询：优先建议按 requestId 或 traceId 检索
+     */
+    @GetMapping("/chain")
+    public ResponseEntity<Map<String, Object>> getChainLogs(
+            @RequestParam(required = false) String requestId,
+            @RequestParam(required = false) String traceId,
+            @RequestParam(required = false) String sessionId,
+            @RequestParam(required = false) String runId,
+            @RequestParam(required = false) String taskId,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) LocalDate date,
+            @RequestParam(required = false, defaultValue = "1") int page,
+            @RequestParam(required = false, defaultValue = "100") int size
+    ) {
+        try {
+            LogFileReader.LogQuery query = LogFileReader.LogQuery.builder()
+                    .date(date)
+                    .requestId(requestId)
+                    .traceId(traceId)
+                    .sessionId(sessionId)
+                    .runId(runId)
+                    .taskId(taskId)
+                    .keyword(keyword)
+                    .page(page)
+                    .size(size)
+                    .build();
+            List<LogFileReader.LogEntry> entries = logFileReader.queryLogs(query);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", entries);
+            response.put("filters", Map.of(
+                    "requestId", requestId != null ? requestId : "",
+                    "traceId", traceId != null ? traceId : "",
+                    "sessionId", sessionId != null ? sessionId : "",
+                    "runId", runId != null ? runId : "",
+                    "taskId", taskId != null ? taskId : "",
+                    "keyword", keyword != null ? keyword : ""
+            ));
+            response.put("pagination", Map.of(
+                    "page", page,
+                    "size", size,
+                    "total", entries.size()
+            ));
+            return ResponseEntity.ok(response);
+        } catch (IOException e) {
+            log.error("Failed to query chain logs", e);
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("error", "Failed to query chain logs: " + e.getMessage());
             return ResponseEntity.internalServerError().body(error);
         }
     }

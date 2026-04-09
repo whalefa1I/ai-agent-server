@@ -1,5 +1,6 @@
 package demo.k8s.agent.tools.local;
 
+import demo.k8s.agent.tools.local.context.ReadContextObjectTool;
 import demo.k8s.agent.tools.local.file.*;
 import demo.k8s.agent.tools.local.git.LocalGitTool;
 import demo.k8s.agent.tools.local.lsp.LspDiagnosticTool;
@@ -50,6 +51,8 @@ public class LocalToolRegistry {
 
         // 搜索工具
         tools.add(LocalGrepTool.createTool());
+
+        tools.add(ReadContextObjectTool.createTool());
 
         // Shell 工具
         tools.add(LocalBashTool.createTool());

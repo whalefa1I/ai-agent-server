@@ -1,5 +1,7 @@
 package demo.k8s.agent.config;
 
+import demo.k8s.agent.contextobject.ContextObjectReadService;
+import demo.k8s.agent.tools.local.planning.TaskCreateMultiAgentRouter;
 import demo.k8s.agent.tools.UnifiedToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolRegistry;
@@ -64,6 +66,7 @@ public class DemoToolRegistryConfiguration {
         full.register(new ToolModule(DemoToolSpecs.fileEdit(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "file_edit")));
         full.register(new ToolModule(DemoToolSpecs.bash(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "bash")));
         full.register(new ToolModule(DemoToolSpecs.grep(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "grep")));
+        full.register(new ToolModule(DemoToolSpecs.readContextObject(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "read_context_object")));
         // Task 工具集（单独注册每个子工具）
         full.register(new ToolModule(createTaskCreateToolSpec(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "TaskCreate")));
         full.register(new ToolModule(createTaskListToolSpec(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "TaskList")));
@@ -229,7 +232,9 @@ public class DemoToolRegistryConfiguration {
      * 本地工具执行器
      */
     @Bean
-    LocalToolExecutor localToolExecutor() {
-        return new LocalToolExecutor();
+    LocalToolExecutor localToolExecutor(
+            ContextObjectReadService contextObjectReadService,
+            TaskCreateMultiAgentRouter taskCreateMultiAgentRouter) {
+        return new LocalToolExecutor(contextObjectReadService, taskCreateMultiAgentRouter);
     }
 }

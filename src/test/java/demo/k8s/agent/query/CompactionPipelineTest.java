@@ -13,6 +13,9 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 
 import demo.k8s.agent.config.DemoQueryProperties;
+import demo.k8s.agent.contextobject.ContextObjectWriteService;
+import demo.k8s.agent.contextobject.ContextObjectRepository;
+import demo.k8s.agent.config.DemoContextObjectWriteProperties;
 
 import java.util.List;
 import java.util.Map;
@@ -37,6 +40,9 @@ class CompactionPipelineTest {
     @Mock
     private Generation generation;
 
+    @Mock
+    private ContextObjectWriteService contextObjectWriteService;
+
     private DemoQueryProperties props;
     private EnhancedCompactionPipeline pipeline;
 
@@ -44,7 +50,11 @@ class CompactionPipelineTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         props = new DemoQueryProperties();
-        pipeline = new EnhancedCompactionPipeline(props, chatModel);
+        // Mock writeService：始终返回成功但不实际写入 DB 的结果
+        var mockResult = new ContextObjectWriteService.WriteResult(null, "mocked-content", true, null);
+        when(contextObjectWriteService.write(anyString(), anyString(), anyInt(), any(), anyString()))
+                .thenReturn(mockResult);
+        pipeline = new EnhancedCompactionPipeline(props, chatModel, contextObjectWriteService);
     }
 
     // ==================== Tier 1: Microcompact 测试 ====================

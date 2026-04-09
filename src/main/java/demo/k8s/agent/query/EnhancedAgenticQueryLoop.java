@@ -662,10 +662,19 @@ public class EnhancedAgenticQueryLoop {
                     }
                     toolOutput = objectMapper.writeValueAsString(outputData);
                 } else {
-                    toolOutput = objectMapper.writeValueAsString(Map.of(
-                        "error", result.getContent(),
-                        "success", false
-                    ));
+                    String toolErr = result.getError();
+                    if (toolErr == null || toolErr.isBlank()) {
+                        toolErr = result.getContent();
+                    }
+                    if (toolErr == null || toolErr.isBlank()) {
+                        toolErr = "UNKNOWN_TOOL_ERROR";
+                    }
+                    Map<String, Object> errPayload = new HashMap<>();
+                    errPayload.put("error", toolErr);
+                    errPayload.put("success", false);
+                    errPayload.put("location", result.getExecutionLocation());
+                    errPayload.put("durationMs", result.getDurationMs());
+                    toolOutput = objectMapper.writeValueAsString(errPayload);
                 }
 
                 // 记录成功
@@ -706,21 +715,27 @@ public class EnhancedAgenticQueryLoop {
 
             } catch (Exception e) {
                 sessionStats.failToolCall(toolMetrics, e.getMessage());
-                log.error("工具调用失败：{}", tc.name(), e);
+                String traceId = TraceContext.getTraceId();
+                String safeErr = e.getMessage();
+                if (safeErr == null || safeErr.isBlank()) {
+                    safeErr = e.getClass().getSimpleName();
+                }
+                log.error("工具调用失败：tool={}, sessionId={}, userId={}, traceId={}, toolCallId={}, err={}",
+                        tc.name(), sessionId, userId, traceId, tc.id(), safeErr, e);
 
                 // 记录工具调用失败
                 long toolLatencyMs = toolMetrics.getLatencyMs();
                 StructuredLogger.logToolCall(sessionId, userId, tc.name(),
-                    parseInput(tc.arguments()).toString(), e.getMessage(), toolLatencyMs, false);
+                    parseInput(tc.arguments()).toString(), safeErr, toolLatencyMs, false);
                 eventBus.publish(new ToolCalledEvent(sessionId, userId, tc.name(),
-                    tc.arguments(), e.getMessage(), toolLatencyMs, false));
+                    tc.arguments(), safeErr, toolLatencyMs, false));
                 metricsCollector.recordToolCall(userId, tc.name(), false, toolMetrics.latency());
 
                 // 更新 ToolArtifact 为 FAILED
                 if (toolStateService != null && artifactId != null) {
                     try {
                         Map<String, Object> failedBody = new HashMap<>();
-                        failedBody.put("error", e.getMessage());
+                        failedBody.put("error", safeErr);
                         failedBody.put("version", 4);
                         toolStateService.updateToolArtifact(
                             artifactId, userId, ToolStatus.FAILED, failedBody, 3, currentWebSocketSession);
@@ -731,11 +746,11 @@ public class EnhancedAgenticQueryLoop {
 
                 // 执行 AFTER Hook（错误情况）
                 if (hookService != null) {
-                    hookService.afterToolCall(sessionId, userId, tc.name(), input, e.getMessage(), false, toolLatencyMs);
+                    hookService.afterToolCall(sessionId, userId, tc.name(), input, safeErr, false, toolLatencyMs);
                 }
 
                 // 添加错误响应到消息
-                String errorOutput = "Error: " + e.getMessage();
+                String errorOutput = "Error: " + safeErr;
                 approvedCalls.add(new ExecutedToolCall(
                         new AssistantMessage.ToolCall(
                                 tc.id(),

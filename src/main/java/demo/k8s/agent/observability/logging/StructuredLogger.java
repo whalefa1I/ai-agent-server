@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import demo.k8s.agent.observability.tracing.TraceContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -50,7 +48,6 @@ public class StructuredLogger {
     /**
      * 获取环境配置
      */
-    private static String getTenant() { return TENANT.get(); }
     private static String getEnvironment() { return ENVIRONMENT.get(); }
     private static String getVersion() { return VERSION.get(); }
     private static String getRegion() { return REGION.get(); }
@@ -393,6 +390,7 @@ public class StructuredLogger {
         public String level = "INFO";
         public String traceId;
         public String spanId;
+        public String requestId;
         public String event;
         public String sessionId;
         public String userId;
@@ -489,6 +487,7 @@ public class StructuredLogger {
                 // 添加追踪上下文
                 entry.traceId = TraceContext.getTraceId();
                 entry.spanId = TraceContext.getSpanId();
+                entry.requestId = TraceContext.getRequestId();
                 // 如果 data 中包含环境字段，优先使用 data 中的值
                 if (entry.environment == null && entry.data.containsKey("environment")) {
                     entry.environment = String.valueOf(entry.data.get("environment"));

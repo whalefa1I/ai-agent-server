@@ -1,13 +1,13 @@
 package demo.k8s.agent.coordinator;
 
-import demo.k8s.agent.state.ConversationSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
+import demo.k8s.agent.observability.tracing.TraceContext;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,54 +27,75 @@ import java.util.concurrent.*;
  * </ul>
  */
 @Component
-@Scope("prototype")
 public class CoordinatorState {
 
     private static final Logger log = LoggerFactory.getLogger(CoordinatorState.class);
+    private static final String GLOBAL_SCOPE_KEY = "global";
 
     /**
-     * 活跃任务：taskId -> TaskState
+     * 作用域状态桶：scopeKey -> ScopeState
+     * <p>
+     * 当前已按 scope 分桶存储，为后续 session/run 级别隔离打基础。
      */
-    private final ConcurrentHashMap<String, TaskState> activeTasks = new ConcurrentHashMap<>();
-
-    /**
-     * 已完成任务（保留最近 100 条）
-     */
-    private final ConcurrentLinkedQueue<TaskState> completedTasks = new ConcurrentLinkedQueue<>();
+    private final ConcurrentHashMap<String, ScopeState> scopedStates = new ConcurrentHashMap<>();
     private static final int MAX_COMPLETED_TASKS = 100;
-
     /**
-     * 任务结果 Future：taskId -> CompletableFuture
+     * 任务所属作用域（为后续 session/run 级隔离预留）。
      */
-    private final ConcurrentHashMap<String, CompletableFuture<TaskResult>> taskFutures = new ConcurrentHashMap<>();
-
-    /**
-     * 任务创建时间：用于超时检测
-     */
-    private final ConcurrentHashMap<String, Instant> taskCreatedAt = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> taskScopes = new ConcurrentHashMap<>();
 
     /**
      * 获取所有活跃任务
      */
     public List<TaskState> getActiveTasks() {
-        return activeTasks.values().stream().toList();
+        List<TaskState> out = new ArrayList<>();
+        for (ScopeState scopeState : scopedStates.values()) {
+            out.addAll(scopeState.activeTasks.values());
+        }
+        return out;
     }
 
     /**
      * 获取所有任务（包括已完成）
      */
     public List<TaskState> getAllTasks() {
-        List<TaskState> all = new java.util.ArrayList<>(activeTasks.values());
-        all.addAll(completedTasks);
+        List<TaskState> all = new ArrayList<>();
+        for (ScopeState scopeState : scopedStates.values()) {
+            all.addAll(scopeState.activeTasks.values());
+            all.addAll(scopeState.completedTasks);
+        }
         return all;
+    }
+
+    /**
+     * 获取指定作用域下的活跃任务（用于隔离场景）。
+     */
+    public List<TaskState> getActiveTasksByScope(String scopeKey) {
+        ScopeState scopeState = scopedStates.get(normalizeScopeKey(scopeKey));
+        if (scopeState == null) {
+            return List.of();
+        }
+        return scopeState.activeTasks.values().stream().toList();
     }
 
     /**
      * 创建新任务
      */
     public TaskHandle createTask(String name, String goal, String assignedTo) {
+        return createTask(resolveRuntimeScopeKey(), name, goal, assignedTo);
+    }
+
+    /**
+     * 在指定作用域下创建任务。
+     * <p>
+     * 说明：当前仍使用单实例全局存储，scope 先作为元数据记录；
+     * 后续可平滑升级为按 scope 分区的状态存储，无需改动调用方接口。
+     */
+    public TaskHandle createTask(String scopeKey, String name, String goal, String assignedTo) {
         String taskId = generateTaskId();
         Instant now = Instant.now();
+        String normalizedScope = normalizeScopeKey(scopeKey);
+        ScopeState scopeState = getOrCreateScopeState(normalizedScope);
 
         TaskState state = new TaskState(
                 taskId,
@@ -88,11 +109,13 @@ public class CoordinatorState {
                 now
         );
 
-        activeTasks.put(taskId, state);
-        taskCreatedAt.put(taskId, now);
-        taskFutures.put(taskId, new CompletableFuture<>());
+        scopeState.activeTasks.put(taskId, state);
+        scopeState.taskCreatedAt.put(taskId, now);
+        scopeState.taskFutures.put(taskId, new CompletableFuture<>());
+        taskScopes.put(taskId, normalizedScope);
 
-        log.info("创建任务：{} (name={}, goal={}, assignedTo={})", taskId, name, truncate(goal, 50), assignedTo);
+        log.info("创建任务：{} (scope={}, name={}, goal={}, assignedTo={})",
+                taskId, normalizedScope, name, truncate(goal, 50), assignedTo);
 
         return new TaskHandle(taskId);
     }
@@ -101,7 +124,12 @@ public class CoordinatorState {
      * 启动任务（PENDING -> RUNNING）
      */
     public boolean startTask(String taskId) {
-        TaskState task = activeTasks.get(taskId);
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        if (scopeState == null) {
+            log.warn("任务不存在：{}", taskId);
+            return false;
+        }
+        TaskState task = scopeState.activeTasks.get(taskId);
         if (task == null) {
             log.warn("任务不存在：{}", taskId);
             return false;
@@ -121,7 +149,12 @@ public class CoordinatorState {
      * 发送消息给任务
      */
     public void sendMessage(String taskId, String message) {
-        TaskState task = activeTasks.get(taskId);
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        if (scopeState == null) {
+            log.warn("任务不存在：{}", taskId);
+            return;
+        }
+        TaskState task = scopeState.activeTasks.get(taskId);
         if (task == null) {
             log.warn("任务不存在：{}", taskId);
             return;
@@ -137,7 +170,8 @@ public class CoordinatorState {
      * 获取任务收件箱（并清空）
      */
     public List<String> drainMessages(String taskId) {
-        TaskState task = activeTasks.get(taskId);
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        TaskState task = scopeState != null ? scopeState.activeTasks.get(taskId) : null;
         if (task == null) {
             return List.of();
         }
@@ -151,7 +185,12 @@ public class CoordinatorState {
      * 添加任务输出
      */
     public void addOutput(String taskId, String output) {
-        TaskState task = activeTasks.get(taskId);
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        if (scopeState == null) {
+            log.warn("任务不存在：{}", taskId);
+            return;
+        }
+        TaskState task = scopeState.activeTasks.get(taskId);
         if (task == null) {
             log.warn("任务不存在：{}", taskId);
             return;
@@ -165,7 +204,8 @@ public class CoordinatorState {
      * 获取任务输出历史
      */
     public List<String> getOutputs(String taskId) {
-        TaskState task = activeTasks.get(taskId);
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        TaskState task = scopeState != null ? scopeState.activeTasks.get(taskId) : null;
         return task != null ? task.outputs().stream().toList() : List.of();
     }
 
@@ -177,18 +217,23 @@ public class CoordinatorState {
             return;
         }
 
-        TaskState task = activeTasks.get(taskId);
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        if (scopeState == null) {
+            return;
+        }
+        TaskState task = scopeState.activeTasks.get(taskId);
         if (task != null) {
             // 通知等待的 Future
-            CompletableFuture<TaskResult> future = taskFutures.get(taskId);
+            CompletableFuture<TaskResult> future = scopeState.taskFutures.get(taskId);
             if (future != null) {
                 future.complete(new TaskResult(taskId, result, null));
             }
 
             // 移动到已完成队列
-            activeTasks.remove(taskId);
-            completedTasks.add(task);
-            trimCompletedTasks();
+            scopeState.activeTasks.remove(taskId);
+            scopeState.completedTasks.add(task);
+            trimCompletedTasks(scopeState);
+            scopeState.taskCreatedAt.remove(taskId);
 
             log.info("任务完成：{} - {} chars", taskId, result != null ? result.length() : 0);
         }
@@ -202,18 +247,26 @@ public class CoordinatorState {
             return;
         }
 
-        TaskState task = activeTasks.get(taskId);
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        if (scopeState == null) {
+            return;
+        }
+        TaskState task = scopeState.activeTasks.get(taskId);
         if (task != null) {
-            CompletableFuture<TaskResult> future = taskFutures.get(taskId);
+            CompletableFuture<TaskResult> future = scopeState.taskFutures.get(taskId);
             if (future != null) {
                 future.complete(new TaskResult(taskId, null, error));
             }
 
-            activeTasks.remove(taskId);
-            completedTasks.add(task);
-            trimCompletedTasks();
+            scopeState.activeTasks.remove(taskId);
+            scopeState.completedTasks.add(task);
+            trimCompletedTasks(scopeState);
+            String scopeKey = taskScopes.get(taskId);
+            Instant createdAt = scopeState.taskCreatedAt.remove(taskId);
 
-            log.warn("任务失败：{} - {}", taskId, error);
+            Long elapsedMs = createdAt != null ? Duration.between(createdAt, Instant.now()).toMillis() : null;
+            log.warn("任务失败：taskId={}, scope={}, assignedTo={}, error={}, elapsedMs={}",
+                    taskId, scopeKey, task.assignedTo(), error, elapsedMs);
         }
     }
 
@@ -225,16 +278,21 @@ public class CoordinatorState {
             return;
         }
 
-        TaskState task = activeTasks.get(taskId);
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        if (scopeState == null) {
+            return;
+        }
+        TaskState task = scopeState.activeTasks.get(taskId);
         if (task != null) {
-            CompletableFuture<TaskResult> future = taskFutures.get(taskId);
+            CompletableFuture<TaskResult> future = scopeState.taskFutures.get(taskId);
             if (future != null) {
                 future.complete(new TaskResult(taskId, null, "stopped"));
             }
 
-            activeTasks.remove(taskId);
-            completedTasks.add(task);
-            trimCompletedTasks();
+            scopeState.activeTasks.remove(taskId);
+            scopeState.completedTasks.add(task);
+            trimCompletedTasks(scopeState);
+            scopeState.taskCreatedAt.remove(taskId);
 
             log.info("任务停止：{}", taskId);
         }
@@ -244,7 +302,9 @@ public class CoordinatorState {
      * 等待任务完成（阻塞）
      */
     public TaskResult waitForTask(String taskId, Duration timeout) throws TimeoutException {
-        CompletableFuture<TaskResult> future = taskFutures.get(taskId);
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        CompletableFuture<TaskResult> future =
+                scopeState != null ? scopeState.taskFutures.get(taskId) : null;
         if (future == null) {
             throw new IllegalArgumentException("任务不存在：" + taskId);
         }
@@ -265,7 +325,9 @@ public class CoordinatorState {
      * 异步等待任务完成（返回 CompletableFuture）
      */
     public CompletableFuture<TaskResult> waitForTaskAsync(String taskId) {
-        CompletableFuture<TaskResult> future = taskFutures.get(taskId);
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        CompletableFuture<TaskResult> future =
+                scopeState != null ? scopeState.taskFutures.get(taskId) : null;
         if (future == null) {
             CompletableFuture<TaskResult> failed = new CompletableFuture<>();
             failed.completeExceptionally(new IllegalArgumentException("任务不存在：" + taskId));
@@ -278,21 +340,31 @@ public class CoordinatorState {
      * 获取任务状态
      */
     public Optional<TaskState> getTask(String taskId) {
-        return Optional.ofNullable(activeTasks.get(taskId));
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        return Optional.ofNullable(scopeState != null ? scopeState.activeTasks.get(taskId) : null);
     }
 
     /**
      * 检查任务是否存在
      */
     public boolean hasTask(String taskId) {
-        return activeTasks.containsKey(taskId) || completedTasks.stream().anyMatch(t -> t.taskId().equals(taskId));
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        if (scopeState == null) {
+            return false;
+        }
+        return scopeState.activeTasks.containsKey(taskId)
+                || scopeState.completedTasks.stream().anyMatch(t -> t.taskId().equals(taskId));
     }
 
     /**
      * 更新任务状态
      */
     private boolean updateTaskStatus(String taskId, TaskStatus newStatus) {
-        TaskState task = activeTasks.get(taskId);
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        if (scopeState == null) {
+            return false;
+        }
+        TaskState task = scopeState.activeTasks.get(taskId);
         if (task == null) {
             return false;
         }
@@ -309,7 +381,7 @@ public class CoordinatorState {
                 Instant.now()
         );
 
-        activeTasks.put(taskId, updated);
+        scopeState.activeTasks.put(taskId, updated);
         log.debug("任务状态变更：{} -> {}", taskId, newStatus);
         return true;
     }
@@ -318,7 +390,11 @@ public class CoordinatorState {
      * 更新时间戳
      */
     private TaskState updateTaskTime(String taskId) {
-        TaskState task = activeTasks.get(taskId);
+        ScopeState scopeState = getScopeStateByTaskId(taskId);
+        if (scopeState == null) {
+            return null;
+        }
+        TaskState task = scopeState.activeTasks.get(taskId);
         if (task == null) {
             return null;
         }
@@ -335,16 +411,23 @@ public class CoordinatorState {
                 Instant.now()
         );
 
-        activeTasks.put(taskId, updated);
+        scopeState.activeTasks.put(taskId, updated);
         return updated;
     }
 
     /**
      * 修剪已完成任务队列
      */
-    private void trimCompletedTasks() {
-        while (completedTasks.size() > MAX_COMPLETED_TASKS) {
-            completedTasks.poll();
+    private void trimCompletedTasks(ScopeState scopeState) {
+        while (scopeState.completedTasks.size() > MAX_COMPLETED_TASKS) {
+            TaskState removed = scopeState.completedTasks.poll();
+            if (removed != null) {
+                scopeState.taskFutures.remove(removed.taskId());
+                String currentScope = taskScopes.get(removed.taskId());
+                if (currentScope != null && currentScope.equals(scopeState.scopeKey)) {
+                    taskScopes.remove(removed.taskId());
+                }
+            }
         }
     }
 
@@ -355,13 +438,15 @@ public class CoordinatorState {
         Instant now = Instant.now();
         Instant cutoff = now.minus(timeout);
 
-        for (Map.Entry<String, Instant> entry : taskCreatedAt.entrySet()) {
-            if (entry.getValue().isBefore(cutoff)) {
-                String taskId = entry.getKey();
-                TaskState task = activeTasks.get(taskId);
-                if (task != null && task.status() == TaskStatus.RUNNING) {
-                    log.warn("任务超时：{} (运行超过 {})", taskId, timeout);
-                    failTask(taskId, "timeout: exceeded " + timeout);
+        for (ScopeState scopeState : scopedStates.values()) {
+            for (Map.Entry<String, Instant> entry : scopeState.taskCreatedAt.entrySet()) {
+                if (entry.getValue().isBefore(cutoff)) {
+                    String taskId = entry.getKey();
+                    TaskState task = scopeState.activeTasks.get(taskId);
+                    if (task != null && task.status() == TaskStatus.RUNNING) {
+                        log.warn("任务超时：{} (运行超过 {})", taskId, timeout);
+                        failTask(taskId, "timeout: exceeded " + timeout);
+                    }
                 }
             }
         }
@@ -371,12 +456,56 @@ public class CoordinatorState {
      * 获取统计信息
      */
     public CoordinatorStats getStats() {
+        long active = 0;
+        long completed = 0;
+        long running = 0;
+        long waiting = 0;
+        for (ScopeState scopeState : scopedStates.values()) {
+            active += scopeState.activeTasks.size();
+            completed += scopeState.completedTasks.size();
+            running += scopeState.activeTasks.values().stream().filter(t -> t.status() == TaskStatus.RUNNING).count();
+            waiting += scopeState.activeTasks.values().stream().filter(t -> t.status() == TaskStatus.WAITING).count();
+        }
         return new CoordinatorStats(
-                activeTasks.size(),
-                completedTasks.size(),
-                activeTasks.values().stream().filter(t -> t.status() == TaskStatus.RUNNING).count(),
-                activeTasks.values().stream().filter(t -> t.status() == TaskStatus.WAITING).count()
+                active,
+                completed,
+                running,
+                waiting
         );
+    }
+
+    /**
+     * 返回任务当前记录的作用域（若未知则为空）。
+     */
+    public Optional<String> getTaskScope(String taskId) {
+        return Optional.ofNullable(taskScopes.get(taskId));
+    }
+
+    private static String resolveRuntimeScopeKey() {
+        String sessionId = TraceContext.getSessionId();
+        if (sessionId != null && !sessionId.isBlank()) {
+            return "session:" + sessionId;
+        }
+        return GLOBAL_SCOPE_KEY;
+    }
+
+    private static String normalizeScopeKey(String scopeKey) {
+        if (scopeKey == null || scopeKey.isBlank()) {
+            return GLOBAL_SCOPE_KEY;
+        }
+        return scopeKey;
+    }
+
+    private ScopeState getOrCreateScopeState(String scopeKey) {
+        return scopedStates.computeIfAbsent(scopeKey, ScopeState::new);
+    }
+
+    private ScopeState getScopeStateByTaskId(String taskId) {
+        String scope = taskScopes.get(taskId);
+        if (scope == null || scope.isBlank()) {
+            return null;
+        }
+        return scopedStates.get(scope);
     }
 
     private static String generateTaskId() {
@@ -408,4 +537,19 @@ public class CoordinatorState {
             long runningTasks,
             long waitingTasks
     ) {}
+
+    /**
+     * 单个作用域的任务状态桶。
+     */
+    private static final class ScopeState {
+        private final String scopeKey;
+        private final ConcurrentHashMap<String, TaskState> activeTasks = new ConcurrentHashMap<>();
+        private final ConcurrentLinkedQueue<TaskState> completedTasks = new ConcurrentLinkedQueue<>();
+        private final ConcurrentHashMap<String, CompletableFuture<TaskResult>> taskFutures = new ConcurrentHashMap<>();
+        private final ConcurrentHashMap<String, Instant> taskCreatedAt = new ConcurrentHashMap<>();
+
+        private ScopeState(String scopeKey) {
+            this.scopeKey = scopeKey;
+        }
+    }
 }

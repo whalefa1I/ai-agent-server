@@ -99,6 +99,19 @@ public final class DemoToolSpecs {
                     }
                     """;
 
+    private static final String READ_CONTEXT_OBJECT_SCHEMA =
+            """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string", "description": "Context object id (e.g. ctx-obj-...)" },
+                        "offset": { "type": "integer", "description": "Character offset (optional)" },
+                        "limit": { "type": "integer", "description": "Max characters (optional; server-capped)" }
+                      },
+                      "required": ["id"]
+                    }
+                    """;
+
     private static final String GREP_SCHEMA =
             """
                     {
@@ -223,6 +236,18 @@ public final class DemoToolSpecs {
                         ToolCategory.FILE_SYSTEM,
                         "在文件内容中搜索正则表达式匹配项",
                         GREP_SCHEMA,
+                        null,
+                        true));
+    }
+
+    /** read_context_object - 按 id 读取外置超长工具结果 */
+    public static ClaudeLikeTool readContextObject() {
+        return ClaudeToolFactory.buildTool(
+                new ToolDefPartial(
+                        "read_context_object",
+                        ToolCategory.FILE_SYSTEM,
+                        "Retrieve truncated tool output by context object id (session-bound on server).",
+                        READ_CONTEXT_OBJECT_SCHEMA,
                         null,
                         true));
     }

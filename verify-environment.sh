@@ -29,7 +29,7 @@ echo "[3/6] 检查 OPENAI_API_KEY..."
 if [ -z "$OPENAI_API_KEY" ]; then
     echo "[警告] OPENAI_API_KEY 未设置"
     echo "   请设置：export OPENAI_API_KEY=your-api-key"
-    echo "   百炼平台：export OPENAI_BASE_URL=https://coding.dashscope.aliyuncs.com/v1"
+    echo "   百炼 Spring AI：export DASHSCOPE_BASE_URL=https://coding.dashscope.aliyuncs.com （不要带 /v1）"
 else
     echo "[OK] API Key 已设置"
     echo "   OPENAI_BASE_URL=$OPENAI_BASE_URL"

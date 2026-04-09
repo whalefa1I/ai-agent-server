@@ -1,6 +1,8 @@
 package demo.k8s.agent.query;
 
 import demo.k8s.agent.config.DemoQueryProperties;
+import demo.k8s.agent.contextobject.ContextObjectWriteService;
+import demo.k8s.agent.contextobject.ProducerKind;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.Message;
@@ -33,6 +35,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *   time-based-compaction-keep-recent: 3             # Tier 2 保留最近 N 个工具结果
  *   full-compact-threshold-chars: 120000             # Tier 3 阈值
  *   full-compact-enabled: false                       # Tier 3 开关
+ * demo.context-object:
+ *   write-enabled: false                              # ContextObject 写入开关
+ *   write-threshold-chars: 10000                      # 触发外置写入的字符阈值
  * }</pre>
  */
 @Component
@@ -57,13 +62,17 @@ public class EnhancedCompactionPipeline implements CompactionPipeline {
 
     private final DemoQueryProperties props;
     private final ChatModel chatModel;
+    private final ContextObjectWriteService contextObjectWriteService;
 
     /** 记录每个工具结果的时间戳（用于 time-based 压缩） */
     private final ConcurrentHashMap<String, Instant> toolResultTimestamps = new ConcurrentHashMap<>();
 
-    public EnhancedCompactionPipeline(DemoQueryProperties props, ChatModel chatModel) {
+    public EnhancedCompactionPipeline(DemoQueryProperties props,
+                                      ChatModel chatModel,
+                                      ContextObjectWriteService contextObjectWriteService) {
         this.props = props;
         this.chatModel = chatModel;
+        this.contextObjectWriteService = contextObjectWriteService;
     }
 
     @Override
@@ -96,7 +105,8 @@ public class EnhancedCompactionPipeline implements CompactionPipeline {
     /**
      * Tier 1: microcompact - 截断过长的 ToolResponseMessage
      * <p>
-     * 对齐 Claude Code 的 microCompactMessages，但简化为字符截断
+     * 对齐 Claude Code 的 microCompactMessages，但简化为字符截断。
+     * 超过阈值时优先尝试外置写入 DB，主上下文仅保留存根 ID。
      */
     private List<Message> microcompact(List<Message> messages) {
         int maxChars = props.getMicrocompactMaxCharsPerToolResponse();
@@ -104,8 +114,8 @@ public class EnhancedCompactionPipeline implements CompactionPipeline {
 
         for (Message m : messages) {
             if (m instanceof ToolResponseMessage trm) {
-                ToolResponseMessage truncated = truncateToolResponse(trm, maxChars);
-                result.add(truncated);
+                ToolResponseMessage processed = processToolResponse(trm, maxChars);
+                result.add(processed);
             } else {
                 result.add(m);
             }
@@ -115,27 +125,58 @@ public class EnhancedCompactionPipeline implements CompactionPipeline {
     }
 
     /**
-     * 截断单个 ToolResponseMessage
+     * 处理 ToolResponseMessage：超过阈值时外置写入 DB，否则截断。
      */
-    private ToolResponseMessage truncateToolResponse(ToolResponseMessage trm, int maxChars) {
-        List<ToolResponseMessage.ToolResponse> truncatedResponses = new ArrayList<>();
+    private ToolResponseMessage processToolResponse(ToolResponseMessage trm, int maxChars) {
+        List<ToolResponseMessage.ToolResponse> processedResponses = new ArrayList<>();
 
         for (ToolResponseMessage.ToolResponse response : trm.getResponses()) {
             String data = response.responseData();
             if (data != null && data.length() > maxChars) {
-                String truncated = data.substring(0, maxChars) + "\n...[truncated - exceeds microcompact limit]";
-                truncatedResponses.add(new ToolResponseMessage.ToolResponse(
-                        response.name(), response.id(), truncated));
-                log.debug("[Microcompact] Truncated tool '{}' from {} to {} chars",
-                        response.name(), data.length(), maxChars);
+                // 尝试外置写入 DB
+                ContextObjectWriteService.WriteResult writeResult = null;
+                try {
+                    writeResult = contextObjectWriteService.write(
+                            response.name(),
+                            data,
+                            estimateTokens(data),
+                            ProducerKind.COMPACTION,
+                            null
+                    );
+                } catch (Exception e) {
+                    log.warn("[Microcompact] writeService threw exception, using fallback truncation: {}", e.getMessage());
+                }
+
+                String resultContent;
+                if (writeResult != null && writeResult.success() && writeResult.objectId() != null) {
+                    // 写入成功：仅保留存根
+                    resultContent = writeResult.stubText();
+                    log.info("[Microcompact] Tool '{}' result externalized to context object: id={}",
+                            response.name(), writeResult.objectId());
+                } else {
+                    // 写入失败或未触发写入：执行普通截断
+                    resultContent = data.substring(0, maxChars) + "\n...[truncated - exceeds microcompact limit]";
+                    if (writeResult != null && writeResult.stubText() != null && !writeResult.stubText().equals(data)) {
+                        // 使用了 fallback 内容
+                        resultContent = writeResult.stubText();
+                    }
+                    log.debug("[Microcompact] Tool '{}' result truncated: {} chars", response.name(), resultContent.length());
+                }
+                processedResponses.add(new ToolResponseMessage.ToolResponse(
+                        response.name(), response.id(), resultContent));
             } else {
-                truncatedResponses.add(response);
+                processedResponses.add(response);
             }
         }
 
-        return ToolResponseMessage.builder()
-                .responses(truncatedResponses)
-                .build();
+        return ToolResponseMessage.builder().responses(processedResponses).build();
+    }
+
+    /**
+     * 估算 token 数：简单按字符 / 4 计算（英文场景），中文场景会偏高但作为阈值判断足够。
+     */
+    private int estimateTokens(String text) {
+        return (int) Math.ceil(text.length() / 4.0);
     }
 
     /**

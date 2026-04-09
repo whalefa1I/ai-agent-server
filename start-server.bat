@@ -10,7 +10,8 @@ set PATH=%JAVA_HOME%\bin;%PATH%
 
 REM 百炼平台配置
 set DASHSCOPE_API_KEY=sk-sp-ab63f62c8df3494a8763982b1a741081
-set DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+REM 不要带 /v1（Spring AI 会拼接 /v1/chat/completions）
+set DASHSCOPE_BASE_URL=https://coding.dashscope.aliyuncs.com
 set DASHSCOPE_MODEL=qwen-plus
 
 echo ╔════════════════════════════════════════════════╗

@@ -1,4 +1,4 @@
-﻿# Spring Boot：控制台 + logs/server-*.log
+# Spring Boot：控制台 + logs/server-*.log
 # 需要: JDK 21+、Maven、application.yml / 环境变量
 
 . "$PSScriptRoot\_init-console-utf8.ps1"

@@ -1,12 +1,12 @@
 package demo.k8s.agent.coordinator;
 
+import demo.k8s.agent.config.DemoMultiAgentProperties;
 import demo.k8s.agent.toolsystem.McpToolProvider;
 import demo.k8s.agent.toolsystem.ToolFeatureFlags;
 import demo.k8s.agent.toolsystem.ToolPermissionContext;
 import demo.k8s.agent.toolsystem.ToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -17,7 +17,6 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -50,6 +49,7 @@ public class WorkerAgentExecutor {
     private final McpToolProvider mcpToolProvider;
     private final CoordinatorState coordinatorState;
     private final InMemoryWorkerMailbox mailbox;
+    private final DemoMultiAgentProperties multiAgentProperties;
 
     public WorkerAgentExecutor(
             ChatModel chatModel,
@@ -59,7 +59,8 @@ public class WorkerAgentExecutor {
             ToolFeatureFlags toolFeatureFlags,
             McpToolProvider mcpToolProvider,
             CoordinatorState coordinatorState,
-            InMemoryWorkerMailbox mailbox) {
+            InMemoryWorkerMailbox mailbox,
+            DemoMultiAgentProperties multiAgentProperties) {
         this.chatModel = chatModel;
         this.toolCallingManager = toolCallingManager;
         this.toolRegistry = toolRegistry;
@@ -68,12 +69,14 @@ public class WorkerAgentExecutor {
         this.mcpToolProvider = mcpToolProvider;
         this.coordinatorState = coordinatorState;
         this.mailbox = mailbox;
+        this.multiAgentProperties = multiAgentProperties;
+        log.info("[WorkerAgent] CoordinatorState wired: instanceId={}",
+                System.identityHashCode(coordinatorState));
     }
 
     /**
-     * 异步执行 Worker Agent
+     * 执行 Worker Agent（在 {@link AsyncSubagentExecutor} 提交的线程上同步运行，以便 {@link demo.k8s.agent.observability.tracing.TraceContext} 与工具回调一致）。
      */
-    @Async("workerExecutor")
     public void executeWorker(String taskId, String agentType) {
         log.info("启动 Worker Agent: taskId={}, agentType={}", taskId, agentType);
 
@@ -92,7 +95,8 @@ public class WorkerAgentExecutor {
 
         // 构建 Worker 专属工具集
         List<ToolCallback> workerTools = selectToolsForAgent(agentType);
-        log.debug("Worker {} 加载工具数量：{}", agentType, workerTools.size());
+        log.info("[WorkerAgent] toolset ready: taskId={}, agentType={}, toolCount={}",
+                taskId, agentType, workerTools.size());
 
         // 构建 Worker 系统提示
         String systemPrompt = buildWorkerSystemPrompt(agentType, task.goal());
@@ -106,9 +110,11 @@ public class WorkerAgentExecutor {
 
         int turnCount = 0;
         int maxTurns = 20; // Worker 最大轮次
+        Instant startedAt = Instant.now();
 
         try {
             while (true) {
+                Instant turnStart = Instant.now();
                 // 检查取消请求
                 if (mailbox.isCancelRequested(taskId)) {
                     log.info("Worker 收到取消请求：{}", taskId);
@@ -131,6 +137,8 @@ public class WorkerAgentExecutor {
                 }
 
                 turnCount++;
+                log.debug("[WorkerAgent] turn begin: taskId={}, turn={}, messageCount={}",
+                        taskId, turnCount, messages.size());
 
                 // 处理收件箱消息
                 List<String> newMessages = coordinatorState.drainMessages(taskId);
@@ -164,7 +172,8 @@ public class WorkerAgentExecutor {
 
                 // 检查是否有工具调用
                 if (hasToolCalls(response)) {
-                    log.debug("Worker 有 {} 个工具调用", response.getResult().getOutput().getToolCalls().size());
+                    log.debug("[WorkerAgent] tool calls detected: taskId={}, turn={}, count={}",
+                            taskId, turnCount, response.getResult().getOutput().getToolCalls().size());
 
                     // 执行工具
                     ToolExecutionResult toolResult;
@@ -196,13 +205,16 @@ public class WorkerAgentExecutor {
                         }
                     }
 
-                    log.debug("Worker turn {} 完成，消息数：{}", turnCount, messages.size());
+                    log.debug("[WorkerAgent] turn end: taskId={}, turn={}, elapsedMs={}, messageCount={}",
+                            taskId, turnCount, Duration.between(turnStart, Instant.now()).toMillis(), messages.size());
 
                 } else {
                     // 没有工具调用，任务完成
                     String finalAnswer = extractText(response);
                     coordinatorState.completeTask(taskId, finalAnswer);
-                    log.info("Worker 完成：{} - {} chars", taskId, finalAnswer.length());
+                    log.info("Worker 完成：{} - {} chars, turns={}, elapsedSec={}",
+                            taskId, finalAnswer.length(), turnCount,
+                            Duration.between(startedAt, Instant.now()).toSeconds());
                     break;
                 }
             }
@@ -251,7 +263,7 @@ public class WorkerAgentExecutor {
                 toolRegistry.filteredCallbacks(
                         toolPermissionContext, toolFeatureFlags, mcpToolProvider.loadMcpTools());
 
-        return switch (agentType) {
+        List<ToolCallback> selected = switch (agentType) {
             case "bash" -> {
                 // Bash Agent：仅 Bash 相关工具
                 yield filterToolsByPrefix(allTools, "Bash");
@@ -269,10 +281,34 @@ public class WorkerAgentExecutor {
                 yield filterToolsByPrefix(allTools, "Write", "Edit", "Read");
             }
             default -> {
-                // General Agent：所有工具
+                // General Agent：所有工具（再经 Task* 策略裁剪）
                 yield allTools;
             }
         };
+        return applyWorkerTaskToolPolicy(selected);
+    }
+
+    /**
+     * 默认从 Worker 移除 Task*，与主会话 Task 工具解耦；开启 {@link DemoMultiAgentProperties#isWorkerExposeTaskTools()} 可恢复。
+     */
+    private List<ToolCallback> applyWorkerTaskToolPolicy(List<ToolCallback> tools) {
+        if (multiAgentProperties.isWorkerExposeTaskTools()) {
+            return tools;
+        }
+        List<ToolCallback> out = new ArrayList<>();
+        int removed = 0;
+        for (ToolCallback t : tools) {
+            String name = t.getToolDefinition().name();
+            if (name.startsWith("Task")) {
+                removed++;
+                continue;
+            }
+            out.add(t);
+        }
+        if (removed > 0) {
+            log.info("[WorkerAgent] 已移除 {} 个 Task* 工具（worker-expose-task-tools=false）", removed);
+        }
+        return out;
     }
 
     private List<ToolCallback> filterToolsByPrefix(List<ToolCallback> tools, String... prefixes) {
