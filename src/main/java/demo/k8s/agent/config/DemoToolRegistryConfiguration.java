@@ -79,26 +79,7 @@ public class DemoToolRegistryConfiguration {
         // spawn_subagent 工具（直接派生子 Agent）
         full.register(new ToolModule(
                 spawnSubagentTool.createSpawnSubagentToolSpec(),
-                (Map<String, Object> input) -> {
-                    log.info("[TOOL CALLBACK] spawn_subagent 调用开始：input={}", input);
-                    var result = spawnSubagentTool.executeSpawnSubagent(input);
-                    log.info("[TOOL CALLBACK] spawn_subagent 执行完成：success={}", result.isSuccess());
-                    var resultMap = new java.util.HashMap<String, Object>();
-                    resultMap.put("success", result.isSuccess());
-                    if (result.getContent() != null) {
-                        resultMap.put("content", result.getContent());
-                    }
-                    if (result.getExecutionLocation() != null) {
-                        resultMap.put("location", result.getExecutionLocation());
-                    }
-                    if (result.getError() != null) {
-                        resultMap.put("error", result.getError());
-                    }
-                    if (result.getMetadata() != null) {
-                        resultMap.put("metadata", result.getMetadata());
-                    }
-                    return resultMap;
-                }));
+                createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "spawn_subagent")));
 
         return full;
     }

@@ -204,8 +204,9 @@ public class SpawnSubagentTool {
             }
 
             // 3. 解析输入参数
-            String goal = input.get("goal") != null ? input.get("goal").asText() : "";
-            String agentType = input.get("agentType") != null ? input.get("agentType").asText() : "general";
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String goal = input.get("goal") != null ? mapper.convertValue(input.get("goal"), String.class) : "";
+            String agentType = input.get("agentType") != null ? mapper.convertValue(input.get("agentType"), String.class) : "general";
 
             if (goal == null || goal.isBlank()) {
                 return spawnRejected("goal is required and cannot be empty");
