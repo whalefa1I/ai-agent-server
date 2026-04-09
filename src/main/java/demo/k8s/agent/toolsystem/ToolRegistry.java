@@ -2,6 +2,7 @@ package demo.k8s.agent.toolsystem;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.ai.tool.ToolCallback;
 
@@ -60,5 +61,17 @@ public final class ToolRegistry {
     /** 规划类 Todo 等在只读模式下可放行（与业务策略相关，可按需调整） */
     private static boolean isReadOnlyCategory(ClaudeLikeTool spec) {
         return spec.category() == ToolCategory.PLANNING;
+    }
+
+    /**
+     * 获取所有已注册工具的 name 集合（用于 Gatekeeper 白名单检查）。
+     * <p>
+     * 注意：此方法返回所有工具，不进行权限过滤；实际权限检查由 {@link #filteredCallbacks} 负责。
+     */
+    public Set<String> getAllToolNames() {
+        return modules.stream()
+                .map(ToolModule::spec)
+                .map(ClaudeLikeTool::name)
+                .collect(java.util.stream.Collectors.toSet());
     }
 }

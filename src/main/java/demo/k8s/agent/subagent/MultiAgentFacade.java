@@ -66,8 +66,8 @@ public class MultiAgentFacade {
                         SpawnResult.MustDoNext.useLocal("Use local tools to complete this task."));
             }
 
-            // 门控检查（深度、工具白名单）
-            SpawnResult.MustDoNext rejected = gatekeeper.checkSpawn(sessionId, currentDepth, allowedTools);
+            // 门控检查 + 并发槽位原子占位（合并为单一操作，避免竞态条件）
+            SpawnResult.MustDoNext rejected = gatekeeper.checkAndAcquire(sessionId, currentDepth, allowedTools);
             if (rejected != null) {
                 log.info("[Facade] Spawn rejected by gatekeeper: action={}", rejected.action());
                 String detail = rejected.suggestion() != null ? rejected.suggestion() : rejected.reason();
@@ -75,25 +75,22 @@ public class MultiAgentFacade {
                 return SpawnResult.rejected(detail, rejected);
             }
 
-            // Shadow 模式：只记录，不实际执行
+            // Shadow 模式：只记录统计，不实际执行（用于评估门控策略和提示词拆解效果）
             if (props.getMode() == DemoMultiAgentProperties.Mode.shadow) {
                 log.info("[Facade] Shadow mode: evaluating spawn without execution");
-                // Shadow 模式不注入伪成功结果
+                // Shadow 模式不注入伪成功结果，仅记录指标
+                metrics.recordSpawnShadowEvaluated();
                 return SpawnResult.rejected(
                         "Shadow mode evaluation only",
                         SpawnResult.MustDoNext.none());
             }
 
-            // 并发槽位：在调用运行前原子占位，避免与 checkSpawn 之间的竞态
-            SpawnResult.MustDoNext slotRejected = gatekeeper.tryAcquireConcurrentSlot(sessionId);
-            if (slotRejected != null) {
-                String detail = slotRejected.suggestion() != null ? slotRejected.suggestion() : slotRejected.reason();
-                metrics.recordSpawnRejected(detail);
-                return SpawnResult.rejected(detail, slotRejected);
-            }
+            // 获取当前运行 ID 作为父运行 ID（用于父子关系追溯）
+            String currentRunId = TraceContext.getRunId();
 
             // 构建派生请求
             SpawnRequest request = new SpawnRequest(
+                    "v1",
                     traceId,
                     sessionId,
                     tenantId != null ? tenantId : props.getDefaultTenantId(),
@@ -101,6 +98,7 @@ public class MultiAgentFacade {
                     taskName,
                     agentType,
                     goal,
+                    currentRunId, // parentRunId
                     new SpawnRequest.SpawnConstraints(
                             8000, // maxBudgetTokens
                             currentDepth + 1,

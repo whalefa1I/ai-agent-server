@@ -46,7 +46,8 @@ public class LocalSubAgentRuntime implements SubAgentRuntime {
     public CompletableFuture<SpawnResult> spawn(SpawnRequest request) {
         CompletableFuture<SpawnResult> done = new CompletableFuture<>();
         try {
-            SubagentRun run = runService.createRun(request);
+            // 使用 parentRunId 创建运行记录（支持父子关系追溯）
+            SubagentRun run = runService.createRun(request, request.getParentRunId());
             String runId = run.getRunId();
             String sessionId = request.getSessionId();
             runService.startRun(runId);
@@ -157,6 +158,8 @@ public class LocalSubAgentRuntime implements SubAgentRuntime {
 
     /**
      * 在子 Agent Worker 线程绑定与 {@link SpawnRequest} 一致的追踪上下文，使工具回调日志、权限与主会话对齐。
+     * <p>
+     * 同时绑定 runId，以便子 agent 内再次派生时能够追溯父子关系。
      */
     private static void bindWorkerThreadTraceContext(SpawnRequest request, String runId, String sessionId) {
         String trace = request.getTraceId() != null && !request.getTraceId().isBlank()
@@ -171,6 +174,7 @@ public class LocalSubAgentRuntime implements SubAgentRuntime {
                 ? request.getAppId() : "subagent-worker";
         TraceContext.setAppId(app);
         TraceContext.setUserId("subagent-run:" + runId);
+        TraceContext.setRunId(runId); // 绑定 runId，支持子 agent 内再次派生时的父子追溯
         log.info("[LocalRuntime] Worker TraceContext: sessionId={}, runId={}, traceId={}, tenantId={}, appId={}",
                 sessionId, runId, trace, tenant, app);
     }

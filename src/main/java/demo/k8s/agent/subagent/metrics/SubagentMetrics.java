@@ -37,6 +37,7 @@ public class SubagentMetrics {
     private final Counter spawnSuccessCounter;
     private final Counter reconcileTimeoutCounter;
     private final Counter reconcilePreservedCounter;
+    private final Counter spawnShadowEvaluatedCounter;
 
     // 计时器
     private final Timer spawnDurationTimer;
@@ -56,6 +57,7 @@ public class SubagentMetrics {
         this.spawnSuccessCounter = meterRegistry.counter("subagent.spawn.success");
         this.reconcileTimeoutCounter = meterRegistry.counter("subagent.reconcile.timeout");
         this.reconcilePreservedCounter = meterRegistry.counter("subagent.reconcile.preserved");
+        this.spawnShadowEvaluatedCounter = meterRegistry.counter("subagent.shadow.evaluated");
 
         // 计时器
         this.spawnDurationTimer = meterRegistry.timer("subagent.spawn.duration");
@@ -75,6 +77,14 @@ public class SubagentMetrics {
     public void recordSpawnRejected(String reason) {
         spawnRejectedCounter.increment();
         log.debug("[Metrics] Spawn rejected: reason={}", reason);
+    }
+
+    /**
+     * 记录 Shadow 模式下的评估（未实际执行）。
+     */
+    public void recordSpawnShadowEvaluated() {
+        spawnShadowEvaluatedCounter.increment();
+        log.debug("[Metrics] Shadow mode spawn evaluated: reason=shadow_only");
     }
 
     /**

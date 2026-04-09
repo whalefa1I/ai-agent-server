@@ -20,6 +20,7 @@ public class TraceContext {
     private static final ThreadLocal<String> SESSION_ID = new ThreadLocal<>();
     private static final ThreadLocal<String> TENANT_ID = new ThreadLocal<>();
     private static final ThreadLocal<String> APP_ID = new ThreadLocal<>();
+    private static final ThreadLocal<String> RUN_ID = new ThreadLocal<>();
 
     /**
      * 生成新的 TraceID
@@ -76,6 +77,20 @@ public class TraceContext {
      */
     public static void setAppId(String appId) {
         APP_ID.set(appId);
+    }
+
+    /**
+     * 设置当前运行 ID（用于子 agent 派生时追溯父子关系）
+     */
+    public static void setRunId(String runId) {
+        RUN_ID.set(runId);
+    }
+
+    /**
+     * 获取当前运行 ID
+     */
+    public static String getRunId() {
+        return RUN_ID.get();
     }
 
     /**
@@ -190,6 +205,7 @@ public class TraceContext {
         SESSION_ID.remove();
         TENANT_ID.remove();
         APP_ID.remove();
+        RUN_ID.remove();
     }
 
     /**

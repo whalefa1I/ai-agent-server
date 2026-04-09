@@ -26,15 +26,28 @@ public class SubagentRunService {
 
     /**
      * 创建新的运行记录。
+     * <p>
+     * v2 兼容：支持父子关系追溯（通过 parentRunId 字段）。
      */
     @Transactional
     public SubagentRun createRun(SpawnRequest request) {
+        return createRun(request, null);
+    }
+
+    /**
+     * 创建新的运行记录（支持父子关系）。
+     *
+     * @param request 派生请求
+     * @param parentRunId 父运行 ID（可为 null，表示根运行）
+     */
+    @Transactional
+    public SubagentRun createRun(SpawnRequest request, String parentRunId) {
         String runId = generateRunId();
         Instant now = Instant.now();
 
         SubagentRun run = new SubagentRun();
         run.setRunId(runId);
-        run.setParentRunId(null); // v1 暂不实现父子关系
+        run.setParentRunId(parentRunId); // v2: 支持父子关系追溯
         run.setTenantId(request.getTenantId());
         run.setSessionId(request.getSessionId());
         run.setAppId(request.getAppId());
@@ -49,8 +62,9 @@ public class SubagentRunService {
         run.setUpdatedAt(now);
 
         repository.save(run);
-        log.info("[SubagentRun] Created run: runId={}, sessionId={}, goal={}",
-                runId, request.getSessionId(), truncate(request.getGoal(), 50));
+        log.info("[SubagentRun] Created run: runId={}, sessionId={}, parentRunId={}, goal={}",
+                runId, request.getSessionId(), parentRunId != null ? parentRunId : "(root)",
+                truncate(request.getGoal(), 50));
 
         return run;
     }

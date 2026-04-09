@@ -1,6 +1,7 @@
 package demo.k8s.agent.subagent;
 
 import demo.k8s.agent.config.DemoMultiAgentProperties;
+import demo.k8s.agent.toolsystem.ToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -13,12 +14,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static demo.k8s.agent.subagent.SpawnResult.MustDoNext;
 
 /**
- * 子 Agent 派生门控（v1 M3 实现）。
+ * 子 Agent 派生门控（v1 M3 实现，v2 兼容）。
  * <p>
  * 统一执行深度、并发、TTL、工具权限校验，拒绝时返回结构化 {@link MustDoNext}。
  * <p>
  * 并发限制通过 {@link #tryAcquireConcurrentSlot} / {@link #releaseConcurrentSlot} 与
- * {@link MultiAgentFacade} 配合，在真正派生前原子占位，避免仅“读计数”导致的竞态。
+ * {@link MultiAgentFacade} 配合，在真正派生前原子占位，避免仅"读计数"导致的竞态。
+ * <p>
+ * 工具白名单由 {@link demo.k8s.agent.toolsystem.ToolRegistry} 注入，支持租户维度的工具权限差异化。
  */
 @Component
 public class SpawnGatekeeper {
@@ -26,6 +29,7 @@ public class SpawnGatekeeper {
     private static final Logger log = LoggerFactory.getLogger(SpawnGatekeeper.class);
 
     private final DemoMultiAgentProperties props;
+    private final demo.k8s.agent.toolsystem.ToolRegistry toolRegistry;
 
     /**
      * 会话维度的嵌套深度（由 {@link #onSpawnStart}/{@link #onSpawnEnd} 维护）
@@ -37,19 +41,27 @@ public class SpawnGatekeeper {
      */
     private final ConcurrentHashMap<String, AtomicInteger> sessionConcurrentCounter = new ConcurrentHashMap<>();
 
-    public SpawnGatekeeper(DemoMultiAgentProperties props) {
+    public SpawnGatekeeper(DemoMultiAgentProperties props, demo.k8s.agent.toolsystem.ToolRegistry toolRegistry) {
         this.props = props;
+        this.toolRegistry = toolRegistry;
     }
 
     /**
-     * 检查是否允许派生新的子 Agent（深度、工具白名单；不含并发占位）。
+     * 检查并原子占位（深度、并发、工具白名单三合一检查）。
+     * <p>
+     * 此方法合并了原有的 {@link #checkSpawn} 和 {@link #tryAcquireConcurrentSlot}，
+     * 避免两者之间的竞态条件。
+     *
+     * @return 如果通过检查返回 {@code null}，否则返回结构化拒绝建议
      */
-    public MustDoNext checkSpawn(String sessionId, int currentDepth, Set<String> allowedTools) {
+    public MustDoNext checkAndAcquire(String sessionId, int currentDepth, Set<String> allowedTools) {
+        // 1. 深度检查
         if (currentDepth >= props.getMaxSpawnDepth()) {
             log.info("[Gatekeeper] Depth limit exceeded: current={}, max={}", currentDepth, props.getMaxSpawnDepth());
             return MustDoNext.simplify("Maximum spawn depth (" + props.getMaxSpawnDepth() + ") reached. Complete current subtasks first or simplify the request.");
         }
 
+        // 2. 工具白名单检查（从 Registry 动态获取）
         Set<String> globalSafeTools = getGlobalSafeTools();
         for (String tool : allowedTools) {
             if (!globalSafeTools.contains(tool)) {
@@ -57,13 +69,8 @@ public class SpawnGatekeeper {
                 return MustDoNext.simplify("Tool '" + tool + "' is not available in this context. Remove it from your request.");
             }
         }
-        return null;
-    }
 
-    /**
-     * 原子占用一个并发槽位；失败时返回结构化拒绝（调用方应拒绝派生且不得启动运行时）。
-     */
-    public MustDoNext tryAcquireConcurrentSlot(String sessionId) {
+        // 3. 并发槽位原子占位
         int max = props.getMaxConcurrentSpawns();
         AtomicInteger c = sessionConcurrentCounter.computeIfAbsent(sessionId, k -> new AtomicInteger(0));
         while (true) {
@@ -73,7 +80,7 @@ public class SpawnGatekeeper {
                 return MustDoNext.simplify("Too many concurrent subtasks (" + v + "/" + max + "). Wait for existing tasks to complete.");
             }
             if (c.compareAndSet(v, v + 1)) {
-                return null;
+                return null; // 检查全部通过
             }
         }
     }
@@ -129,14 +136,14 @@ public class SpawnGatekeeper {
         return Instant.now().plusSeconds(props.getWallclockTtlSeconds());
     }
 
+    /**
+     * 获取全局安全工具集合（从 ToolRegistry 动态获取）。
+     * <p>
+     * 工具白名单由 ToolRegistry 动态提供，确保新增工具时不需要修改门控类。
+     * v1: 返回所有已注册工具名称；未来可扩展为按租户/会话过滤的白名单子集。
+     */
     private Set<String> getGlobalSafeTools() {
-        // v1：与 LocalToolRegistry / 配置对齐前，先保持显式白名单；后续改为配置注入
-        return Set.of(
-                "file_read", "file_write", "file_edit",
-                "glob", "grep", "bash",
-                "read_context_object",
-                "web_fetch", "web_search"
-        );
+        return toolRegistry.getAllToolNames();
     }
 
     /**
