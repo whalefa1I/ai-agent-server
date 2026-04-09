@@ -1,6 +1,7 @@
 package demo.k8s.agent.subagent;
 
 import demo.k8s.agent.config.DemoMultiAgentProperties;
+import demo.k8s.agent.toolsystem.ToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,60 +27,49 @@ class SpawnGatekeeperTest {
 
     @Mock
     private DemoMultiAgentProperties props;
+    @Mock
+    private ToolRegistry toolRegistry;
 
     private SpawnGatekeeper gatekeeper;
 
     @BeforeEach
     void setUp() {
-        gatekeeper = new SpawnGatekeeper(props);
+        gatekeeper = new SpawnGatekeeper(props, toolRegistry);
+        when(toolRegistry.getAllToolNames()).thenReturn(Set.of("file_read", "task"));
     }
 
     @Test
     @DisplayName("超过深度限制时拒绝")
-    void checkSpawn_whenDepthExceeded_rejects() {
+    void checkAndAcquire_whenDepthExceeded_rejects() {
         when(props.getMaxSpawnDepth()).thenReturn(3);
 
-        SpawnResult.MustDoNext result = gatekeeper.checkSpawn("session-1", 3, Set.of("file_read"));
+        SpawnResult.MustDoNext result = gatekeeper.checkAndAcquire("session-1", 3, Set.of("file_read"));
 
         assertNotNull(result);
         assertEquals(SpawnResult.MustDoNext.Action.SIMPLIFY, result.action());
     }
 
     @Test
-    @DisplayName("checkSpawn 不再读取并发计数（由 tryAcquire 负责）")
-    void checkSpawn_doesNotBlockOnConcurrentSlots() {
+    @DisplayName("并发槽占满时 checkAndAcquire 拒绝")
+    void checkAndAcquire_whenConcurrentSlotsFull_rejects() {
         when(props.getMaxSpawnDepth()).thenReturn(5);
         when(props.getMaxConcurrentSpawns()).thenReturn(1);
 
-        gatekeeper.tryAcquireConcurrentSlot("session-1");
+        assertNull(gatekeeper.checkAndAcquire("session-1", 0, Set.of("file_read")));
 
-        SpawnResult.MustDoNext result = gatekeeper.checkSpawn("session-1", 0, Set.of("file_read"));
+        SpawnResult.MustDoNext result = gatekeeper.checkAndAcquire("session-1", 0, Set.of("file_read"));
 
-        assertNull(result, "深度/工具通过时，并发占位应由 Facade 在 tryAcquire 阶段处理");
-    }
-
-    @Test
-    @DisplayName("并发槽占满时 tryAcquire 拒绝")
-    void tryAcquire_whenSlotsFull_rejects() {
-        when(props.getMaxConcurrentSpawns()).thenReturn(2);
-
-        assertNull(gatekeeper.tryAcquireConcurrentSlot("session-1"));
-        assertNull(gatekeeper.tryAcquireConcurrentSlot("session-1"));
-
-        SpawnResult.MustDoNext third = gatekeeper.tryAcquireConcurrentSlot("session-1");
-        assertNotNull(third);
-        assertEquals(SpawnResult.MustDoNext.Action.SIMPLIFY, third.action());
-
-        gatekeeper.releaseConcurrentSlot("session-1");
-        assertNull(gatekeeper.tryAcquireConcurrentSlot("session-1"));
+        assertNotNull(result);
+        assertEquals(SpawnResult.MustDoNext.Action.SIMPLIFY, result.action());
     }
 
     @Test
     @DisplayName("工具不在白名单时拒绝")
-    void checkSpawn_whenToolNotAllowed_rejects() {
+    void checkAndAcquire_whenToolNotAllowed_rejects() {
         when(props.getMaxSpawnDepth()).thenReturn(5);
+        when(props.getMaxConcurrentSpawns()).thenReturn(5);
 
-        SpawnResult.MustDoNext result = gatekeeper.checkSpawn("session-1", 0, Set.of("dangerous_tool"));
+        SpawnResult.MustDoNext result = gatekeeper.checkAndAcquire("session-1", 0, Set.of("dangerous_tool"));
 
         assertNotNull(result);
         assertEquals(SpawnResult.MustDoNext.Action.SIMPLIFY, result.action());
@@ -87,10 +77,11 @@ class SpawnGatekeeperTest {
 
     @Test
     @DisplayName("检查通过时返回 null")
-    void checkSpawn_whenAllChecksPass_returnsNull() {
+    void checkAndAcquire_whenAllChecksPass_returnsNull() {
         when(props.getMaxSpawnDepth()).thenReturn(5);
+        when(props.getMaxConcurrentSpawns()).thenReturn(5);
 
-        SpawnResult.MustDoNext result = gatekeeper.checkSpawn("session-1", 0, Set.of("file_read"));
+        SpawnResult.MustDoNext result = gatekeeper.checkAndAcquire("session-1", 0, Set.of("file_read"));
 
         assertNull(result);
     }
@@ -100,7 +91,8 @@ class SpawnGatekeeperTest {
     void onSpawnStart_incrementsDepthOnly() {
         String sessionId = "session-1";
         when(props.getMaxConcurrentSpawns()).thenReturn(10);
-        gatekeeper.tryAcquireConcurrentSlot(sessionId);
+        when(props.getMaxSpawnDepth()).thenReturn(10);
+        assertNull(gatekeeper.checkAndAcquire(sessionId, 0, Set.of("file_read")));
 
         gatekeeper.onSpawnStart(sessionId, "run-1");
         gatekeeper.onSpawnStart(sessionId, "run-2");
@@ -131,7 +123,8 @@ class SpawnGatekeeperTest {
     void cleanupSession_clearsCounters() {
         String sessionId = "session-1";
         when(props.getMaxConcurrentSpawns()).thenReturn(5);
-        gatekeeper.tryAcquireConcurrentSlot(sessionId);
+        when(props.getMaxSpawnDepth()).thenReturn(5);
+        assertNull(gatekeeper.checkAndAcquire(sessionId, 0, Set.of("file_read")));
         gatekeeper.onSpawnStart(sessionId, "run-1");
         gatekeeper.cleanupSession(sessionId);
 
@@ -142,8 +135,9 @@ class SpawnGatekeeperTest {
     }
 
     @Test
-    @DisplayName("多线程下 tryAcquire 不超过上限")
-    void tryAcquire_underConcurrency_respectsMax() throws Exception {
+    @DisplayName("多线程下 checkAndAcquire 不超过上限")
+    void checkAndAcquire_underConcurrency_respectsMax() throws Exception {
+        when(props.getMaxSpawnDepth()).thenReturn(10);
         when(props.getMaxConcurrentSpawns()).thenReturn(3);
         String sessionId = "session-1";
         int threads = 32;
@@ -155,7 +149,7 @@ class SpawnGatekeeperTest {
                 pool.submit(() -> {
                     try {
                         start.await();
-                        SpawnResult.MustDoNext r = gatekeeper.tryAcquireConcurrentSlot(sessionId);
+                        SpawnResult.MustDoNext r = gatekeeper.checkAndAcquire(sessionId, 0, Set.of("file_read"));
                         if (r != null) {
                             rejects.incrementAndGet();
                         }

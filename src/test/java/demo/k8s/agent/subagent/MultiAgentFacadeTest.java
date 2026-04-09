@@ -3,6 +3,7 @@ package demo.k8s.agent.subagent;
 import demo.k8s.agent.config.DemoMultiAgentProperties;
 import demo.k8s.agent.observability.tracing.TraceContext;
 import demo.k8s.agent.subagent.metrics.SubagentMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -13,13 +14,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -40,7 +39,6 @@ class MultiAgentFacadeTest {
     @Mock
     private SubAgentRuntime runtime;
 
-    @Mock
     private SubagentMetrics metrics;
 
     private MultiAgentFacade facade;
@@ -50,7 +48,7 @@ class MultiAgentFacadeTest {
         TraceContext.setSessionId("test-session");
         TraceContext.setTenantId("test-tenant");
         TraceContext.setAppId("test-app");
-        lenient().when(metrics.recordSpawnDuration(any(Supplier.class))).thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(0)).get());
+        metrics = new SubagentMetrics(new SimpleMeterRegistry());
         facade = new MultiAgentFacade(props, gatekeeper, runtime, metrics);
     }
 
@@ -101,7 +99,7 @@ class MultiAgentFacadeTest {
     void spawn_whenGatekeeperRejects_returnsStructuredAdvice() {
         lenient().when(props.isEnabled()).thenReturn(true);
         lenient().when(props.getMode()).thenReturn(DemoMultiAgentProperties.Mode.on);
-        lenient().when(gatekeeper.checkSpawn(any(), anyInt(), any()))
+        lenient().when(gatekeeper.checkAndAcquire(anyString(), anyInt(), any()))
                 .thenReturn(SpawnResult.MustDoNext.simplify("Simplify your request"));
 
         SpawnResult result = facade.spawn("test goal", 0, Set.of("file_read"));
@@ -117,8 +115,7 @@ class MultiAgentFacadeTest {
         lenient().when(props.isEnabled()).thenReturn(true);
         lenient().when(props.getMode()).thenReturn(DemoMultiAgentProperties.Mode.on);
         lenient().when(props.getDefaultTenantId()).thenReturn("default");
-        lenient().when(gatekeeper.checkSpawn(any(), anyInt(), any())).thenReturn(null);
-        lenient().when(gatekeeper.tryAcquireConcurrentSlot(anyString())).thenReturn(null);
+        lenient().when(gatekeeper.checkAndAcquire(anyString(), anyInt(), any())).thenReturn(null);
         lenient().when(gatekeeper.calculateDeadline()).thenReturn(java.time.Instant.now().plusSeconds(180));
         lenient().when(runtime.spawn(any())).thenReturn(CompletableFuture.completedFuture(SpawnResult.success("run-123")));
 
@@ -136,8 +133,7 @@ class MultiAgentFacadeTest {
         lenient().when(props.isEnabled()).thenReturn(true);
         lenient().when(props.getMode()).thenReturn(DemoMultiAgentProperties.Mode.on);
         lenient().when(props.getDefaultTenantId()).thenReturn("default");
-        lenient().when(gatekeeper.checkSpawn(any(), anyInt(), any())).thenReturn(null);
-        lenient().when(gatekeeper.tryAcquireConcurrentSlot(anyString())).thenReturn(null);
+        lenient().when(gatekeeper.checkAndAcquire(anyString(), anyInt(), any())).thenReturn(null);
         lenient().when(gatekeeper.calculateDeadline()).thenReturn(java.time.Instant.now().plusSeconds(180));
         lenient().when(runtime.spawn(any())).thenThrow(new RuntimeException("Runtime error"));
 

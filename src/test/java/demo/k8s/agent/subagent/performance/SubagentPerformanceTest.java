@@ -74,8 +74,7 @@ class SubagentPerformanceTest {
         lenient().when(props.getMaxConcurrentSpawns()).thenReturn(100); // 提高并发限制
         lenient().when(props.getWallclockTtlSeconds()).thenReturn(180);
         lenient().when(props.getDefaultTenantId()).thenReturn("default");
-        lenient().when(gatekeeper.checkSpawn(any(), anyInt(), any())).thenReturn(null);
-        lenient().when(gatekeeper.tryAcquireConcurrentSlot(any())).thenReturn(null);
+        lenient().when(gatekeeper.checkAndAcquire(any(), anyInt(), any())).thenReturn(null);
         lenient().when(gatekeeper.calculateDeadline()).thenReturn(Instant.now().plusSeconds(180));
         lenient().doNothing().when(gatekeeper).releaseConcurrentSlot(any());
         lenient().doNothing().when(gatekeeper).onSpawnStart(any(), any());
@@ -162,7 +161,7 @@ class SubagentPerformanceTest {
             String content = "x".repeat(1000 + i * 100); // 1KB 到 11KB
 
             long startTime = System.nanoTime();
-            ContextObjectWriteService.WriteResult result = writeService.write(
+            writeService.write(
                     "test_tool", content, 100, ProducerKind.COMPACTION, "run-" + i);
             long endTime = System.nanoTime();
 
@@ -249,7 +248,7 @@ class SubagentPerformanceTest {
         int rejectedCount = 0;
 
         // 设置深度限制为 1，模拟拒绝场景
-        when(gatekeeper.checkSpawn(any(), anyInt(), any())).thenAnswer(invocation -> {
+        when(gatekeeper.checkAndAcquire(any(), anyInt(), any())).thenAnswer(invocation -> {
             int depth = invocation.getArgument(1);
             if (depth >= 3) {
                 return SpawnResult.MustDoNext.simplify("Depth limit exceeded");
