@@ -141,7 +141,7 @@ public class LogFileReader {
                 node.has("skill") ? node.get("skill").asText() : null,
                 node.has("skillType") ? node.get("skillType").asText() : null,
                 node.has("feature") ? node.get("feature").asText() : null,
-                node.has("errorCode") ? node.get("errorCode").asText() : null,
+                node.has("errorCode") ? node.get("errorCode").asText() : getNestedString(node, "data", "error"),
                 getNestedString(node, "data", "runId"),
                 getNestedString(node, "metadata", "runId"),
                 getNestedString(node, "data", "taskId"),
@@ -211,6 +211,9 @@ public class LogFileReader {
         if (query.errorCode() != null && !query.errorCode().equals(entry.errorCode())) {
             return false;
         }
+        if (query.onlyErrors() && !hasErrorSignal(entry)) {
+            return false;
+        }
         if (query.keyword() != null && !query.keyword().isBlank()) {
             String s = query.keyword().toLowerCase();
             String haystack = (safe(entry.timestamp())
@@ -237,6 +240,17 @@ public class LogFileReader {
 
     private static String safe(String value) {
         return value != null ? value : "";
+    }
+
+    private static boolean hasErrorSignal(JsonEntry entry) {
+        if ("error".equalsIgnoreCase(safe(entry.event()))) {
+            return true;
+        }
+        if (!safe(entry.errorCode()).isBlank()) {
+            return true;
+        }
+        String rawNode = entry.node() != null ? entry.node().toString().toLowerCase() : "";
+        return rawNode.contains("\"error\":");
     }
 
     /**
@@ -312,6 +326,7 @@ public class LogFileReader {
             String event,
             String skill,
             String errorCode,
+            boolean onlyErrors,
             String keyword,
             int page,
             int size
@@ -339,6 +354,7 @@ public class LogFileReader {
         private String event;
         private String skill;
         private String errorCode;
+        private boolean onlyErrors;
         private String keyword;
         private int page = 1;
         private int size = 50;
@@ -398,6 +414,11 @@ public class LogFileReader {
             return this;
         }
 
+        public LogQueryBuilder onlyErrors(boolean onlyErrors) {
+            this.onlyErrors = onlyErrors;
+            return this;
+        }
+
         public LogQueryBuilder keyword(String keyword) {
             this.keyword = keyword;
             return this;
@@ -415,7 +436,7 @@ public class LogFileReader {
 
         public LogQuery build() {
             return new LogQuery(date, userId, traceId, requestId, sessionId, runId, taskId,
-                    eventType, event, skill, errorCode, keyword, page, size);
+                    eventType, event, skill, errorCode, onlyErrors, keyword, page, size);
         }
     }
 

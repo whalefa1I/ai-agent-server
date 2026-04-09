@@ -254,7 +254,7 @@ public class LogQueryController {
             LogFileReader.LogQuery query = LogFileReader.LogQuery.builder()
                     .date(date)
                     .userId(userId)
-                    .event("error")
+                    .onlyErrors(true)
                     .page(page)
                     .size(size)
                     .build();
