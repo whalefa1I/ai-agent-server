@@ -15,7 +15,9 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -39,22 +41,31 @@ public class LogFileReader {
      * 查询结构化日志
      */
     public List<LogEntry> queryLogs(LogQuery query) throws IOException {
-        Path logPath = getLogPath(query.date);
-        if (!Files.exists(logPath)) {
+        Path logDirPath = Paths.get(logDir);
+        if (!Files.exists(logDirPath)) {
+            return List.of();
+        }
+
+        List<Path> candidatePaths = getCandidateLogPaths(query.date);
+        if (candidatePaths.isEmpty()) {
             return List.of();
         }
 
         List<LogEntry> results = new ArrayList<>();
-        List<String> lines = Files.readAllLines(logPath);
-
-        for (String line : lines) {
-            try {
-                JsonEntry entry = parseJsonLine(line);
-                if (matches(entry, query)) {
-                    results.add(toLogEntry(entry, line));
+        for (Path path : candidatePaths) {
+            if (!Files.exists(path)) {
+                continue;
+            }
+            List<String> lines = Files.readAllLines(path);
+            for (String line : lines) {
+                try {
+                    JsonEntry entry = parseJsonLine(line);
+                    if (matches(entry, query)) {
+                        results.add(toLogEntry(entry, line));
+                    }
+                } catch (JsonProcessingException e) {
+                    log.debug("跳过无法解析的日志行（{}）：{}", path.getFileName(), line.substring(0, Math.min(100, line.length())));
                 }
-            } catch (JsonProcessingException e) {
-                log.debug("跳过无法解析的日志行：{}", line.substring(0, Math.min(100, line.length())));
             }
         }
 
@@ -68,22 +79,45 @@ public class LogFileReader {
         return fromIndex < results.size() ? results.subList(fromIndex, toIndex) : results;
     }
 
-    /**
-     * 获取日志文件路径
-     */
-    private Path getLogPath(LocalDate date) {
-        if (date == null) {
-            date = LocalDate.now();
+    private List<Path> getCandidateLogPaths(LocalDate date) throws IOException {
+        Path logDirPath = Paths.get(logDir);
+        if (!Files.exists(logDirPath)) {
+            return List.of();
         }
-        String filename = "structured-events." + date.format(DATE_FORMATTER) + ".jsonl";
-        return Paths.get(logDir, filename);
+
+        LocalDate targetDate = date != null ? date : LocalDate.now();
+        String targetDateStr = targetDate.format(DATE_FORMATTER);
+        String previousDateStr = targetDate.minusDays(1).format(DATE_FORMATTER);
+
+        Set<Path> files = new LinkedHashSet<>();
+
+        // 优先读取结构化日志文件（纯 JSON 行）
+        files.add(Paths.get(logDir, "structured-events." + targetDateStr + ".jsonl"));
+        files.add(Paths.get(logDir, "structured-events." + previousDateStr + ".jsonl"));
+        files.add(Paths.get(logDir, "structured-events.jsonl"));
+
+        // 同时读取应用滚动日志，兼容 "prefix + JSON" 的行格式
+        try (Stream<Path> paths = Files.list(logDirPath)) {
+            paths
+                    .filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().endsWith(".jsonl"))
+                    .filter(p -> {
+                        String filename = p.getFileName().toString();
+                        return filename.contains(targetDateStr)
+                                || filename.contains(previousDateStr)
+                                || filename.endsWith(".jsonl");
+                    })
+                    .forEach(files::add);
+        }
+
+        return new ArrayList<>(files);
     }
 
     /**
      * 解析 JSON 行
      */
     private JsonEntry parseJsonLine(String line) throws JsonProcessingException {
-        JsonNode node = objectMapper.readTree(line);
+        JsonNode node = parseJsonNode(line);
         return new JsonEntry(
                 node.has("timestamp") ? node.get("timestamp").asText() : null,
                 node.has("event") ? node.get("event").asText() : null,
@@ -102,6 +136,21 @@ public class LogFileReader {
                 getNestedString(node, "metadata", "taskId"),
                 node
         );
+    }
+
+    private JsonNode parseJsonNode(String line) throws JsonProcessingException {
+        try {
+            return objectMapper.readTree(line);
+        } catch (JsonProcessingException ignored) {
+            // 兼容带前缀日志行："... StructuredLogger : {json}"
+            int firstBrace = line.indexOf('{');
+            int lastBrace = line.lastIndexOf('}');
+            if (firstBrace >= 0 && lastBrace > firstBrace) {
+                String jsonPart = line.substring(firstBrace, lastBrace + 1);
+                return objectMapper.readTree(jsonPart);
+            }
+            throw ignored;
+        }
     }
 
     private static String getNestedString(JsonNode root, String parent, String child) {
@@ -193,12 +242,19 @@ public class LogFileReader {
 
         try (Stream<Path> paths = Files.list(logDirPath)) {
             return paths
-                    .filter(p -> p.getFileName().toString().startsWith("structured-events."))
                     .filter(p -> p.getFileName().toString().endsWith(".jsonl"))
                     .map(p -> {
                         try {
                             String filename = p.getFileName().toString();
-                            String dateStr = filename.replace("structured-events.", "").replace(".jsonl", "");
+                            int firstDot = filename.indexOf('.');
+                            int lastDot = filename.lastIndexOf('.');
+                            if (firstDot < 0 || lastDot <= firstDot) {
+                                return null;
+                            }
+                            String dateStr = filename.substring(firstDot + 1, lastDot);
+                            if (!dateStr.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                                return null;
+                            }
                             return LocalDate.parse(dateStr, DATE_FORMATTER);
                         } catch (Exception e) {
                             return null;
