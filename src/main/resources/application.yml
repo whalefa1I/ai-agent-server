@@ -184,6 +184,11 @@ demo:
       encrypt-key: ${DEMO_FEISHU_ENCRYPT_KEY:}
       # 飞书 API 基础 URL
       api-base-url: ${DEMO_FEISHU_API_BASE_URL:https://open.feishu.cn/open-apis}
+  logs:
+    # auto: 优先 Loki，失败时回退文件；loki: 仅查 Loki；file: 仅查本地 jsonl
+    query-source: ${DEMO_LOG_QUERY_SOURCE:auto}
+    # Loki 查询超时秒数
+    loki-timeout-seconds: ${DEMO_LOG_LOKI_TIMEOUT_SECONDS:15}
   skills:
     # 技能系统开关
     enabled: ${DEMO_SKILLS_ENABLED:true}
