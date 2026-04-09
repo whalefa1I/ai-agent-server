@@ -42,10 +42,9 @@ public final class DemoToolSpecs {
                     {
                       "type": "object",
                       "properties": {
-                        "pattern": { "type": "string", "description": "Glob pattern (e.g., **/*.java)" },
-                        "path": { "type": "string", "description": "Base directory (defaults to current directory)" }
-                      },
-                      "required": ["pattern"]
+                        "pattern": { "type": "string", "description": "Glob pattern (e.g., **/SKILL.md, **/*.java). Prefer this field." },
+                        "path": { "type": "string", "description": "Base directory to search under workspace root, OR if pattern is omitted and this value contains * or ?, it is treated as the glob pattern" }
+                      }
                     }
                     """;
 

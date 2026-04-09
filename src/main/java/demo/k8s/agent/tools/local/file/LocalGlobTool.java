@@ -47,10 +47,9 @@ public class LocalGlobTool {
             "    }," +
             "    \"path\": {" +
             "      \"type\": \"string\"," +
-            "      \"description\": \"Directory to search in (defaults to current working directory)\"" +
+            "      \"description\": \"Directory to search under workspace root, OR glob pattern if pattern is omitted and this contains * or ?\"" +
             "    }" +
-            "  }," +
-            "  \"required\": [\"pattern\"]" +
+            "  }" +
             "}";
 
     /**
@@ -74,14 +73,22 @@ public class LocalGlobTool {
         long startTime = System.currentTimeMillis();
 
         try {
-            String pattern = (String) input.get("pattern");
-            String basePath = FilesystemPathArgs.readPathOrAlias(input);
+            String pattern = stringOrNull(input.get("pattern"));
+            String pathOrAlias = FilesystemPathArgs.readPathOrAlias(input);
+
+            // 模型常把 glob 写在 path（如 {"path": "**/SKILL.md"}），而 schema 要求 pattern
+            if ((pattern == null || pattern.isEmpty()) && pathOrAlias != null && looksLikeGlob(pathOrAlias)) {
+                pattern = pathOrAlias;
+                pathOrAlias = null;
+            }
+
+            String basePath = pathOrAlias;
             if (basePath == null || basePath.isBlank()) {
-                basePath = System.getProperty("user.dir");
+                basePath = WorkspacePathPolicy.workspaceRoot();
             }
 
             if (pattern == null || pattern.isEmpty()) {
-                return LocalToolResult.error("pattern is required");
+                return LocalToolResult.error("pattern is required (or pass a glob in path, e.g. **/SKILL.md)");
             }
 
             Path baseDir = Path.of(basePath);
@@ -112,6 +119,19 @@ public class LocalGlobTool {
             log.error("Glob execution failed", e);
             return LocalToolResult.error("Error: " + e.getMessage());
         }
+    }
+
+    private static String stringOrNull(Object o) {
+        if (o == null) {
+            return null;
+        }
+        String s = String.valueOf(o).trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    /** true if the string is likely a glob pattern rather than a directory path */
+    private static boolean looksLikeGlob(String s) {
+        return s.indexOf('*') >= 0 || s.indexOf('?') >= 0;
     }
 
     /**

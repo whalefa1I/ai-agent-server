@@ -12,6 +12,9 @@ RUN mvn dependency:go-offline -B || true
 # 复制源代码
 COPY src src/
 
+# 技能资源（与 SkillService 默认 ./skills 对齐，供运行阶段 COPY）
+COPY skills skills/
+
 # 构建主项目
 RUN mvn clean package -DskipTests -B -e
 
@@ -25,6 +28,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 python3-pip \
     && ln -sf /usr/bin/python3 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
+
+# 技能目录（SkillService 默认扫描 /app/skills）；构建阶段已含源码中的 skills/
+COPY --from=builder /app/skills ./skills
 
 # 复制构建产物
 COPY --from=builder /app/target/minimal-k8s-agent-demo-*.jar app.jar
