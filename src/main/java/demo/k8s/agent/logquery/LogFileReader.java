@@ -213,12 +213,30 @@ public class LogFileReader {
         }
         if (query.keyword() != null && !query.keyword().isBlank()) {
             String s = query.keyword().toLowerCase();
-            String raw = entry.node().toString().toLowerCase();
-            if (!raw.contains(s)) {
+            String haystack = (safe(entry.timestamp())
+                    + " " + safe(entry.event())
+                    + " " + safe(entry.traceId())
+                    + " " + safe(entry.requestId())
+                    + " " + safe(entry.userId())
+                    + " " + safe(entry.sessionId())
+                    + " " + safe(entry.eventType())
+                    + " " + safe(entry.skill())
+                    + " " + safe(entry.skillType())
+                    + " " + safe(entry.feature())
+                    + " " + safe(entry.errorCode())
+                    + " " + safe(entry.runId())
+                    + " " + safe(entry.taskId())
+                    + " " + (entry.node() != null ? entry.node().toString() : ""))
+                    .toLowerCase();
+            if (!haystack.contains(s)) {
                 return false;
             }
         }
         return true;
+    }
+
+    private static String safe(String value) {
+        return value != null ? value : "";
     }
 
     /**
