@@ -106,8 +106,8 @@ demo:
     default-ttl-hours: ${DEMO_CONTEXT_OBJECT_DEFAULT_TTL_HOURS:24}
   # 多 Agent 子系统配置（M3 实现）
   multi-agent:
-    enabled: ${DEMO_MULTI_AGENT_ENABLED:false}
-    mode: ${DEMO_MULTI_AGENT_MODE:off}  # off | shadow | on
+    enabled: ${DEMO_MULTI_AGENT_ENABLED:true}
+    mode: ${DEMO_MULTI_AGENT_MODE:on}  # off | shadow | on
     max-spawn-depth: ${DEMO_MULTI_AGENT_MAX_SPAWN_DEPTH:3}
     max-concurrent-spawns: ${DEMO_MULTI_AGENT_MAX_CONCURRENT_SPAWNS:5}
     wallclock-ttl-seconds: ${DEMO_MULTI_AGENT_WALLCLOCK_TTL:180}
