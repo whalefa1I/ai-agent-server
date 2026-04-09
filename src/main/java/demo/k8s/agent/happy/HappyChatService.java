@@ -266,11 +266,9 @@ public class HappyChatService {
             artifact.setUpdatedAt(Instant.now());
 
             repository.save(artifact);
+            // 仅记录最终落盘，避免流式增量日志洪峰触发平台限流。
             if (isFinal) {
                 log.info("更新助手消息：id={}, contentLength={}, isFinal=true",
-                        artifactId, content != null ? content.length() : 0);
-            } else {
-                log.debug("更新助手消息（流式增量）：id={}, contentLength={}",
                         artifactId, content != null ? content.length() : 0);
             }
 
