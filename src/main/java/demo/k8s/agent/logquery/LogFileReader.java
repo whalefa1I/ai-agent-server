@@ -183,6 +183,8 @@ public class LogFileReader {
                 + "&limit=" + limit
                 + "&direction=backward";
 
+        log.debug("[LokiQuery] URL: {}, timeout: {}s, terms: {}", url, lokiTimeoutSeconds, terms);
+
         String basicAuth = java.util.Base64.getEncoder()
                 .encodeToString((lokiUsername + ":" + lokiPassword).getBytes(StandardCharsets.UTF_8));
 
@@ -193,7 +195,9 @@ public class LogFileReader {
                 .GET()
                 .build();
 
+        log.info("[LokiQuery] Sending request to Loki...");
         HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        log.info("[LokiQuery] Response status: {}", resp.statusCode());
         if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
             throw new IOException("Loki query failed, status=" + resp.statusCode());
         }
