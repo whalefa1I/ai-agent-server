@@ -40,13 +40,19 @@ public class LogFileReader {
     /**
      * 查询结构化日志
      */
-    public List<LogEntry> queryLogs(LogQuery query) throws IOException {
+    public List<LogEntry> queryLogs(LogQuery query) {
         Path logDirPath = Paths.get(logDir);
         if (!Files.exists(logDirPath)) {
             return List.of();
         }
 
-        List<Path> candidatePaths = getCandidateLogPaths(query.date);
+        List<Path> candidatePaths;
+        try {
+            candidatePaths = getCandidateLogPaths(query.date);
+        } catch (IOException e) {
+            log.warn("获取日志候选文件失败，返回空结果: {}", e.getMessage());
+            return List.of();
+        }
         if (candidatePaths.isEmpty()) {
             return List.of();
         }
@@ -56,14 +62,20 @@ public class LogFileReader {
             if (!Files.exists(path)) {
                 continue;
             }
-            List<String> lines = Files.readAllLines(path);
+            List<String> lines;
+            try {
+                lines = Files.readAllLines(path);
+            } catch (IOException e) {
+                log.warn("读取日志文件失败，已跳过 {}: {}", path.getFileName(), e.getMessage());
+                continue;
+            }
             for (String line : lines) {
                 try {
                     JsonEntry entry = parseJsonLine(line);
                     if (matches(entry, query)) {
                         results.add(toLogEntry(entry, line));
                     }
-                } catch (JsonProcessingException e) {
+                } catch (Exception e) {
                     log.debug("跳过无法解析的日志行（{}）：{}", path.getFileName(), line.substring(0, Math.min(100, line.length())));
                 }
             }

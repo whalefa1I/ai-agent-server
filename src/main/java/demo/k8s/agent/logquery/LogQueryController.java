@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.IOException;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
@@ -77,7 +76,7 @@ public class LogQueryController {
             ));
 
             return ResponseEntity.ok(response);
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Failed to query logs", e);
             Map<String, Object> error = new HashMap<>();
             error.put("success", false);
@@ -99,7 +98,7 @@ public class LogQueryController {
             response.put("data", dates);
 
             return ResponseEntity.ok(response);
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Failed to get available dates", e);
             Map<String, Object> error = new HashMap<>();
             error.put("success", false);
@@ -138,7 +137,7 @@ public class LogQueryController {
             ));
 
             return ResponseEntity.ok(response);
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Failed to query user logs", e);
             Map<String, Object> error = new HashMap<>();
             error.put("success", false);
@@ -177,7 +176,7 @@ public class LogQueryController {
             ));
 
             return ResponseEntity.ok(response);
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Failed to query session logs", e);
             Map<String, Object> error = new HashMap<>();
             error.put("success", false);
@@ -232,7 +231,7 @@ public class LogQueryController {
                     "total", entries.size()
             ));
             return ResponseEntity.ok(response);
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Failed to query chain logs", e);
             Map<String, Object> error = new HashMap<>();
             error.put("success", false);
@@ -255,7 +254,7 @@ public class LogQueryController {
             LogFileReader.LogQuery query = LogFileReader.LogQuery.builder()
                     .date(date)
                     .userId(userId)
-                    .eventType("error")
+                    .event("error")
                     .page(page)
                     .size(size)
                     .build();
@@ -272,7 +271,7 @@ public class LogQueryController {
             ));
 
             return ResponseEntity.ok(response);
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Failed to query error logs", e);
             Map<String, Object> error = new HashMap<>();
             error.put("success", false);
