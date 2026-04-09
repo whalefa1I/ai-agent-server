@@ -40,6 +40,7 @@ import java.util.concurrent.CompletableFuture;
 public class WorkerAgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(WorkerAgentExecutor.class);
+    private static final int MAX_NO_PROGRESS_TURNS = 12;
 
     private final ChatModel chatModel;
     private final ToolCallingManager toolCallingManager;
@@ -109,6 +110,7 @@ public class WorkerAgentExecutor {
         messages.add(new UserMessage("你的任务是：" + task.goal()));
 
         int turnCount = 0;
+        int noProgressTurns = 0;
         int maxTurns = multiAgentProperties.getWorkerMaxTurns();
         Instant startedAt = Instant.now();
 
@@ -139,6 +141,8 @@ public class WorkerAgentExecutor {
                 turnCount++;
                 log.debug("[WorkerAgent] turn begin: taskId={}, turn={}, messageCount={}",
                         taskId, turnCount, messages.size());
+                log.debug("[WorkerAgent][turn:{}] input tail: {}",
+                        turnCount, summarizeMessagesTail(messages, 3, 220));
 
                 // 处理收件箱消息
                 List<String> newMessages = coordinatorState.drainMessages(taskId);
@@ -146,9 +150,23 @@ public class WorkerAgentExecutor {
                     messages.add(new UserMessage(msg));
                     log.debug("Worker 收到新消息：{}", truncate(msg, 50));
                 }
+                if (!newMessages.isEmpty()) {
+                    log.debug("[WorkerAgent][turn:{}] drained mailbox messages: count={}, sample={}",
+                            turnCount, newMessages.size(), summarizeStrings(newMessages, 2, 200));
+                }
 
                 // 如果没有新消息且队列为空，等待一会儿
                 if (newMessages.isEmpty() && messages.size() <= 2) {
+                    log.debug("[WorkerAgent][turn:{}] idle wait: no new messages and bootstrap messages only", turnCount);
+                    noProgressTurns++;
+                    log.debug("[WorkerAgent][turn:{}] no progress detected: noProgressTurns={}",
+                            turnCount, noProgressTurns);
+                    if (noProgressTurns >= MAX_NO_PROGRESS_TURNS) {
+                        log.warn("Worker 连续无进展轮次超限：taskId={}, noProgressTurns={}, maxNoProgressTurns={}",
+                                taskId, noProgressTurns, MAX_NO_PROGRESS_TURNS);
+                        coordinatorState.failTask(taskId, "no_progress_exceeded");
+                        break;
+                    }
                     Thread.sleep(500);
                     continue;
                 }
@@ -169,11 +187,16 @@ public class WorkerAgentExecutor {
                     coordinatorState.failTask(taskId, "model_error: " + e.getMessage());
                     break;
                 }
+                String modelText = extractText(response);
+                log.debug("[WorkerAgent][turn:{}] model text: {}", turnCount, truncate(modelText, 500));
+                boolean turnMadeProgress = !newMessages.isEmpty();
 
                 // 检查是否有工具调用
                 if (hasToolCalls(response)) {
                     log.debug("[WorkerAgent] tool calls detected: taskId={}, turn={}, count={}",
                             taskId, turnCount, response.getResult().getOutput().getToolCalls().size());
+                    log.debug("[WorkerAgent][turn:{}] tool calls detail: {}",
+                            turnCount, summarizeToolCalls(response, 320));
 
                     // 执行工具
                     ToolExecutionResult toolResult;
@@ -196,12 +219,17 @@ public class WorkerAgentExecutor {
 
                     // 更新消息历史
                     messages = toolResult.conversationHistory();
+                    log.debug("[WorkerAgent][turn:{}] conversation tail after tools: {}",
+                            turnCount, summarizeMessagesTail(messages, 4, 220));
 
                     // 将输出发送到 Coordinator
                     for (var toolCall : response.getResult().getOutput().getToolCalls()) {
                         String output = findToolResponse(toolResult, toolCall.id());
                         if (output != null && !output.isBlank()) {
                             coordinatorState.addOutput(taskId, output);
+                            turnMadeProgress = true;
+                            log.debug("[WorkerAgent][turn:{}] coordinator output appended: toolCallId={}, output={}",
+                                    turnCount, safeString(toolCall.id()), truncate(output, 220));
                         }
                     }
 
@@ -215,6 +243,24 @@ public class WorkerAgentExecutor {
                     log.info("Worker 完成：{} - {} chars, turns={}, elapsedSec={}",
                             taskId, finalAnswer.length(), turnCount,
                             Duration.between(startedAt, Instant.now()).toSeconds());
+                    break;
+                }
+
+                if (!turnMadeProgress && (modelText == null || modelText.isBlank())) {
+                    noProgressTurns++;
+                    log.debug("[WorkerAgent][turn:{}] no progress detected after model/tool stage: noProgressTurns={}",
+                            turnCount, noProgressTurns);
+                } else {
+                    if (noProgressTurns > 0) {
+                        log.debug("[WorkerAgent][turn:{}] progress resumed: reset noProgressTurns from {} to 0",
+                                turnCount, noProgressTurns);
+                    }
+                    noProgressTurns = 0;
+                }
+                if (noProgressTurns >= MAX_NO_PROGRESS_TURNS) {
+                    log.warn("Worker 连续无进展轮次超限：taskId={}, noProgressTurns={}, maxNoProgressTurns={}",
+                            taskId, noProgressTurns, MAX_NO_PROGRESS_TURNS);
+                    coordinatorState.failTask(taskId, "no_progress_exceeded");
                     break;
                 }
             }
@@ -409,6 +455,61 @@ public class WorkerAgentExecutor {
     private static String findToolResponse(ToolExecutionResult result, String toolCallId) {
         // 简化实现
         return "executed";
+    }
+
+    private static String summarizeToolCalls(ChatResponse response, int maxArgLen) {
+        if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
+            return "[]";
+        }
+        List<?> calls = response.getResult().getOutput().getToolCalls();
+        if (calls == null || calls.isEmpty()) {
+            return "[]";
+        }
+        List<String> summaries = new ArrayList<>();
+        for (Object callObj : calls) {
+            if (callObj == null) {
+                continue;
+            }
+            String callStr = callObj.toString();
+            summaries.add(truncate(callStr, maxArgLen));
+        }
+        return summaries.toString();
+    }
+
+    private static String summarizeMessagesTail(List<Message> messages, int tailCount, int perMessageMaxLen) {
+        if (messages == null || messages.isEmpty()) {
+            return "[]";
+        }
+        int from = Math.max(0, messages.size() - tailCount);
+        List<String> out = new ArrayList<>();
+        for (int i = from; i < messages.size(); i++) {
+            Message msg = messages.get(i);
+            if (msg == null) {
+                continue;
+            }
+            String role = msg.getMessageType() != null ? msg.getMessageType().name() : "UNKNOWN";
+            String text = truncate(msg.toString(), perMessageMaxLen);
+            out.add(role + ":" + text);
+        }
+        return out.toString();
+    }
+
+    private static String summarizeStrings(List<String> values, int maxItems, int maxLenPerItem) {
+        if (values == null || values.isEmpty()) {
+            return "[]";
+        }
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < Math.min(values.size(), maxItems); i++) {
+            out.add(truncate(values.get(i), maxLenPerItem));
+        }
+        if (values.size() > maxItems) {
+            out.add("... +" + (values.size() - maxItems) + " more");
+        }
+        return out.toString();
+    }
+
+    private static String safeString(String s) {
+        return s == null ? "" : s;
     }
 
     private static String truncate(String s, int maxLen) {
