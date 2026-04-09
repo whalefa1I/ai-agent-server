@@ -184,7 +184,7 @@
 | 测试名 | 描述 | 状态 |
 |--------|------|------|
 | facadeSpawnTask_persistsCompletedRun | Facade.spawnTask → DB `COMPLETED` 且结果含 Worker 输出 | ✓ |
-| taskCreate_routesThroughFacade_whenMultiAgentOn | `TaskCreate` 经 `TaskCreateMultiAgentRouter` 走 `MultiAgentFacade` | ✓ |
+| spawnSubagent_routesThroughFacade_whenMultiAgentOn | `spawn_subagent` 经 `MultiAgentFacade` 创建并执行子运行 | ✓ |
 
 **说明**: Worker 侧使用 `@Primary` Mock `AsyncSubagentExecutor`，避免集成测试依赖真实大模型；生产环境由 `LocalSubAgentRuntime` 调用真实 `runSynchronousAgent`。
 

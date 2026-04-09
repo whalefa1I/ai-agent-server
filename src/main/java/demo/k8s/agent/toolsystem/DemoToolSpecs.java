@@ -154,7 +154,7 @@ public final class DemoToolSpecs {
                         true));
     }
 
-    /** Task 子 Agent — spring-ai-agent-utils TaskTool */
+    /** Task 工具（任务追踪），非子 Agent 触发入口 */
     public static ClaudeLikeTool task() {
         return ClaudeToolFactory.buildTool(
                 new ToolDefPartial(

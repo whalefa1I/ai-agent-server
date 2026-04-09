@@ -7,7 +7,6 @@ import demo.k8s.agent.tools.local.file.LocalFileReadTool;
 import demo.k8s.agent.tools.local.file.LocalFileWriteTool;
 import demo.k8s.agent.tools.local.file.LocalFileEditTool;
 import demo.k8s.agent.tools.local.planning.SpawnSubagentTool;
-import demo.k8s.agent.tools.local.planning.TaskCreateMultiAgentRouter;
 import demo.k8s.agent.tools.local.planning.TaskTools;
 import demo.k8s.agent.tools.local.search.LocalGrepTool;
 import demo.k8s.agent.tools.local.shell.LocalBashTool;
@@ -24,27 +23,19 @@ import java.util.Map;
 public class LocalToolExecutor {
 
     private final ContextObjectReadService contextObjectReadService;
-    private final TaskCreateMultiAgentRouter taskCreateMultiAgentRouter;
     private final SpawnSubagentTool spawnSubagentTool;
 
     public LocalToolExecutor() {
-        this(null, null, null);
+        this(null, null);
     }
 
     public LocalToolExecutor(ContextObjectReadService contextObjectReadService) {
-        this(contextObjectReadService, null, null);
+        this(contextObjectReadService, null);
     }
 
     public LocalToolExecutor(ContextObjectReadService contextObjectReadService,
-                             TaskCreateMultiAgentRouter taskCreateMultiAgentRouter) {
-        this(contextObjectReadService, taskCreateMultiAgentRouter, null);
-    }
-
-    public LocalToolExecutor(ContextObjectReadService contextObjectReadService,
-                             TaskCreateMultiAgentRouter taskCreateMultiAgentRouter,
                              SpawnSubagentTool spawnSubagentTool) {
         this.contextObjectReadService = contextObjectReadService;
-        this.taskCreateMultiAgentRouter = taskCreateMultiAgentRouter;
         this.spawnSubagentTool = spawnSubagentTool;
     }
 
@@ -72,9 +63,7 @@ public class LocalToolExecutor {
             case "bash" -> LocalBashTool.execute(input);
             case "read_context_object" -> ReadContextObjectTool.execute(input, contextObjectReadService);
             // Task 工具集
-            case "TaskCreate" -> taskCreateMultiAgentRouter != null
-                    ? taskCreateMultiAgentRouter.routeTaskCreate(input)
-                    : TaskTools.executeTaskCreate(input);
+            case "TaskCreate" -> TaskTools.executeTaskCreate(input);
             case "TaskList" -> TaskTools.executeTaskList(input);
             case "TaskGet" -> TaskTools.executeTaskGet(input);
             case "TaskUpdate" -> TaskTools.executeTaskUpdate(input);

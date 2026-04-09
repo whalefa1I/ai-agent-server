@@ -1,4 +1,4 @@
-# 子 Agent 自然语言冒烟：通过 POST /api/v2/chat 触发模型选用 TaskCreate → MultiAgentFacade（无需前端）
+# 子 Agent 自然语言冒烟：通过 POST /api/v2/chat 触发模型选用 spawn_subagent（无需前端）
 # 前置条件（在启动应用前设置环境变量或 JVM 参数）：
 #   DEMO_MULTI_AGENT_ENABLED=true
 #   DEMO_MULTI_AGENT_MODE=on
@@ -19,26 +19,26 @@ $ErrorActionPreference = "Stop"
 
 $cases = @(
     @{
-        Name = "显式要求创建子任务（易触发 TaskCreate）"
+        Name = "显式要求委派子 Agent（易触发 spawn_subagent）"
         SessionId = "nl-smoke-explicit-001"
         Message = @"
-请使用 TaskCreate 工具创建一个任务：
-- subject: 子Agent冒烟验证
-- description: 验证 MultiAgentFacade 与 SubagentRun 能走完；完成后用一两句话回复即可，无需真实改代码。
+请使用 spawn_subagent 工具执行一个子任务：
+- goal: 子Agent冒烟验证。请在子运行中完成最小可验证动作并返回简短结论。
 "@
     },
     @{
-        Name = "多步骤拆解（符合 TaskCreate 工具说明中的「多步任务」场景）"
+        Name = "多步骤拆解（先建 Task 跟踪，再用 spawn_subagent 执行）"
         SessionId = "nl-smoke-multi-step-002"
         Message = @"
-我接下来要做三件事：1）梳理当前项目的子 Agent 配置项；2）列出与 spawn 相关的类名；3）总结风险点。
-请先使用 TaskCreate 为「子 Agent 配置与 spawn 类梳理」建一个跟踪任务（subject 用英文短语即可），然后再开始分析。
+请先用 TaskCreate 创建跟踪任务（subject 为英文短语），
+然后使用 spawn_subagent 执行「梳理当前项目子Agent配置项并列出风险点」，
+最后用 TaskUpdate/TaskOutput 回填任务进度与产出。
 "@
     },
     @{
-        Name = "委派式自然语言（模型可能直接回答或选用 TaskCreate，视模型而定）"
+        Name = "委派式自然语言（模型可能直接回答或选用 spawn_subagent，视模型而定）"
         SessionId = "nl-smoke-delegate-003"
-        Message = "请把「检查 README 是否提到 multi-agent」作为独立子任务执行，用任务工具跟踪进度。"
+        Message = "请把「检查 README 是否提到 multi-agent」作为独立子任务委派给子Agent执行，并返回结果。"
     }
 )
 
@@ -71,7 +71,7 @@ foreach ($c in $cases) {
 }
 
 Write-Host "========== 日志自检关键词（服务端日志中搜索）==========" -ForegroundColor Cyan
-Write-Host "  [TOOL CALLBACK] toolName=TaskCreate"
-Write-Host "  [TaskCreateRouter] 或 [Facade] Spawn success / [LocalRuntime]"
+Write-Host "  [TOOL CALLBACK] toolName=spawn_subagent"
+Write-Host "  [Facade] Spawn success / [LocalRuntime]"
 Write-Host "  SubagentRun / COMPLETED（若子任务实际执行）"
 Write-Host ""

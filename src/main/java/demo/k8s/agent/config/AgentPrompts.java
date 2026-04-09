@@ -211,16 +211,6 @@ public final class AgentPrompts {
             - Tasks that must be done one after another due to dependencies
             - When you want to handle the task directly with the main agent
 
-            ## Key Difference from TaskCreate
-
-            - **spawn_subagent**: Direct spawning, designed for "do X for N items" patterns
-              - Example: "Translate this text to Spanish, French, German, Japanese, and Korean"
-              - One tool call, subagent handles all parallel work internally
-
-            - **TaskCreate**: Task tracking and management, use for sequential multi-step work
-              - Example: "Step 1: Read file, Step 2: Analyze, Step 3: Write report"
-              - Multiple TaskCreate calls, each step tracked separately
-
             ## Parameters
 
             - **goal** (required): Clear, specific description of what the subagent should accomplish
@@ -265,9 +255,10 @@ public final class AgentPrompts {
     /** 默认（非 Coordinator Mode）：主会话可 Task + k8s + Skill */
     public static final String DEMO_COORDINATOR_SYSTEM =
             """
-                    你是协调者 Agent。需要委派专门子任务时，使用 Task 工具集（TaskCreate/TaskList/TaskGet/TaskUpdate/TaskStop/TaskOutput）。
+                    你是协调者 Agent。需要委派专门子任务时，直接使用 spawn_subagent。
+                    Task 工具集（TaskCreate/TaskList/TaskGet/TaskUpdate/TaskStop/TaskOutput）仅用于任务追踪展示，不用于触发子 Agent。
                     需要执行受控 shell 时，使用 k8s_sandbox_run（K8s Job 沙盒）。可先调用 Skill「demo-k8s」阅读说明。不要编造工具输出。
-                    说明：Task 子 Agent 由 spring-ai-agent-utils 内置执行器运行，默认带本地文件/Shell 等工具，仅适合受信开发环境。
+                    说明：spawn_subagent 由子 Agent 运行时执行，默认带本地文件/Shell 等工具，仅适合受信开发环境。
 
                     === Skills（对齐 OpenClaw，渐进加载）===
                     - 在回复前先扫描 <available_skills> 的 <description>。
@@ -282,7 +273,7 @@ public final class AgentPrompts {
 
                     """ + TASK_CREATE_PROMPT + """
 
-                    === spawn_subagent（并行任务专用） ===
+                    === spawn_subagent（子 Agent 触发入口） ===
 
                     """ + SPAWN_SUBAGENT_PROMPT + """
 
@@ -311,7 +302,7 @@ public final class AgentPrompts {
                     - 调用 TaskGet / TaskUpdate / TaskStop / TaskOutput 前，必须先拿到有效 taskId；禁止空参数调用。
                     - 调用 TaskCreate 时必须同时提供非空 subject 与 description；若上次返回 TASK_CREATE_SUBJECT_REQUIRED / TASK_CREATE_DESCRIPTION_REQUIRED，需修正参数后重试，禁止再次发送 Input {}。
                     - 若用户明确要求“创建 N 步任务”（如“第一步/第二步”或编号列表），必须按步骤一一创建 N 个独立任务；禁止把多步合并成 1 个任务。
-                    - 两步及以上的执行型请求，优先创建多个细粒度任务（每步一个 subject），再按顺序 TaskUpdate 推进状态。
+                    - 子 Agent 触发与 Task 管理解耦：不要把 runId 当作 taskId 传给 TaskOutput/TaskUpdate。
                     - 文件查看优先使用 file_read，不要用 shell 的 `type`（在 bash 环境会被当作命令类型检查，容易失败）。
                     - 使用 file_edit 时，old_string/new_string 必须是文件中的真实片段，禁止使用 "<原内容>"、"<新内容>" 这类占位文本。
 
@@ -327,7 +318,7 @@ public final class AgentPrompts {
     public static final String COORDINATOR_ORCHESTRATOR_ONLY =
             """
                     你是纯编排者（Coordinator）：没有 k8s_sandbox_run、Skill、Bash、读文件等直接执行类工具。
-                    通过 Task 启动子 Agent 完成调研与实现；用 SendMessage 对已有 task 发送跟进消息；用 TaskStop 请求中止。
+                    通过 spawn_subagent 启动子 Agent 完成调研与实现；用 SendMessage 对已有 task 发送跟进消息；用 TaskStop 请求中止。
                     SendMessage/TaskStop 在本 demo 中为内存占位，未接入真实 worker 总线，但请按正式协议填写 taskId。
                     向用户汇报时自行总结，不要捏造工具输出。
                     """;
@@ -335,7 +326,7 @@ public final class AgentPrompts {
     /** 注入到 {@code ClaudeSubagentType} 使用的 ChatClient.Builder，作为子 Agent 系统提示前缀（executor 仍会拼接子代理定义正文）。 */
     public static final String WORKER_SUBAGENT_SYSTEM =
             """
-                    你是子 Agent（Worker），由上层通过 Task 委派。使用当前会话提供的工具完成任务。
+                    你是子 Agent（Worker），由上层通过 spawn_subagent 委派。使用当前会话提供的工具完成任务。
                     本 demo 未向你暴露 Task / SendMessage / TaskStop；专注于执行与如实返回。
                     """ + "\n" + FILE_TOOLS_PARAM_RULES;
 

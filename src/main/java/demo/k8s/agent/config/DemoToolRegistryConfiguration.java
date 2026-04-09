@@ -2,7 +2,6 @@ package demo.k8s.agent.config;
 
 import demo.k8s.agent.contextobject.ContextObjectReadService;
 import demo.k8s.agent.tools.local.planning.SpawnSubagentTool;
-import demo.k8s.agent.tools.local.planning.TaskCreateMultiAgentRouter;
 import demo.k8s.agent.tools.UnifiedToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolRegistry;
@@ -240,8 +239,7 @@ public class DemoToolRegistryConfiguration {
     @Bean
     LocalToolExecutor localToolExecutor(
             ContextObjectReadService contextObjectReadService,
-            TaskCreateMultiAgentRouter taskCreateMultiAgentRouter,
             SpawnSubagentTool spawnSubagentTool) {
-        return new LocalToolExecutor(contextObjectReadService, taskCreateMultiAgentRouter, spawnSubagentTool);
+        return new LocalToolExecutor(contextObjectReadService, spawnSubagentTool);
     }
 }

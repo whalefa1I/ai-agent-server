@@ -19,10 +19,6 @@ import java.util.Set;
 /**
  * spawn_subagent 工具 - 直接派生子 Agent 执行任务。
  * <p>
- * 与 TaskCreate + useSubagent 的区别：
- * - TaskCreate + useSubagent：需要先创建 Task，再由路由决定走子 Agent
- * - spawn_subagent：直接派生子 Agent，不经过 Task 系统
- * <p>
  * 适用场景：
  * - 需要并行处理多个独立子任务（如"翻译到 5 种语言"、"处理 10 个文件"）
  * - 复杂任务可以拆解为多个并行分支

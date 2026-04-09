@@ -178,54 +178,6 @@ public class TaskTools {
             - Create tasks with clear, specific subjects that describe the outcome
             - After creating tasks, use TaskUpdate to set up dependencies (blocks/blockedBy) if needed
             - Check TaskList first to avoid creating duplicate tasks
-
-            ## Subagent Parallel Execution
-
-            The system supports spawning a subagent to handle tasks in parallel. This is useful when:
-            - You need to process multiple independent items (e.g., "Translate to 5 languages", "Process 10 files")
-            - The task can be split into parallel branches that do not depend on each other
-            - You want to leverage parallel execution for speed
-
-            **When to set `metadata.useSubagent=true`:**
-            - When the user asks to do the SAME type of work on MULTIPLE independent targets
-            - Examples:
-              - "Translate this text to Spanish, French, German, Japanese, and Korean" → Create ONE TaskCreate with `useSubagent=true`, description lists all 5 translations
-              - "Generate reports for each of the 10 sales regions" → Create ONE TaskCreate with `useSubagent=true`
-              - "Analyze these 5 datasets" → Create ONE TaskCreate with `useSubagent=true`
-
-            **When NOT to set `useSubagent`:**
-            - Simple sequential tasks (e.g., "Read this file, then edit it, then save")
-            - Tasks that must be done one after another due to dependencies
-            - When you want the main agent to handle the task directly
-
-            **Important distinction:**
-            - **Multiple TaskCreate calls** (e.g., 5 separate TaskCreate for 5 translations) → Each runs sequentially or in parallel by the main agent, but NO subagent is spawned
-            - **Single TaskCreate with `useSubagent=true`** → Spawns a subagent that internally handles all subtasks in parallel
-
-            If the user says "do X for each of these N items" where N > 2, prefer creating ONE TaskCreate with `metadata.useSubagent=true` and describe all N items in the `description`.
-
-            Example for parallel execution (CORRECT - single task with useSubagent):
-            ```json
-            {
-              "subject": "Translate product description to 5 languages",
-              "description": "Translate the following text to Spanish, Japanese, French, German, and Korean. Each translation should be saved to a separate file: [original text here]",
-              "activeForm": "Translating product description to 5 languages",
-              "metadata": {
-                "useSubagent": true,
-                "reason": "Multiple independent translations can be executed in parallel by a subagent"
-              }
-            }
-            ```
-
-            Example for sequential execution (NO subagent - multiple separate tasks):
-            ```json
-            {
-              "subject": "Step 1: Read configuration file",
-              "description": "Read the config.yaml file and understand its structure",
-              "activeForm": "Reading configuration file"
-            }
-            ```
-            Then later create TaskCreate for Step 2, Step 3, etc., without useSubagent.
             """;
 
     private static final String TASK_CREATE_INPUT_SCHEMA =
@@ -235,14 +187,7 @@ public class TaskTools {
             "    \"subject\": {\"type\": \"string\", \"description\": \"A brief title for the task\"}," +
             "    \"description\": {\"type\": \"string\", \"description\": \"What needs to be done\"}," +
             "    \"activeForm\": {\"type\": \"string\", \"description\": \"Present continuous form shown in spinner when in_progress\"}," +
-            "    \"metadata\": {" +
-            "      \"type\": \"object\"," +
-            "      \"properties\": {" +
-            "        \"useSubagent\": {\"type\": \"boolean\", \"description\": \"Set to true if this task requires parallel execution by a subagent (for complex multi-branch tasks). Default is false (executed by main agent).\"}," +
-            "        \"reason\": {\"type\": \"string\", \"description\": \"Optional reason explaining why useSubagent is needed\"}" +
-            "      }" +
-            "      , \"description\": \"Arbitrary metadata to attach to the task\"" +
-            "    }" +
+            "    \"metadata\": {\"type\": \"object\", \"description\": \"Arbitrary metadata to attach to the task\"}" +
             "  }," +
             "  \"required\": [\"subject\", \"description\"]" +
             "}";
@@ -258,33 +203,12 @@ public class TaskTools {
                 Optional parameters:
                 - activeForm: Present continuous form shown in spinner when task is in_progress (e.g., "Fixing authentication bug")
                 - metadata: Arbitrary metadata to attach to the task
-                  - useSubagent: Set to true if this task requires parallel execution by a subagent (for complex multi-branch tasks)
-                  - reason: Optional reason explaining why useSubagent is needed
-
-                **When to use useSubagent:**
-                - When the user asks to do the SAME type of work on MULTIPLE independent targets (e.g., "Translate to 5 languages", "Process 10 files")
-                - Create ONE TaskCreate with `useSubagent=true` and describe all subtasks in the description
-
-                **When NOT to use useSubagent:**
-                - Sequential tasks with dependencies (create multiple TaskCreate without useSubagent)
-                - Simple single tasks
 
                 Example (simple task, no subagent):
                 {
                   "subject": "Fix authentication bug in login flow",
                   "description": "Users are unable to log in due to a session validation error",
                   "activeForm": "Fixing authentication bug"
-                }
-
-                Example (complex task requiring parallel execution - useSubagent=true):
-                {
-                  "subject": "Translate product description to 5 languages",
-                  "description": "Translate to Spanish, Japanese, French, German, and Korean. Each translation saved to a separate file.",
-                  "activeForm": "Translating product description to 5 languages",
-                  "metadata": {
-                    "useSubagent": true,
-                    "reason": "Multiple independent translations can be executed in parallel"
-                  }
                 }
                 """;
 
@@ -382,47 +306,6 @@ public class TaskTools {
         // 其他类型，返回 null
         log.warn("Unexpected metadata type: {}", metadataObj.getClass().getName());
         return null;
-    }
-
-    /**
-     * Shadow 模式：禁止创建真实子任务（对齐 v1 不注入伪成功）。
-     */
-    public static LocalToolResult taskCreateShadowBlocked(Map<String, Object> input) {
-        return contractError(
-                "TaskCreate",
-                "TASK_CREATE_SHADOW_MODE",
-                "Multi-agent is in shadow mode: do not spawn subtasks. Answer from the current context only.",
-                input,
-                List.of("subject", "description"));
-    }
-
-    /**
-     * 将 subagent_run 终态镜像到 Task 列表，便于 TaskList 与 runId 对齐。
-     */
-    public static void mirrorSubagentRunCompleted(String runId, String subject, String description, String resultPreview) {
-        Task task = new Task(runId, subject, description);
-        task.status = TaskStatus.COMPLETED;
-        task.completedAt = System.currentTimeMillis();
-        task.metadata.put("subagentRun", true);
-        if (resultPreview != null && !resultPreview.isBlank()) {
-            String p = resultPreview.length() > 4000 ? resultPreview.substring(0, 4000) + "…" : resultPreview;
-            task.metadata.put("outputPreview", p);
-        }
-        tasks.put(runId, task);
-    }
-
-    public static LocalToolResult taskCreateSpawnRejected(Map<String, Object> input, String message) {
-        return contractError("TaskCreate", "TASK_CREATE_SPAWN_REJECTED",
-                message != null ? message : "spawn rejected", input, List.of("subject", "description"));
-    }
-
-    public static LocalToolResult taskCreateSuccessWithRunId(String runId, String subject) {
-        Map<String, Object> output = new LinkedHashMap<>();
-        Map<String, Object> taskInfo = new LinkedHashMap<>();
-        taskInfo.put("id", runId);
-        taskInfo.put("subject", subject);
-        output.put("task", taskInfo);
-        return contractSuccess("Subagent run completed: runId=" + runId + ", subject=" + subject, "TaskCreate", output);
     }
 
     public static LocalToolResult executeTaskCreate(Map<String, Object> input) {
@@ -533,6 +416,7 @@ public class TaskTools {
         try {
             String taskId = (String) input.get("taskId");
             if (taskId == null || taskId.isBlank()) return contractError("TaskGet", "TASK_ID_REQUIRED", "taskId is required", input, List.of("taskId"));
+            if (looksLikeSubagentRunId(taskId)) return invalidTaskIdForRun("TaskGet", taskId, input);
             Task task = tasks.get(taskId);
             if (task == null) return contractError("TaskGet", "TASK_NOT_FOUND", "Task not found", input, List.of("taskId"));
 
@@ -648,6 +532,7 @@ public class TaskTools {
         try {
             String taskId = (String) input.get("taskId");
             if (taskId == null || taskId.isBlank()) return contractError("TaskUpdate", "TASK_ID_REQUIRED", "taskId is required", input, List.of("taskId"));
+            if (looksLikeSubagentRunId(taskId)) return invalidTaskIdForRun("TaskUpdate", taskId, input);
             Task task = tasks.get(taskId);
             if (task == null) return contractError("TaskUpdate", "TASK_NOT_FOUND", "Task not found", input, List.of("taskId"));
 
@@ -795,6 +680,7 @@ public class TaskTools {
         try {
             String taskId = (String) input.get("taskId");
             if (taskId == null || taskId.isBlank()) return contractError("TaskStop", "TASK_ID_REQUIRED", "taskId is required", input, List.of("taskId"));
+            if (looksLikeSubagentRunId(taskId)) return invalidTaskIdForRun("TaskStop", taskId, input);
             Task task = tasks.get(taskId);
             if (task == null) return contractError("TaskStop", "TASK_NOT_FOUND", "Task not found", input, List.of("taskId"));
 
@@ -841,6 +727,7 @@ public class TaskTools {
         try {
             String taskId = (String) input.get("taskId");
             if (taskId == null || taskId.isBlank()) return contractError("TaskOutput", "TASK_ID_REQUIRED", "taskId is required", input, List.of("taskId"));
+            if (looksLikeSubagentRunId(taskId)) return invalidTaskIdForRun("TaskOutput", taskId, input);
             Task task = tasks.get(taskId);
             if (task == null) return contractError("TaskOutput", "TASK_NOT_FOUND", "Task not found", input, List.of("taskId"));
 
@@ -878,6 +765,19 @@ public class TaskTools {
             case "error": return TaskStatus.FAILED;
             default: return TaskStatus.PENDING;
         }
+    }
+
+    private static boolean looksLikeSubagentRunId(String id) {
+        return id != null && id.startsWith("run-");
+    }
+
+    private static LocalToolResult invalidTaskIdForRun(String toolName, String taskId, Map<String, Object> input) {
+        return contractError(
+                toolName,
+                "TASK_ID_INVALID_TYPE",
+                "taskId '" + taskId + "' appears to be a subagent runId. Task* tools require a TaskCreate id, not runId.",
+                input,
+                List.of("taskId"));
     }
 
 

@@ -2,12 +2,12 @@
 
 ## 1. 场景矩阵：工程保证 vs 模型自主
 
-| 场景 | 含义 | 谁决定 | 本仓库行为（v1） |
+| 场景 | 含义 | 谁决定 | 本仓库行为（当前） |
 |------|------|--------|------------------|
-| A | 仅主 Agent 使用 TaskCreate（内存或 Facade），**不派生子 Agent** | **模型** 是否调用 TaskCreate；**工程** `demo.multi-agent.mode=off` 时 TaskCreate 只走内存 `TaskTools`，绝不 spawn | `mode=off`：无 `SubagentRun`；`mode=on`：模型若调用 TaskCreate 则 `TaskCreateMultiAgentRouter` → `MultiAgentFacade` |
+| A | 仅主 Agent 使用 TaskCreate（任务追踪），**不派生子 Agent** | **模型** 是否调用 Task*；**工程** 约束 Task* 不触发 spawn | 无 `SubagentRun`；仅有 Task 记录变更 |
 | B | 主 Agent **不**建 Task，但对话里仍有「子任务」由**主 Agent自己用其它工具**完成 | **模型** | 无子 Agent；无 `SubagentRun` |
 | C | 主 Agent 触发 **子 Agent**（spawn），子 Worker **内不再暴露 Task\*** | **工程** 默认 | `WorkerAgentExecutor` 在 `demo.multi-agent.worker-expose-task-tools=false`（默认）时从 Worker 工具集**移除** `TaskCreate`/`TaskList`/…，避免「子内再嵌 Task」与主会话 Task 混淆 |
-| D | 主 Agent 不调用 TaskCreate，但通过 **其它路径** spawn（若未来暴露） | **工程** 门控 + **模型** goal | 当前对外主路径是 TaskCreate→Facade；`SpawnGatekeeper` 管深度/并发/白名单 |
+| D | 主 Agent 通过 `spawn_subagent` 直接委派 | **工程** 门控 + **模型** goal | 当前对外主路径是 `spawn_subagent`；`SpawnGatekeeper` 管深度/并发/白名单 |
 | E | 递归再 spawn 子子 Agent | **工程** | `max-spawn-depth`、`max-concurrent-spawns`；达到上限 **拒绝**（结构化 `MustDoNext`），不是纯模型自律 |
 
 **结论**：  
@@ -25,13 +25,13 @@
 | Worker 执行方式 | `executeWorker` **不再** `@Async`，与线程池线程同一链路传递 ThreadLocal，避免工具日志会话错乱 |
 
 建议在日志中检索：  
-`[LocalRuntime] Worker TraceContext`、`[TOOL CALLBACK]`、`[TaskCreateRouter]`、`[Facade]`、`[WorkerAgent] 已移除 * 个 Task* 工具`。
+`[LocalRuntime] Worker TraceContext`、`[TOOL CALLBACK]`、`spawn_subagent`、`[Facade]`、`[WorkerAgent] 已移除 * 个 Task* 工具`。
 
 ## 3. 接口完整性（无前端）
 
 | 能力 | 接口 |
 |------|------|
-| 主对话 + 工具（含 TaskCreate） | `POST /api/v2/chat`，body：`{ "sessionId", "message" }` |
+| 主对话 + 工具（含 `spawn_subagent` / `Task*`） | `POST /api/v2/chat`，body：`{ "sessionId", "message" }` |
 | 健康检查 | `GET /api/health` |
 | 子 run 状态（需会话与实现） | `MultiAgentFacade.getStatus` 走运行时；HTTP 若未单独暴露则以当前 `Ws`/内部 API 为准 |
 
@@ -44,4 +44,4 @@
 .\scripts\subagent-nl-smoke.ps1
 ```
 
-说明：是否出现「主 Agent 调 TaskCreate → spawn」仍依赖**模型**，工程侧保证一旦 spawn，上下文与 Worker 工具策略符合上表。
+说明：是否出现 `spawn_subagent` 取决于模型是否选择该工具；工程侧保证一旦 spawn，上下文与 Worker 工具策略符合上表。
