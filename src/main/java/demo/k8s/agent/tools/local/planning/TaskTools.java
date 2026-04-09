@@ -181,22 +181,51 @@ public class TaskTools {
 
             ## Subagent Parallel Execution
 
-            If the task requires parallel execution of multiple independent subtasks, set `metadata.useSubagent=true` to spawn a subagent.
-            This is suitable for complex tasks that can be split into parallel branches (e.g., "Process 5 files in parallel", "Run 3 independent analyses").
+            The system supports spawning a subagent to handle tasks in parallel. This is useful when:
+            - You need to process multiple independent items (e.g., "Translate to 5 languages", "Process 10 files")
+            - The task can be split into parallel branches that do not depend on each other
+            - You want to leverage parallel execution for speed
 
-            For simple sequential tasks, do NOT set `useSubagent` (or set it to `false`), as the task will be executed by the main agent directly.
+            **When to set `metadata.useSubagent=true`:**
+            - When the user asks to do the SAME type of work on MULTIPLE independent targets
+            - Examples:
+              - "Translate this text to Spanish, French, German, Japanese, and Korean" → Create ONE TaskCreate with `useSubagent=true`, description lists all 5 translations
+              - "Generate reports for each of the 10 sales regions" → Create ONE TaskCreate with `useSubagent=true`
+              - "Analyze these 5 datasets" → Create ONE TaskCreate with `useSubagent=true`
 
-            Example for parallel execution:
+            **When NOT to set `useSubagent`:**
+            - Simple sequential tasks (e.g., "Read this file, then edit it, then save")
+            - Tasks that must be done one after another due to dependencies
+            - When you want the main agent to handle the task directly
+
+            **Important distinction:**
+            - **Multiple TaskCreate calls** (e.g., 5 separate TaskCreate for 5 translations) → Each runs sequentially or in parallel by the main agent, but NO subagent is spawned
+            - **Single TaskCreate with `useSubagent=true`** → Spawns a subagent that internally handles all subtasks in parallel
+
+            If the user says "do X for each of these N items" where N > 2, prefer creating ONE TaskCreate with `metadata.useSubagent=true` and describe all N items in the `description`.
+
+            Example for parallel execution (CORRECT - single task with useSubagent):
             ```json
             {
-              "subject": "Process data files",
-              "description": "Process 5 CSV files in parallel and generate summary report",
+              "subject": "Translate product description to 5 languages",
+              "description": "Translate the following text to Spanish, Japanese, French, German, and Korean. Each translation should be saved to a separate file: [original text here]",
+              "activeForm": "Translating product description to 5 languages",
               "metadata": {
                 "useSubagent": true,
-                "reason": "Multiple independent subtasks can be executed in parallel"
+                "reason": "Multiple independent translations can be executed in parallel by a subagent"
               }
             }
             ```
+
+            Example for sequential execution (NO subagent - multiple separate tasks):
+            ```json
+            {
+              "subject": "Step 1: Read configuration file",
+              "description": "Read the config.yaml file and understand its structure",
+              "activeForm": "Reading configuration file"
+            }
+            ```
+            Then later create TaskCreate for Step 2, Step 3, etc., without useSubagent.
             """;
 
     private static final String TASK_CREATE_INPUT_SCHEMA =
@@ -232,6 +261,14 @@ public class TaskTools {
                   - useSubagent: Set to true if this task requires parallel execution by a subagent (for complex multi-branch tasks)
                   - reason: Optional reason explaining why useSubagent is needed
 
+                **When to use useSubagent:**
+                - When the user asks to do the SAME type of work on MULTIPLE independent targets (e.g., "Translate to 5 languages", "Process 10 files")
+                - Create ONE TaskCreate with `useSubagent=true` and describe all subtasks in the description
+
+                **When NOT to use useSubagent:**
+                - Sequential tasks with dependencies (create multiple TaskCreate without useSubagent)
+                - Simple single tasks
+
                 Example (simple task, no subagent):
                 {
                   "subject": "Fix authentication bug in login flow",
@@ -239,13 +276,14 @@ public class TaskTools {
                   "activeForm": "Fixing authentication bug"
                 }
 
-                Example (complex task requiring parallel execution):
+                Example (complex task requiring parallel execution - useSubagent=true):
                 {
-                  "subject": "Process 5 data files",
-                  "description": "Process each CSV file and generate summary report",
+                  "subject": "Translate product description to 5 languages",
+                  "description": "Translate to Spanish, Japanese, French, German, and Korean. Each translation saved to a separate file.",
+                  "activeForm": "Translating product description to 5 languages",
                   "metadata": {
                     "useSubagent": true,
-                    "reason": "Multiple independent files can be processed in parallel"
+                    "reason": "Multiple independent translations can be executed in parallel"
                   }
                 }
                 """;
