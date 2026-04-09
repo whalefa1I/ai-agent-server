@@ -17,8 +17,20 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * TaskCreate 路由：在 {@code demo.multi-agent} 开启且 {@code mode=on} 时走 {@link MultiAgentFacade}，
+ * TaskCreate 路由：在 {@code demo.multi-agent} 开启且 {@code mode=on} 时，
+ * 根据 metadata.useSubagent 字段决定是否派生子 Agent。
+ * <p>
  * 与内存 Task 列表通过 {@link TaskTools#mirrorSubagentRunCompleted} 对齐 runId。
+ *
+ * <h2>子 Agent 派生条件</h2>
+ * <p>
+ * 仅当同时满足以下条件时才派生子 Agent：
+ * <ol>
+ *   <li>{@code demo.multi-agent.enabled=true} 且 {@code mode=on}</li>
+ *   <li>{@code metadata.useSubagent=true}（由调用方/大模型判断是否需要并行执行）</li>
+ * </ol>
+ * <p>
+ * 若 {@code useSubagent} 为 {@code null} 或 {@code false}，则走传统单 Agent 路径。
  */
 @Component
 public class TaskCreateMultiAgentRouter {
@@ -41,13 +53,45 @@ public class TaskCreateMultiAgentRouter {
         this.subagentRunService = subagentRunService;
     }
 
+    /**
+     * 判断 Task 是否需要使用子 Agent 并行执行。
+     * <p>
+     * 由大模型在调用 TaskCreate 时根据任务复杂度决定：
+     * - 需要并行执行：返回 {@code true}，派生子 Agent
+     * - 简单任务/顺序执行：返回 {@code null} 或 {@code false}，走传统单 Agent 路径
+     *
+     * @param metadata TaskCreate 的 metadata 字段
+     * @return {@code true} 表示需要子 Agent，{@code false} 或 {@code null} 表示不需要
+     */
+    private Boolean shouldUseSubagent(Map<String, Object> metadata) {
+        if (metadata == null) {
+            return false;
+        }
+        Object value = metadata.get("useSubagent");
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        if (value instanceof String s) {
+            return Boolean.parseBoolean(s);
+        }
+        if (value instanceof Number n) {
+            return n.intValue() != 0;
+        }
+        return false;
+    }
+
     public LocalToolResult routeTaskCreate(Map<String, Object> input) {
         try {
+            // 1. 检查子 Agent 系统是否启用
             if (!multiAgentProperties.isEnabled()
                     || multiAgentProperties.getMode() == DemoMultiAgentProperties.Mode.off) {
+                log.debug("[TaskCreateRouter] Multi-agent disabled, using local execution");
                 return TaskTools.executeTaskCreate(input);
             }
+
+            // 2. Shadow 模式：只记录不执行
             if (multiAgentProperties.getMode() == DemoMultiAgentProperties.Mode.shadow) {
+                log.debug("[TaskCreateRouter] Shadow mode, blocking spawn");
                 return TaskTools.taskCreateShadowBlocked(input);
             }
 
@@ -57,6 +101,16 @@ public class TaskCreateMultiAgentRouter {
             }
             var p = (TaskCreateParseResult.Parsed) parsed;
 
+            // 3. 检查 metadata.useSubagent 字段（由大模型判断是否需要并行执行）
+            Boolean useSubagent = shouldUseSubagent(p.metadata());
+            if (!useSubagent) {
+                log.info("[TaskCreateRouter] useSubagent={}, using local execution for task: {}",
+                        useSubagent, p.subject());
+                return TaskTools.executeTaskCreate(input);
+            }
+
+            // 4. 大模型判断需要子 Agent 并行执行，开始派生
+            log.info("[TaskCreateRouter] useSubagent=true, spawning subagent for task: {}", p.subject());
             Set<String> allowed = spawnGatekeeper.globalSafeToolNames();
             SpawnResult spawnResult = multiAgentFacade.getObject().spawnTask(
                     p.subject(), p.description(), "general", 0, allowed);

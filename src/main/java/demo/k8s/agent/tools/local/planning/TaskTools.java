@@ -178,6 +178,25 @@ public class TaskTools {
             - Create tasks with clear, specific subjects that describe the outcome
             - After creating tasks, use TaskUpdate to set up dependencies (blocks/blockedBy) if needed
             - Check TaskList first to avoid creating duplicate tasks
+
+            ## Subagent Parallel Execution
+
+            If the task requires parallel execution of multiple independent subtasks, set `metadata.useSubagent=true` to spawn a subagent.
+            This is suitable for complex tasks that can be split into parallel branches (e.g., "Process 5 files in parallel", "Run 3 independent analyses").
+
+            For simple sequential tasks, do NOT set `useSubagent` (or set it to `false`), as the task will be executed by the main agent directly.
+
+            Example for parallel execution:
+            ```json
+            {
+              "subject": "Process data files",
+              "description": "Process 5 CSV files in parallel and generate summary report",
+              "metadata": {
+                "useSubagent": true,
+                "reason": "Multiple independent subtasks can be executed in parallel"
+              }
+            }
+            ```
             """;
 
     private static final String TASK_CREATE_INPUT_SCHEMA =
@@ -187,7 +206,14 @@ public class TaskTools {
             "    \"subject\": {\"type\": \"string\", \"description\": \"A brief title for the task\"}," +
             "    \"description\": {\"type\": \"string\", \"description\": \"What needs to be done\"}," +
             "    \"activeForm\": {\"type\": \"string\", \"description\": \"Present continuous form shown in spinner when in_progress\"}," +
-            "    \"metadata\": {\"type\": \"object\", \"description\": \"Arbitrary metadata to attach to the task\"}" +
+            "    \"metadata\": {" +
+            "      \"type\": \"object\"," +
+            "      \"properties\": {" +
+            "        \"useSubagent\": {\"type\": \"boolean\", \"description\": \"Set to true if this task requires parallel execution by a subagent (for complex multi-branch tasks). Default is false (executed by main agent).\"}," +
+            "        \"reason\": {\"type\": \"string\", \"description\": \"Optional reason explaining why useSubagent is needed\"}" +
+            "      }" +
+            "      , \"description\": \"Arbitrary metadata to attach to the task\"" +
+            "    }" +
             "  }," +
             "  \"required\": [\"subject\", \"description\"]" +
             "}";
@@ -203,12 +229,24 @@ public class TaskTools {
                 Optional parameters:
                 - activeForm: Present continuous form shown in spinner when task is in_progress (e.g., "Fixing authentication bug")
                 - metadata: Arbitrary metadata to attach to the task
+                  - useSubagent: Set to true if this task requires parallel execution by a subagent (for complex multi-branch tasks)
+                  - reason: Optional reason explaining why useSubagent is needed
 
-                Example:
+                Example (simple task, no subagent):
                 {
                   "subject": "Fix authentication bug in login flow",
                   "description": "Users are unable to log in due to a session validation error",
                   "activeForm": "Fixing authentication bug"
+                }
+
+                Example (complex task requiring parallel execution):
+                {
+                  "subject": "Process 5 data files",
+                  "description": "Process each CSV file and generate summary report",
+                  "metadata": {
+                    "useSubagent": true,
+                    "reason": "Multiple independent files can be processed in parallel"
+                  }
                 }
                 """;
 
