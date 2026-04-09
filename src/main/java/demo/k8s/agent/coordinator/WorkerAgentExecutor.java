@@ -155,9 +155,11 @@ public class WorkerAgentExecutor {
                             turnCount, newMessages.size(), summarizeStrings(newMessages, 2, 200));
                 }
 
-                // 如果没有新消息且队列为空，等待一会儿
-                if (newMessages.isEmpty() && messages.size() <= 2) {
-                    log.debug("[WorkerAgent][turn:{}] idle wait: no new messages and bootstrap messages only", turnCount);
+                // 仅在确实没有可供模型消费的上下文时才等待。
+                // 注意：初始阶段会有 system + "你的任务是..." 两条消息，此时应立即进入模型调用，
+                // 否则会出现子 agent 空转并触发 no_progress_exceeded。
+                if (newMessages.isEmpty() && messages.isEmpty()) {
+                    log.debug("[WorkerAgent][turn:{}] idle wait: no messages available", turnCount);
                     noProgressTurns++;
                     log.debug("[WorkerAgent][turn:{}] no progress detected: noProgressTurns={}",
                             turnCount, noProgressTurns);
@@ -399,9 +401,9 @@ public class WorkerAgentExecutor {
     private String buildWorkerSystemPrompt(String agentType, String goal) {
         String basePrompt = """
                 你是一个专业的 AI 助手 Worker，正在执行一项委派任务。
-                请专注于你的专长领域，高效完成任务。
-                如果有问题或需要更多信息，请向 Coordinator 请求。
-                完成后请输出最终结果。
+                请专注于你的专长领域，立即开始执行并高效完成任务。
+                默认你已拥有完成任务所需信息，不要等待外部消息或额外确认。
+                若无法继续，请明确说明阻塞原因并给出可执行的下一步；否则直接输出最终结果。
                 """;
 
         String rolePrompt = switch (agentType) {
