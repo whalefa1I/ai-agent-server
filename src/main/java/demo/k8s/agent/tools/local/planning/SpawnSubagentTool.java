@@ -126,16 +126,23 @@ public class SpawnSubagentTool {
             "}";
 
     /**
+     * 创建 spawn_subagent 工具（供 LocalToolRegistry 使用）
+     */
+    public static demo.k8s.agent.toolsystem.ClaudeLikeTool createTool() {
+        return createSpawnSubagentToolSpec();
+    }
+
+    /**
      * 创建 spawn_subagent 工具
      */
-    public demo.k8s.agent.toolsystem.ClaudeLikeTool createSpawnSubagentTool() {
+    public static demo.k8s.agent.toolsystem.ClaudeLikeTool createSpawnSubagentTool() {
         return createSpawnSubagentToolSpec();
     }
 
     /**
      * 创建 spawn_subagent 工具规格（供配置类使用）
      */
-    public demo.k8s.agent.toolsystem.ClaudeLikeTool createSpawnSubagentToolSpec() {
+    public static demo.k8s.agent.toolsystem.ClaudeLikeTool createSpawnSubagentToolSpec() {
         String detailedDescription = """
                 Spawn a subagent to handle complex or parallelizable tasks.
 

@@ -78,7 +78,7 @@ public class DemoToolRegistryConfiguration {
         full.register(new ToolModule(createTaskOutputToolSpec(), createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "TaskOutput")));
         // spawn_subagent 工具（直接派生子 Agent）
         full.register(new ToolModule(
-                spawnSubagentTool.createSpawnSubagentToolSpec(),
+                SpawnSubagentTool.createSpawnSubagentToolSpec(),
                 createToolCallback(unifiedToolExecutor, permissionManager, toolPermissionContext, "spawn_subagent")));
 
         return full;
