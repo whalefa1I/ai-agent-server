@@ -109,7 +109,7 @@ public class WorkerAgentExecutor {
         messages.add(new UserMessage("你的任务是：" + task.goal()));
 
         int turnCount = 0;
-        int maxTurns = 20; // Worker 最大轮次
+        int maxTurns = multiAgentProperties.getWorkerMaxTurns();
         Instant startedAt = Instant.now();
 
         try {

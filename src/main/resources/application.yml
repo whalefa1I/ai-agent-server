@@ -114,6 +114,8 @@ demo:
     default-tenant-id: ${DEMO_MULTI_AGENT_DEFAULT_TENANT_ID:default}
     # 子 Agent Worker 是否注册 TaskCreate/TaskList 等；默认 false，避免子内再嵌 Task
     worker-expose-task-tools: ${DEMO_MULTI_AGENT_WORKER_TASK_TOOLS:false}
+    # Worker 最大轮次（默认 20，复杂任务可调高）
+    worker-max-turns: ${DEMO_MULTI_AGENT_WORKER_MAX_TURNS:50}
   tools:
     # default | read_only | bypass — 与 ToolPermissionContext 对齐；read_only 时仅保留只读类工具（如 Skill）
     permission-mode: ${DEMO_TOOLS_PERMISSION_MODE:bypass}

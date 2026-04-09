@@ -51,6 +51,11 @@ public class DemoMultiAgentProperties {
      */
     private boolean workerExposeTaskTools = false;
 
+    /**
+     * Worker 最大轮次（默认 50，复杂任务可调高）。
+     */
+    private int workerMaxTurns = 50;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -105,6 +110,14 @@ public class DemoMultiAgentProperties {
 
     public void setWorkerExposeTaskTools(boolean workerExposeTaskTools) {
         this.workerExposeTaskTools = workerExposeTaskTools;
+    }
+
+    public int getWorkerMaxTurns() {
+        return workerMaxTurns;
+    }
+
+    public void setWorkerMaxTurns(int workerMaxTurns) {
+        this.workerMaxTurns = workerMaxTurns;
     }
 
     public enum Mode {
