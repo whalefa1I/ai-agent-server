@@ -303,9 +303,47 @@ public class TaskTools {
         }
 
         String activeForm = (String) input.get("activeForm");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> metadata = (Map<String, Object>) input.get("metadata");
+        Map<String, Object> metadata = parseMetadata(input.get("metadata"));
         return new TaskCreateParseResult.Parsed(subject, description, activeForm, metadata);
+    }
+
+    /**
+     * 解析 metadata 字段，支持 String 和 Map 两种格式（向后兼容）。
+     * <p>
+     * LLM 有时会将 metadata 作为 JSON 字符串发送而不是 Map 对象，此方法负责统一转换。
+     *
+     * @param metadataObj metadata 字段，可能是 String、Map 或 null
+     * @return 解析后的 Map，如果为 null 或解析失败则返回空 Map
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseMetadata(Object metadataObj) {
+        if (metadataObj == null) {
+            return null;
+        }
+        if (metadataObj instanceof Map<?, ?> map) {
+            // 已经是 Map 类型，直接转换
+            return (Map<String, Object>) map;
+        }
+        if (metadataObj instanceof String str) {
+            // LLM 将 metadata 作为 JSON 字符串发送，尝试解析
+            try {
+                if (str.isBlank()) {
+                    return null;
+                }
+                // 去除首尾空格和可能的引号
+                str = str.trim();
+                if (str.startsWith("\"") && str.endsWith("\"")) {
+                    str = str.substring(1, str.length() - 1);
+                }
+                return MAPPER.readValue(str, Map.class);
+            } catch (Exception e) {
+                log.warn("Failed to parse metadata string as JSON, treating as empty: {}", str, e);
+                return null;
+            }
+        }
+        // 其他类型，返回 null
+        log.warn("Unexpected metadata type: {}", metadataObj.getClass().getName());
+        return null;
     }
 
     /**
