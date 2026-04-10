@@ -17,6 +17,7 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -44,7 +45,7 @@ public class WorkerAgentExecutor {
 
     private final ChatModel chatModel;
     private final ToolCallingManager toolCallingManager;
-    private final ToolRegistry toolRegistry;
+    private final ObjectProvider<ToolRegistry> toolRegistryProvider;
     private final ToolPermissionContext toolPermissionContext;
     private final ToolFeatureFlags toolFeatureFlags;
     private final McpToolProvider mcpToolProvider;
@@ -55,7 +56,7 @@ public class WorkerAgentExecutor {
     public WorkerAgentExecutor(
             ChatModel chatModel,
             ToolCallingManager toolCallingManager,
-            ToolRegistry toolRegistry,
+            ObjectProvider<ToolRegistry> toolRegistryProvider,
             ToolPermissionContext toolPermissionContext,
             ToolFeatureFlags toolFeatureFlags,
             McpToolProvider mcpToolProvider,
@@ -64,7 +65,7 @@ public class WorkerAgentExecutor {
             DemoMultiAgentProperties multiAgentProperties) {
         this.chatModel = chatModel;
         this.toolCallingManager = toolCallingManager;
-        this.toolRegistry = toolRegistry;
+        this.toolRegistryProvider = toolRegistryProvider;
         this.toolPermissionContext = toolPermissionContext;
         this.toolFeatureFlags = toolFeatureFlags;
         this.mcpToolProvider = mcpToolProvider;
@@ -307,6 +308,11 @@ public class WorkerAgentExecutor {
      * 根据 Agent 类型选择工具集
      */
     private List<ToolCallback> selectToolsForAgent(String agentType) {
+        ToolRegistry toolRegistry = toolRegistryProvider.getIfAvailable();
+        if (toolRegistry == null) {
+            log.warn("[WorkerAgent] ToolRegistry unavailable, returning empty toolset for agentType={}", agentType);
+            return List.of();
+        }
         List<ToolCallback> allTools =
                 toolRegistry.filteredCallbacks(
                         toolPermissionContext, toolFeatureFlags, mcpToolProvider.loadMcpTools());
