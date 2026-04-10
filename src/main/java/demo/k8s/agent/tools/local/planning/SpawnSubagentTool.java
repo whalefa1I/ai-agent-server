@@ -105,13 +105,32 @@ public class SpawnSubagentTool {
               - "explore": Code explorer for reading/searching code
               - "edit": Code editor for file modifications
               - "plan": Planning specialist for complex task breakdown
-            - **batchTasks** (RECOMMENDED for multi-task): Array of tasks for parallel Map-Reduce spawning. When provided, all tasks are spawned together and results are automatically aggregated as a system message.
+            - **batchTasks** (MANDATORY for 3+ tasks): REQUIRED when you have 3 or more independent tasks to run in parallel.
+              - This enables true parallel execution with aggregated progress tracking
               - Each item: {"goal": "task description", "agentType": "worker" (optional), "taskName": "name" (optional)}
-              - Use batchTasks when you have 3+ independent tasks - this is MORE EFFICIENT than multiple single spawns
+              - ⚠️ CRITICAL: You MUST use batchTasks instead of multiple single spawns for 3+ tasks
+              - Multiple single spawns will NOT show proper progress and are less efficient
 
             ## Example Usage
 
-            Single spawn (for 1-2 simple tasks):
+            ❌ WRONG (NEVER do this for multi-task):
+            Calling spawn_subagent 5 separate times for 5 translations - this breaks progress tracking and is inefficient.
+
+            ✅ CORRECT (MANDATORY for 3+ tasks):
+            Single call with batchTasks containing all tasks:
+            ```json
+            {
+              "batchTasks": [
+                {"goal": "Translate the following text to Spanish: [full original text here]", "agentType": "worker", "taskName": "Spanish translation"},
+                {"goal": "Translate the following text to French: [full original text here]", "agentType": "worker", "taskName": "French translation"},
+                {"goal": "Translate the following text to German: [full original text here]", "agentType": "worker", "taskName": "German translation"},
+                {"goal": "Translate the following text to Japanese: [full original text here]", "agentType": "worker", "taskName": "Japanese translation"},
+                {"goal": "Translate the following text to Korean: [full original text here]", "agentType": "worker", "taskName": "Korean translation"}
+              ]
+            }
+            ```
+
+            ✅ Single spawn (only for 1-2 simple tasks):
             ```json
             {
               "goal": "Translate the following text to Spanish: [original text here]",
@@ -119,18 +138,11 @@ public class SpawnSubagentTool {
             }
             ```
 
-            Batch spawn (RECOMMENDED for 3+ parallel tasks):
-            ```json
-            {
-              "batchTasks": [
-                {"goal": "Translate document to Spanish", "agentType": "worker"},
-                {"goal": "Translate document to French", "agentType": "worker"},
-                {"goal": "Translate document to German", "agentType": "worker"},
-                {"goal": "Translate document to Japanese", "agentType": "worker"},
-                {"goal": "Translate document to Korean", "agentType": "worker"}
-              ]
-            }
-            ```
+            ### ⚠️ ENFORCEMENT RULE
+            If the user asks for "Translate to 5 languages" or any task with 3+ parallel items:
+            - You MUST use ONE spawn_subagent call with batchTasks array
+            - You MUST NOT use multiple separate spawn_subagent calls
+            - Violating this rule will result in broken progress display and poor user experience
 
             After batch spawn, wait for the system message "=== SUBAGENT BATCH COMPLETED ===" before giving your consolidated response.
             """;
