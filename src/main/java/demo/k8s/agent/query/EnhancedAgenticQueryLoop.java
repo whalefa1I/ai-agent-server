@@ -186,14 +186,16 @@ public class EnhancedAgenticQueryLoop {
      * 运行 agentic 回合（带回调支持）
      *
      * @param userMessage 用户输入
-     * @param onToolCall 工具调用回调（工具名，输入）
+     * @param onToolCall 工具调用开始回调（toolCallId, input）
      * @param onTextDelta 文本增量回调（delta 文本）
      */
     public AgenticTurnResult runWithCallbacks(
             String userMessage,
             java.util.function.BiConsumer<String, JsonNode> onToolCall,
             java.util.function.Consumer<String> onTextDelta) {
-        return runWithCallbacks(userMessage, onToolCall, onTextDelta, null, null, null);
+        return runWithCallbacks(userMessage,
+            onToolCall != null ? (id, name, input) -> onToolCall.accept(id, input) : null,
+            onTextDelta, null, null, null, null);
     }
 
     /**
@@ -204,7 +206,9 @@ public class EnhancedAgenticQueryLoop {
             java.util.function.BiConsumer<String, JsonNode> onToolCall,
             java.util.function.Consumer<String> onTextDelta,
             java.util.function.Consumer<String> onReasoningDelta) {
-        return runWithCallbacks(userMessage, onToolCall, onTextDelta, onReasoningDelta, null, null);
+        return runWithCallbacks(userMessage,
+            onToolCall != null ? (id, name, input) -> onToolCall.accept(id, input) : null,
+            onTextDelta, onReasoningDelta, null, null, null);
     }
 
     /**
@@ -217,6 +221,52 @@ public class EnhancedAgenticQueryLoop {
             java.util.function.Consumer<String> onReasoningDelta,
             java.util.function.Consumer<String> onIntermediateAssistantText,
             java.util.function.Consumer<LoopStateEvent> onStateTransition) {
+        return runWithCallbacks(userMessage,
+            onToolCall != null ? (id, name, input) -> onToolCall.accept(id, input) : null,
+            onTextDelta, onReasoningDelta, onIntermediateAssistantText, onStateTransition, null);
+    }
+
+    /**
+     * 运行 agentic 回合（带回调支持，含 reasoning 与中间 assistant 文本，以及工具执行完成回调）
+     *
+     * @param userMessage 用户输入
+     * @param onToolCall 工具调用开始回调（toolCallId, toolName, input）
+     * @param onTextDelta 文本增量回调（delta 文本）
+     * @param onReasoningDelta reasoning/thinking 增量回调
+     * @param onIntermediateAssistantText 中间 assistant 文本回调（工具执行前的说明）
+     * @param onStateTransition 状态变迁回调
+     * @param onToolResult 工具执行完成回调（toolCallId, toolName, result）
+     */
+    public AgenticTurnResult runWithCallbacks(
+            String userMessage,
+            java.util.function.BiConsumer<String, JsonNode> onToolCall,
+            java.util.function.Consumer<String> onTextDelta,
+            java.util.function.Consumer<String> onReasoningDelta,
+            java.util.function.Consumer<String> onIntermediateAssistantText,
+            java.util.function.Consumer<LoopStateEvent> onStateTransition,
+            java.util.function.BiConsumer<String, LocalToolResult> onToolResult) {
+        return runWithCallbacks(userMessage, onToolCall, onTextDelta, onReasoningDelta, onIntermediateAssistantText, onStateTransition, onToolResult, null);
+    }
+
+    /**
+     * 运行 agentic 回合（带回调支持，含 reasoning 与中间 assistant 文本，以及工具执行完成回调）
+     *
+     * @param userMessage 用户输入
+     * @param onToolCall 工具调用开始回调（toolCallId, toolName, input）
+     * @param onTextDelta 文本增量回调（delta 文本）
+     * @param onReasoningDelta reasoning/thinking 增量回调
+     * @param onIntermediateAssistantText 中间 assistant 文本回调（工具执行前的说明）
+     * @param onStateTransition 状态变迁回调
+     * @param onToolResult 工具执行完成回调（toolCallId, toolName, result）
+     */
+    public AgenticTurnResult runWithCallbacks(
+            String userMessage,
+            java.util.function.BiConsumer<String, String, JsonNode> onToolCall,
+            java.util.function.Consumer<String> onTextDelta,
+            java.util.function.Consumer<String> onReasoningDelta,
+            java.util.function.Consumer<String> onIntermediateAssistantText,
+            java.util.function.Consumer<LoopStateEvent> onStateTransition,
+            java.util.function.BiConsumer<String, String, LocalToolResult> onToolResult) {
 
         log.info("开始 agentic query loop: userMessage={}", truncate(userMessage, 100));
 
@@ -224,6 +274,9 @@ public class EnhancedAgenticQueryLoop {
         String sessionId = TraceContext.getSessionId() != null ? TraceContext.getSessionId() : "";
         String userId = TraceContext.getUserId() != null ? TraceContext.getUserId() : "";
         StructuredLogger.logUserInput(sessionId, userId, userMessage);
+
+        // Token 计数累加器（累积所有模型调用的 token）
+        TokenCounts totalTokenCounts = TokenCounts.ZERO;
 
         // 准备工具列表
         List<ToolCallback> tools =
@@ -302,7 +355,7 @@ public class EnhancedAgenticQueryLoop {
             // 检查最大轮次
             if (state.turnCount() >= queryProperties.getMaxTurns()) {
                 log.warn("达到最大轮次限制：{}", state.turnCount());
-                return new AgenticTurnResult(LoopTerminalReason.MAX_TURNS, "", state);
+                return new AgenticTurnResult(LoopTerminalReason.MAX_TURNS, "", state, totalTokenCounts);
             }
 
             // 更新轮次状态
@@ -387,6 +440,8 @@ public class EnhancedAgenticQueryLoop {
 
                     // 提取 Token 计数
                     TokenCounts counts = extractTokenCounts(resp);
+                    // 累加 Token 计数
+                    totalTokenCounts = totalTokenCounts.add(counts);
                     sessionStats.completeModelCall(modelCallMetrics, counts);
 
                     // 记录模型调用（结构化日志和事件）
@@ -412,7 +467,7 @@ public class EnhancedAgenticQueryLoop {
                 eventBus.publish(new ErrorEvent(sessionId, userId, "MODEL_ERROR",
                     e.getMessage(), e.getStackTrace() != null ? e.getStackTrace()[0].toString() : ""));
 
-                return new AgenticTurnResult(LoopTerminalReason.ERROR, "模型调用失败：" + e.getMessage(), state);
+                return new AgenticTurnResult(LoopTerminalReason.ERROR, "模型调用失败：" + e.getMessage(), state, totalTokenCounts);
             }
 
             // 检查是否有工具调用
@@ -453,20 +508,21 @@ public class EnhancedAgenticQueryLoop {
                     streamText(responseText, onTextDelta);
                 }
 
-                return new AgenticTurnResult(LoopTerminalReason.COMPLETED, responseText, state);
+                return new AgenticTurnResult(LoopTerminalReason.COMPLETED, responseText, state, totalTokenCounts);
             }
 
             // 处理工具调用（带权限检查）
             List<ExecutedToolCall> executedToolCalls;
             try {
                 log.info("开始执行工具调用检查，工具数量：{}", response.getResult().getOutput().getToolCalls() != null ? response.getResult().getOutput().getToolCalls().size() : 0);
-                executedToolCalls = executeToolsWithPermissionCheck(response, prompt, options, onToolCall);
+                executedToolCalls = executeToolsWithPermissionCheck(response, prompt, options, onToolCall, onToolResult);
             } catch (PermissionDeniedException e) {
                 log.warn("工具调用被拒绝：{}", e.getMessage());
                 return new AgenticTurnResult(
                         LoopTerminalReason.COMPLETED,
                         "工具调用被用户拒绝：" + e.getToolName(),
-                        state);
+                        state,
+                        totalTokenCounts);
             }
 
             // 显式回写本轮 assistant(toolCalls) + tool_response，进入下一轮
@@ -509,7 +565,8 @@ public class EnhancedAgenticQueryLoop {
             ChatResponse response,
             Prompt prompt,
             ToolCallingChatOptions options,
-            java.util.function.BiConsumer<String, JsonNode> onToolCall) {
+            java.util.function.BiConsumer<String, String, JsonNode> onToolCall,
+            java.util.function.BiConsumer<String, String, LocalToolResult> onToolResult) {
 
         AssistantMessage output = response.getResult().getOutput();
         List<AssistantMessage.ToolCall> toolCalls = output.getToolCalls();
@@ -531,7 +588,7 @@ public class EnhancedAgenticQueryLoop {
         }
 
         // 使用并行执行器执行所有工具
-        return executeToolsInParallel(toolCalls, onToolCall);
+        return executeToolsInParallel(toolCalls, onToolCall, onToolResult);
     }
 
     /**
@@ -543,12 +600,14 @@ public class EnhancedAgenticQueryLoop {
      * - Bash 工具错误会级联取消兄弟工具
      *
      * @param toolCalls 工具调用列表
-     * @param onToolCall 工具调用通知回调
+     * @param onToolCall 工具调用通知回调（toolCallId, toolName, input）
+     * @param onToolResult 工具执行完成回调（toolCallId, toolName, result）
      * @return 执行后的工具调用结果
      */
     private List<ExecutedToolCall> executeToolsInParallel(
             List<AssistantMessage.ToolCall> toolCalls,
-            java.util.function.BiConsumer<String, JsonNode> onToolCall) {
+            java.util.function.BiConsumer<String, String, JsonNode> onToolCall,
+            java.util.function.BiConsumer<String, String, LocalToolResult> onToolResult) {
 
         String sessionId = TraceContext.getSessionId();
         String userId = TraceContext.getUserId();
@@ -558,7 +617,11 @@ public class EnhancedAgenticQueryLoop {
         List<PreparedToolCall> preparedCalls = new ArrayList<>();
 
         for (AssistantMessage.ToolCall tc : toolCalls) {
-            PreparedToolCall prepared = prepareToolCall(tc, onToolCall, sessionId, userId);
+            // 包装 onToolCall 回调，传递工具调用 ID 和工具名称
+            java.util.function.BiConsumer<String, String, JsonNode> wrappedOnToolCall = onToolCall != null
+                ? (toolCallId, toolName, input) -> onToolCall.accept(tc.id(), tc.name(), input)
+                : null;
+            PreparedToolCall prepared = prepareToolCall(tc, wrappedOnToolCall, sessionId, userId);
             if (prepared != null) {
                 preparedCalls.add(prepared);
             }
@@ -584,13 +647,31 @@ public class EnhancedAgenticQueryLoop {
         List<StreamingToolExecutor.ToolResultWithId> toolResults =
                 streamingToolExecutor.getAllResults();
 
-        // 4. 处理结果
+        // 4. 处理结果（包装 onToolResult 回调，传递工具调用 ID 和工具名称）
+        // 需要从 preparedCalls 中获取工具名称和 artifactId
+        Map<String, String> toolIdToName = new HashMap<>();
+        Map<String, String> toolIdToArtifactId = new HashMap<>();
+        for (PreparedToolCall prepared : preparedCalls) {
+            toolIdToName.put(prepared.toolCall.id(), prepared.toolCall.name());
+            if (prepared.artifactId != null) {
+                toolIdToArtifactId.put(prepared.toolCall.id(), prepared.artifactId);
+            }
+        }
+
         for (StreamingToolExecutor.ToolResultWithId toolResult : toolResults) {
+            String toolName = toolIdToName.getOrDefault(toolResult.toolUseId, "unknown");
+            String artifactId = toolIdToArtifactId.get(toolResult.toolUseId);
+            java.util.function.BiConsumer<String, String, LocalToolResult> wrappedOnToolResult = onToolResult != null
+                ? (tId, tName, result) -> onToolResult.accept(toolResult.toolUseId, toolName, result)
+                : null;
             ExecutedToolCall executed = processToolResult(
                     toolResult.toolUseId,
+                    toolName,
+                    artifactId,
                     toolResult.result,
                     sessionId,
-                    userId
+                    userId,
+                    wrappedOnToolResult
             );
             if (executed != null) {
                 results.add(executed);
@@ -605,7 +686,7 @@ public class EnhancedAgenticQueryLoop {
      */
     private PreparedToolCall prepareToolCall(
             AssistantMessage.ToolCall tc,
-            java.util.function.BiConsumer<String, JsonNode> onToolCall,
+            java.util.function.BiConsumer<String, String, JsonNode> onToolCall,
             String sessionId,
             String userId) {
 
@@ -619,9 +700,9 @@ public class EnhancedAgenticQueryLoop {
         // 解析输入 JSON
         JsonNode input = parseInput(tc.arguments());
 
-        // 通知工具调用开始
+        // 通知工具调用开始（传递 toolCallId 和 toolName）
         if (onToolCall != null) {
-            onToolCall.accept(tc.name(), input);
+            onToolCall.accept(tc.id(), tc.name(), input);
         }
 
         // 创建 ToolArtifact
@@ -672,9 +753,12 @@ public class EnhancedAgenticQueryLoop {
      */
     private ExecutedToolCall processToolResult(
             String toolUseId,
+            String toolName,
+            String artifactId,
             LocalToolResult result,
             String sessionId,
-            String userId) {
+            String userId,
+            java.util.function.BiConsumer<String, String, LocalToolResult> onToolResult) {
 
         String toolOutput;
         boolean success = result.isSuccess();
@@ -712,17 +796,58 @@ public class EnhancedAgenticQueryLoop {
 
         // 记录工具调用日志
         long toolLatencyMs = result.getDurationMs();
-        StructuredLogger.logToolCall(sessionId, userId, "unknown",
+        StructuredLogger.logToolCall(sessionId, userId, toolName,
                 "{}", toolOutput, toolLatencyMs, success);
 
-        eventBus.publish(new ToolCalledEvent(sessionId, userId, "unknown",
+        eventBus.publish(new ToolCalledEvent(sessionId, userId, toolName,
                 "{}", toolOutput, toolLatencyMs, success));
+
+        // 更新 ToolArtifact 为 COMPLETED 或 FAILED
+        if (toolStateService != null && artifactId != null) {
+            try {
+                Map<String, Object> resultBody = new HashMap<>();
+                resultBody.put("output", toolOutput);
+                resultBody.put("progress", success ? "已完成" : "执行失败");
+                resultBody.put("durationMs", result.getDurationMs());
+                enrichToolArtifactBodyFromToolOutputJson(resultBody, toolOutput);
+
+                ToolStatus status = success ? ToolStatus.COMPLETED : ToolStatus.FAILED;
+                toolStateService.updateToolArtifact(
+                    artifactId, userId, status, resultBody, 2, currentWebSocketSession);
+
+                log.info("更新 ToolArtifact：artifactId={}, status={}", artifactId, status);
+            } catch (Exception e) {
+                log.warn("更新 ToolArtifact 失败：{}", e.getMessage());
+            }
+        }
+
+        // 调用工具完成回调（通知前端工具执行完成）
+        if (onToolResult != null) {
+            try {
+                onToolResult.accept(toolUseId, toolName, result);
+            } catch (Exception e) {
+                log.warn("onToolResult 回调执行失败：{}", e.getMessage());
+            }
+        }
 
         // 构造返回结果
         AssistantMessage.ToolCall resultCall = new AssistantMessage.ToolCall(
-                toolUseId, "unknown", "{}", toolOutput);
+                toolUseId, toolName, "{}", toolOutput);
 
         return new ExecutedToolCall(resultCall, toolOutput);
+    }
+
+    /**
+     * 从工具调用 ID 中提取工具名称
+     * 格式：toolName_randomId（如：bash_tc_123456）
+     * @deprecated 已废弃，直接使用 toolName 参数
+     */
+    @Deprecated
+    private String extractToolNameFromId(String toolUseId) {
+        if (toolUseId == null || toolUseId.isEmpty()) {
+            return "unknown";
+        }
+        return "unknown";
     }
 
     private void updateToolArtifactFailed(ToolStateService service, String artifactId,

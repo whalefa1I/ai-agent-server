@@ -264,10 +264,12 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             // 执行 enhanced query loop（带权限检查和回调）
             AgenticTurnResult result = queryLoop.runWithCallbacks(
                     userMsg.content,
-                    // 工具调用回调
-                    (toolName, input) -> {
+                    // 工具调用回调（工具开始执行）
+                    (toolCallId, toolName, input) -> {
                         try {
-                            ToolCallMessage toolMsg = new ToolCallMessage(toolName, null, "started");
+                            ToolCallMessage toolMsg = ToolCallMessage.create(toolName, "started");
+                            toolMsg.toolCallId = toolCallId;
+                            toolMsg.input = input != null ? objectMapper.convertValue(input, Map.class) : null;
                             sendMessage(ctx.session, toolMsg);
                         } catch (Exception e) {
                             log.error("发送工具调用通知失败", e);
@@ -283,6 +285,38 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                                 log.error("发送文本增量失败", e);
                             }
                         }
+                    },
+                    // reasoning/thinking 增量回调
+                    null,
+                    // 中间 assistant 文本回调
+                    null,
+                    // 状态变迁回调
+                    null,
+                    // 工具执行完成回调
+                    (toolCallId, toolName, toolResult) -> {
+                        try {
+                            // 提取工具输出内容
+                            String output = toolResult.getContent();
+                            String error = toolResult.isSuccess() ? null : toolResult.getError();
+                            Long durationMs = toolResult.getDurationMs();
+
+                            ToolCallMessage toolMsg = ToolCallMessage.create(toolName, toolResult.isSuccess() ? "completed" : "failed");
+                            toolMsg.toolCallId = toolCallId;
+                            toolMsg.output = output;
+                            toolMsg.error = error;
+                            toolMsg.durationMs = durationMs;
+
+                            // 设置输出类型（简单判断）
+                            if (output != null && output.trim().startsWith("{")) {
+                                toolMsg.outputType = "json";
+                            } else {
+                                toolMsg.outputType = "text";
+                            }
+
+                            sendMessage(ctx.session, toolMsg);
+                        } catch (Exception e) {
+                            log.error("发送工具完成通知失败", e);
+                        }
                     }
             );
 
@@ -292,8 +326,11 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                 // 如果已经通过回调发送了增量，这里只需要发送完成消息
                 // 否则发送完整响应
                 long durationMs = java.time.Duration.between(startTime, Instant.now()).toMillis();
+                // 从 result 中提取 token 计数
+                long inputTokens = result.tokenCounts() != null ? result.tokenCounts().inputTokens() : 0;
+                long outputTokens = result.tokenCounts() != null ? result.tokenCounts().outputTokens() : 0;
                 ResponseCompleteMessage complete = new ResponseCompleteMessage(
-                        result.replyText(), 0, 0, durationMs, toolCallCount);
+                        result.replyText(), inputTokens, outputTokens, durationMs, toolCallCount);
                 sendMessage(ctx.session, complete);
             } else {
                 ErrorMessage error = new ErrorMessage(
@@ -313,6 +350,17 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             ErrorMessage error = new ErrorMessage("QUERY_ERROR", e.getMessage());
             sendMessage(ctx.session, error);
         }
+    }
+
+    /**
+     * 从工具调用 ID 中提取工具名称
+     * 注意：当前 toolCallId 直接使用 Spring AI 生成的 UUID，无法提取工具名称
+     * 这里返回一个默认值，前端可以通过 toolCallId 关联状态更新
+     */
+    private String extractToolNameFromId(String toolCallId) {
+        // 由于现在传递的是纯 UUID，无法提取工具名称
+        // 返回一个通用的名称，前端主要通过 toolCallId 来关联
+        return "tool";
     }
 
     /**
