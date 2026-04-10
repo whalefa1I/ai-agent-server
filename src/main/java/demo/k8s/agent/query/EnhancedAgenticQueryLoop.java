@@ -236,14 +236,15 @@ public class EnhancedAgenticQueryLoop {
 
     /**
      * 运行 agentic 回合（带回调支持，含 reasoning 与中间 assistant 文本，以及工具执行完成回调）
+     * 使用 BiConsumer 适配旧代码（不传递 toolName）
      *
      * @param userMessage 用户输入
-     * @param onToolCall 工具调用开始回调（toolCallId, toolName, input）
+     * @param onToolCall 工具调用开始回调（toolCallId, input）
      * @param onTextDelta 文本增量回调（delta 文本）
      * @param onReasoningDelta reasoning/thinking 增量回调
      * @param onIntermediateAssistantText 中间 assistant 文本回调（工具执行前的说明）
      * @param onStateTransition 状态变迁回调
-     * @param onToolResult 工具执行完成回调（toolCallId, toolName, result）
+     * @param onToolResult 工具执行完成回调（toolCallId, result）
      */
     public AgenticTurnResult runWithCallbacks(
             String userMessage,
@@ -253,7 +254,10 @@ public class EnhancedAgenticQueryLoop {
             java.util.function.Consumer<String> onIntermediateAssistantText,
             java.util.function.Consumer<LoopStateEvent> onStateTransition,
             java.util.function.BiConsumer<String, LocalToolResult> onToolResult) {
-        return runWithCallbacks(userMessage, onToolCall, onTextDelta, onReasoningDelta, onIntermediateAssistantText, onStateTransition, onToolResult, null);
+        return runWithCallbacks(userMessage,
+            onToolCall != null ? (id, name, input) -> onToolCall.accept(id, input) : null,
+            onTextDelta, onReasoningDelta, onIntermediateAssistantText, onStateTransition,
+            onToolResult != null ? (id, name, result) -> onToolResult.accept(id, result) : null);
     }
 
     /**
@@ -1568,7 +1572,7 @@ public class EnhancedAgenticQueryLoop {
      * 从响应中提取工具调用信息并调用 onToolCall 回调
      * 注意：这是在工具执行之后调用，仅用于记录目的
      */
-    private void logToolCallsFromResponse(ChatResponse response, java.util.function.BiConsumer<String, JsonNode> onToolCall) {
+    private void logToolCallsFromResponse(ChatResponse response, TriConsumer<String, String, JsonNode> onToolCall) {
         // Spring AI 在内部执行工具后，响应中可能包含 TOOL 角色的消息
         // 但这些消息不包含原始的工具调用参数
         // 我们只能从日志中获取工具调用信息
