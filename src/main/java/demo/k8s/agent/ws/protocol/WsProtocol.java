@@ -3,6 +3,7 @@ package demo.k8s.agent.ws.protocol;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.time.Duration;
@@ -104,6 +105,14 @@ public class WsProtocol {
      * 客户端消息基类
      */
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
+    @JsonSubTypes({
+        @JsonSubTypes.Type(value = UserMessage.class, name = "USER_MESSAGE"),
+        @JsonSubTypes.Type(value = PermissionResponseMessage.class, name = "PERMISSION_RESPONSE"),
+        @JsonSubTypes.Type(value = PingMessage.class, name = "PING"),
+        @JsonSubTypes.Type(value = GetHistoryMessage.class, name = "GET_HISTORY"),
+        @JsonSubTypes.Type(value = GetStatsMessage.class, name = "GET_STATS"),
+        @JsonSubTypes.Type(value = StopTaskMessage.class, name = "STOP_TASK")
+    })
     public static abstract class ClientMessage {
         public abstract ClientMessageType getType();
         public String requestId;  // 用于关联请求/响应
@@ -187,6 +196,21 @@ public class WsProtocol {
         public ClientMessageType getType() { return ClientMessageType.GET_STATS; }
     }
 
+    /**
+     * 停止任务消息
+     */
+    public static class StopTaskMessage extends ClientMessage {
+        public ClientMessageType getType() { return ClientMessageType.STOP_TASK; }
+
+        public String taskId;  // 要停止的任务 ID
+
+        public StopTaskMessage() {}
+
+        public StopTaskMessage(String taskId) {
+            this.taskId = taskId;
+        }
+    }
+
     // ===== 服务端 → 客户端消息 =====
 
     /**
@@ -221,6 +245,19 @@ public class WsProtocol {
      * 服务端消息基类
      */
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
+    @JsonSubTypes({
+        @JsonSubTypes.Type(value = ConnectedMessage.class, name = "CONNECTED"),
+        @JsonSubTypes.Type(value = ResponseStartMessage.class, name = "RESPONSE_START"),
+        @JsonSubTypes.Type(value = TextDeltaMessage.class, name = "TEXT_DELTA"),
+        @JsonSubTypes.Type(value = ToolCallMessage.class, name = "TOOL_CALL"),
+        @JsonSubTypes.Type(value = PermissionRequestMessage.class, name = "PERMISSION_REQUEST"),
+        @JsonSubTypes.Type(value = ResponseCompleteMessage.class, name = "RESPONSE_COMPLETE"),
+        @JsonSubTypes.Type(value = ErrorMessage.class, name = "ERROR"),
+        @JsonSubTypes.Type(value = PongMessage.class, name = "PONG"),
+        @JsonSubTypes.Type(value = HistoryMessage.class, name = "HISTORY"),
+        @JsonSubTypes.Type(value = StatsMessage.class, name = "STATS"),
+        @JsonSubTypes.Type(value = TaskUpdateMessage.class, name = "TASK_UPDATE")
+    })
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static abstract class ServerMessage {
         public abstract ServerMessageType getType();
