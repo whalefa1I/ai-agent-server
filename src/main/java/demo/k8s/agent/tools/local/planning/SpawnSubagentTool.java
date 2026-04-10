@@ -2,7 +2,6 @@ package demo.k8s.agent.tools.local.planning;
 
 import demo.k8s.agent.config.DemoMultiAgentProperties;
 import demo.k8s.agent.observability.tracing.TraceContext;
-import demo.k8s.agent.subagent.BatchCompletionListener;
 import demo.k8s.agent.subagent.MultiAgentFacade;
 import demo.k8s.agent.subagent.SpawnGatekeeper;
 import demo.k8s.agent.subagent.SpawnResult;
@@ -35,19 +34,16 @@ public class SpawnSubagentTool {
     private final ObjectProvider<MultiAgentFacade> multiAgentFacade;
     private final SpawnGatekeeper spawnGatekeeper;
     private final SubagentRunService subagentRunService;
-    private final BatchCompletionListener batchCompletionListener;
 
     public SpawnSubagentTool(
             DemoMultiAgentProperties multiAgentProperties,
             ObjectProvider<MultiAgentFacade> multiAgentFacade,
             SpawnGatekeeper spawnGatekeeper,
-            SubagentRunService subagentRunService,
-            BatchCompletionListener batchCompletionListener) {
+            SubagentRunService subagentRunService) {
         this.multiAgentProperties = multiAgentProperties;
         this.multiAgentFacade = multiAgentFacade;
         this.spawnGatekeeper = spawnGatekeeper;
         this.subagentRunService = subagentRunService;
-        this.batchCompletionListener = batchCompletionListener;
     }
 
     /**
@@ -203,8 +199,12 @@ public class SpawnSubagentTool {
                         false),
                 (json, ctx) -> null, // 由 PermissionManager 检查
                 (input) -> {
-                    if (!input.has("goal") || input.get("goal").asText("").isBlank()) {
-                        return "goal is required and cannot be empty";
+                    boolean hasGoal = input.has("goal") && !input.get("goal").asText("").isBlank();
+                    boolean hasBatchTasks = input.has("batchTasks")
+                            && input.get("batchTasks").isArray()
+                            && input.get("batchTasks").size() > 0;
+                    if (!hasGoal && !hasBatchTasks) {
+                        return "either non-empty goal or non-empty batchTasks is required";
                     }
                     return null;
                 });
@@ -325,25 +325,55 @@ public class SpawnSubagentTool {
                 .filter(SpawnResult::isSuccess)
                 .map(SpawnResult::getRunId)
                 .collect(java.util.stream.Collectors.toList());
+        int rejectedCount = batchResult.totalTasks() - runIds.size();
+        java.util.List<String> rejectMessages = batchResult.taskResults().stream()
+                .filter(r -> !r.isSuccess())
+                .map(r -> r.getMessage() != null ? r.getMessage() : "spawn rejected")
+                .collect(java.util.stream.Collectors.toList());
 
         StringBuilder content = new StringBuilder();
-        content.append("Batch spawned successfully: batchId=").append(batchResult.batchId())
-                .append(", totalTasks=").append(batchResult.totalTasks());
+        content.append("Batch spawn result: batchId=").append(batchResult.batchId())
+                .append(", totalTasks=").append(batchResult.totalTasks())
+                .append(", started=").append(runIds.size())
+                .append(", rejected=").append(rejectedCount);
         if (!runIds.isEmpty()) {
             content.append(", runIds=").append(String.join(", ", runIds));
         }
-        content.append(". Wait for system message '=== SUBAGENT BATCH COMPLETED ===' before consolidating results.");
+        if (!rejectMessages.isEmpty()) {
+            content.append(", rejectedReasons=").append(String.join(" | ", rejectMessages));
+        }
+        content.append(".");
+        if (!runIds.isEmpty()) {
+            content.append(" Wait for system message '=== SUBAGENT BATCH COMPLETED ===' before consolidating results.");
+        }
 
         // 构建 metadata
         java.util.Map<String, Object> output = new java.util.LinkedHashMap<>();
         java.util.Map<String, Object> batchInfo = new java.util.LinkedHashMap<>();
         batchInfo.put("batchId", batchResult.batchId());
         batchInfo.put("totalTasks", batchResult.totalTasks());
+        batchInfo.put("startedTasks", runIds.size());
+        batchInfo.put("rejectedTasks", rejectedCount);
         batchInfo.put("runIds", runIds);
+        if (!rejectMessages.isEmpty()) {
+            batchInfo.put("rejectedReasons", rejectMessages);
+        }
         output.put("batch", batchInfo);
 
+        boolean success = rejectedCount == 0;
+        if (runIds.isEmpty()) {
+            return LocalToolResult.builder()
+                    .success(false)
+                    .error("all batch tasks were rejected")
+                    .content(content.toString())
+                    .executionLocation("local")
+                    .metadata(new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(output))
+                    .build();
+        }
+
         return LocalToolResult.builder()
-                .success(true)
+                .success(success)
+                .error(success ? null : "some batch tasks were rejected")
                 .content(content.toString())
                 .executionLocation("local")
                 .metadata(new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(output))
