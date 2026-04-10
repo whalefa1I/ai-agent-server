@@ -41,6 +41,7 @@ public final class ClaudeToolFactory {
 
         Supplier<Boolean> enabled = def.isEnabled();
         boolean ro = def.readOnly();
+        // concurrencySafe 默认等于 readOnly（只读工具通常并发安全）
         boolean concurrencySafe = def.concurrencySafe();
 
         return new ClaudeLikeTool() {
