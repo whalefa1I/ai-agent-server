@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /**
  * 多 Agent 门面（v1 M3 实现）。
@@ -181,7 +183,7 @@ public class MultiAgentFacade {
     /**
      * 批量派生子 Agent（Map-Reduce 模式）。
      * <p>
-     * 创建批次上下文，派发所有子任务，并注册批次完成监听器。
+     * 创建批次上下文，异步派发所有子任务（并行启动），并注册批次完成监听器。
      *
      * @param sessionId  会话 ID
      * @param mainRunId  主 Agent 运行 ID
@@ -203,27 +205,70 @@ public class MultiAgentFacade {
             BatchContext batchContext = batchCompletionListener.createBatch(sessionId, mainRunId, tasks.size());
             String batchId = batchContext.getBatchId();
 
-            java.util.List<SpawnResult> results = new java.util.ArrayList<>();
+            // 异步派发所有任务（并行启动，而非串行等待）
+            java.util.List<CompletableFuture<SpawnResult>> futures = new java.util.ArrayList<>();
             int index = 0;
             for (BatchTask task : tasks) {
-                SpawnResult result = spawnTask(
-                        task.taskName,
-                        task.goal,
-                        task.agentType,
-                        currentDepth,
-                        allowedTools,
-                        batchId,
-                        tasks.size(),
-                        index++,
-                        mainRunId
-                );
-                results.add(result);
+                final int taskIndex = index++;
+                // 直接调用 runtime.spawn() 获取 CompletableFuture，不阻塞等待任务完成
+                SpawnRequest request = buildSpawnRequest(task, sessionId, mainRunId, currentDepth,
+                        allowedTools, batchId, tasks.size(), taskIndex);
+                CompletableFuture<SpawnResult> future = runtime.spawn(request);
+                futures.add(future);
             }
+
+            // 等待所有任务启动完成（但不等待执行完成）
+            CompletableFuture<Void> allStarted = CompletableFuture.allOf(
+                    futures.toArray(new CompletableFuture[0]));
+            try {
+                allStarted.join(); // 等待所有任务启动
+            } catch (Exception e) {
+                log.error("[Facade] Batch spawn failed: some tasks failed to start", e);
+            }
+
+            // 收集结果（此时只关心 runId，不关心执行状态）
+            java.util.List<SpawnResult> results = futures.stream()
+                    .map(CompletableFuture::join)
+                    .collect(java.util.stream.Collectors.toList());
 
             return new BatchSpawnResult(batchId, sessionId, tasks.size(), results);
         } finally {
             TraceContext.setSessionId(previousSession);
         }
+    }
+
+    /**
+     * 构建 SpawnRequest（辅助方法）
+     */
+    private SpawnRequest buildSpawnRequest(BatchTask task, String sessionId, String mainRunId,
+                                            int currentDepth, Set<String> allowedTools,
+                                            String batchId, int batchTotal, int batchIndex) {
+        String tenantId = TraceContext.getTenantId();
+        String appId = TraceContext.getAppId();
+        String traceId = TraceContext.getTraceId();
+        String currentRunId = TraceContext.getRunId();
+
+        return new SpawnRequest(
+                "v1",
+                traceId,
+                sessionId,
+                tenantId != null ? tenantId : props.getDefaultTenantId(),
+                appId != null ? appId : "default",
+                task.taskName,
+                task.agentType,
+                task.goal,
+                currentRunId,
+                batchId,
+                batchTotal,
+                batchIndex,
+                mainRunId,
+                new SpawnRequest.SpawnConstraints(
+                        8000,
+                        currentDepth + 1,
+                        allowedTools,
+                        gatekeeper.calculateDeadline().toEpochMilli()
+                )
+        );
     }
 
     /**
