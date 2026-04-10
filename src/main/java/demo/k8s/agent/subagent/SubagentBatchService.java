@@ -89,6 +89,7 @@ public class SubagentBatchService {
 
                 // 派发所有子任务
                 List<TaskSpawnResult> taskResults = new ArrayList<>();
+                int rejectedCount = 0;
                 int index = 0;
                 for (BatchTaskRequest task : tasks) {
                     SpawnResult result = multiAgentFacade.spawnTask(
@@ -114,6 +115,7 @@ public class SubagentBatchService {
                         log.info("[SubagentBatchService] Task spawned: batchId={}, runId={}, goal={}",
                                 batchId, result.getRunId(), task.goal);
                     } else {
+                        rejectedCount++;
                         taskResult = new TaskSpawnResult(
                                 null,
                                 "rejected",
@@ -128,6 +130,14 @@ public class SubagentBatchService {
                     if (result.isSuccess()) {
                         sseController.publishStatusEvent(result.getRunId(), sessionId, "accepted", null, null);
                     }
+                }
+
+                if (rejectedCount > 0) {
+                    String errorCode = rejectedCount == tasks.size()
+                            ? "SPAWN_ALL_REJECTED"
+                            : "SPAWN_PARTIAL_REJECTED";
+                    return BatchSpawnResponse.partialFailure(
+                            batchId, sessionId, tasks.size(), taskResults, rejectedCount, errorCode);
                 }
 
                 return BatchSpawnResponse.success(batchId, sessionId, tasks.size(), taskResults);
@@ -230,6 +240,7 @@ public class SubagentBatchService {
                 case FAILED:
                 case TIMEOUT:
                 case REJECTED:
+                case CANCELLED:
                     failed++;
                     break;
                 default:
@@ -424,6 +435,22 @@ public class SubagentBatchService {
         public static BatchSpawnResponse error(String message) {
             return new BatchSpawnResponse(false, null, null, 0, Collections.emptyList(),
                     null, message, "INTERNAL_ERROR");
+        }
+
+        public static BatchSpawnResponse partialFailure(String batchId, String sessionId, int totalTasks,
+                                                        List<TaskSpawnResult> tasks,
+                                                        int rejectedCount, String errorCode) {
+            return new BatchSpawnResponse(
+                    false,
+                    batchId,
+                    sessionId,
+                    totalTasks,
+                    tasks,
+                    null,
+                    "Some tasks were rejected during batch spawn (rejected="
+                            + rejectedCount + "/" + totalTasks + ")",
+                    errorCode
+            );
         }
     }
 

@@ -153,10 +153,11 @@ class SubagentBatchServiceTest {
         );
 
         // Then
-        assertTrue(response.success()); // 批次创建成功，但任务被拒绝
+        assertFalse(response.success());
         assertEquals(1, response.totalTasks());
         assertEquals(1, response.tasks().size());
         assertEquals("rejected", response.tasks().get(0).status());
+        assertEquals("SPAWN_ALL_REJECTED", response.errorCode());
     }
 
     @Test
@@ -241,6 +242,32 @@ class SubagentBatchServiceTest {
         assertEquals("COMPLETED", response.status());
         assertEquals(1, response.tasks().size());
         assertEquals("run-001", response.tasks().get(0).runId());
+    }
+
+    @Test
+    void testQueryBatch_CancelledCountsAsFailedNotPending() {
+        // Given
+        String sessionId = "test-session";
+        String batchId = "batch-test-cancelled";
+
+        when(subagentRun.getRunId()).thenReturn("run-cancel-1");
+        when(subagentRun.getStatus()).thenReturn(SubagentRun.RunStatus.CANCELLED);
+        when(subagentRun.getResult()).thenReturn(null);
+        when(subagentRun.getErrorMessage()).thenReturn("Cancelled by user");
+        when(runService.findByBatchId(batchId, sessionId)).thenReturn(List.of(subagentRun));
+
+        SubagentBatchService.InvocationContext ctx = new SubagentBatchService.InvocationContext(
+                "OPS", sessionId, null
+        );
+
+        // When
+        SubagentBatchService.BatchQueryResponse response = batchService.queryBatch(ctx, sessionId, batchId);
+
+        // Then
+        assertTrue(response.success());
+        assertEquals(0, response.pending());
+        assertEquals(1, response.failed());
+        assertEquals("FAILED", response.status());
     }
 
     @Test
