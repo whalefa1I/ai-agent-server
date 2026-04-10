@@ -2,6 +2,7 @@ package demo.k8s.agent.tools.local;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import demo.k8s.agent.observability.tracing.TraceContext;
 import demo.k8s.agent.toolsystem.ClaudeLikeTool;
 import demo.k8s.agent.toolsystem.ToolPermissionContext;
 import org.slf4j.Logger;
@@ -82,6 +83,15 @@ public class StreamingToolExecutor {
         public LocalToolResult result;
         public final long queuedAt;
 
+        // TraceContext 快照（用于异步执行时传播）
+        public final String traceId;
+        public final String spanId;
+        public final String requestId;
+        public final String sessionId;
+        public final String userId;
+        public final String tenantId;
+        public final String appId;
+
         public TrackedTool(String id, String toolName, JsonNode input,
                           ClaudeLikeTool toolDefinition, boolean isConcurrencySafe) {
             this.id = id;
@@ -91,6 +101,15 @@ public class StreamingToolExecutor {
             this.isConcurrencySafe = isConcurrencySafe;
             this.status = ToolStatus.QUEUED;
             this.queuedAt = System.currentTimeMillis();
+
+            // 捕获当前 TraceContext 快照
+            this.traceId = TraceContext.getTraceId();
+            this.spanId = TraceContext.getSpanId();
+            this.requestId = TraceContext.getRequestId();
+            this.sessionId = TraceContext.getSessionId();
+            this.userId = TraceContext.getUserId();
+            this.tenantId = TraceContext.getTenantId();
+            this.appId = TraceContext.getAppId();
         }
 
         public String getDescription() {
@@ -245,37 +264,68 @@ public class StreamingToolExecutor {
                 tool.id, tool.toolName, tool.isConcurrencySafe);
 
         tool.future = CompletableFuture.supplyAsync(() -> {
-            // 检查是否已被中止（由于兄弟工具错误）
-            if (shouldCancelTool(tool)) {
-                log.warn("[StreamingExecutor] 工具被取消：{} - 原因：{}",
-                        tool.id, getCancelReason(tool));
-                return LocalToolResult.error("Cancelled: " + getCancelReason(tool));
-            }
+            // 恢复 TraceContext 快照（从调用线程传播到执行线程）
+            String previousTraceId = TraceContext.getTraceId();
+            String previousSpanId = TraceContext.getSpanId();
+            String previousRequestId = TraceContext.getRequestId();
+            String previousSessionId = TraceContext.getSessionId();
+            String previousUserId = TraceContext.getUserId();
+            String previousTenantId = TraceContext.getTenantId();
+            String previousAppId = TraceContext.getAppId();
 
             try {
-                // 执行工具
-                LocalToolResult result = localToolExecutor.execute(
-                        tool.toolDefinition,
-                        objectMapper.convertValue(tool.input, Map.class),
-                        toolPermissionContext
-                );
-
-                // 如果工具执行失败且是 Bash 工具，触发错误级联
-                if (!result.isSuccess() && "bash".equals(tool.toolName)) {
-                    hasErrored.set(true);
-                    erroredToolDescription = tool.getDescription();
-                    log.error("[StreamingExecutor] Bash 工具失败，将取消兄弟工具：{}",
-                            result.getError());
+                // 设置捕获的上下文
+                if (tool.traceId != null) {
+                    TraceContext.init(tool.traceId, tool.spanId, tool.tenantId, tool.appId, tool.sessionId, tool.userId);
+                    TraceContext.setRequestId(tool.requestId);
+                } else if (tool.sessionId != null) {
+                    // 降级：只有 sessionId 可用
+                    TraceContext.setSessionId(tool.sessionId);
+                    TraceContext.setUserId(tool.userId);
                 }
 
-                return result;
+                // 检查是否已被中止（由于兄弟工具错误）
+                if (shouldCancelTool(tool)) {
+                    log.warn("[StreamingExecutor] 工具被取消：{} - 原因：{}",
+                            tool.id, getCancelReason(tool));
+                    return LocalToolResult.error("Cancelled: " + getCancelReason(tool));
+                }
 
-            } catch (Exception e) {
-                log.error("[StreamingExecutor] 工具执行异常：{} - {}",
-                        tool.toolName, e.getMessage(), e);
-                hasErrored.set(true);
-                erroredToolDescription = tool.getDescription();
-                return LocalToolResult.error("Execution error: " + e.getMessage());
+                try {
+                    // 执行工具
+                    LocalToolResult result = localToolExecutor.execute(
+                            tool.toolDefinition,
+                            objectMapper.convertValue(tool.input, Map.class),
+                            toolPermissionContext
+                    );
+
+                    // 如果工具执行失败且是 Bash 工具，触发错误级联
+                    if (!result.isSuccess() && "bash".equals(tool.toolName)) {
+                        hasErrored.set(true);
+                        erroredToolDescription = tool.getDescription();
+                        log.error("[StreamingExecutor] Bash 工具失败，将取消兄弟工具：{}",
+                                result.getError());
+                    }
+
+                    return result;
+
+                } catch (Exception e) {
+                    log.error("[StreamingExecutor] 工具执行异常：{} - {}",
+                            tool.toolName, e.getMessage(), e);
+                    hasErrored.set(true);
+                    erroredToolDescription = tool.getDescription();
+                    return LocalToolResult.error("Execution error: " + e.getMessage());
+                }
+            } finally {
+                // 恢复之前的上下文（如果有）
+                if (previousTraceId != null || previousSessionId != null) {
+                    TraceContext.init(previousTraceId, previousSpanId, previousTenantId, previousAppId, previousSessionId, previousUserId);
+                    if (previousRequestId != null) {
+                        TraceContext.setRequestId(previousRequestId);
+                    }
+                } else {
+                    TraceContext.clear();
+                }
             }
         });
 
