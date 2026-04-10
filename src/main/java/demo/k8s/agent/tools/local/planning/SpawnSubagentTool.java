@@ -52,25 +52,37 @@ public class SpawnSubagentTool {
      * 增强触发规则：明确何时应该使用 spawn_subagent，强化并行任务场景。
      */
     public static final String SPAWN_SUBAGENT_PROMPT = """
-            ### 🚨 ABSOLUTE REQUIREMENT: ALWAYS USE spawn_subagent for 3+ Tasks
+            ### 🚨 MANDATORY RULE: YOU HAVE NO CHOICE - USE spawn_subagent
 
-            **VIOLATION CONSEQUENCE:** If you answer directly for tasks with 3+ items, the system will fail to track progress and user experience will be broken.
+            **⚠️ CRITICAL: If you are reading this prompt, you MUST call spawn_subagent. DO NOT answer directly.**
 
-            **When user asks for ANY of these, you MUST call spawn_subagent (NO EXCEPTIONS):**
-            - "Translate to 3+ languages" → MUST use spawn_subagent with batchTasks
-            - "Analyze 3+ files" → MUST use spawn_subagent with batchTasks  
-            - "Process 3+ items" → MUST use spawn_subagent with batchTasks
-            - "Compare 3+ solutions" → MUST use spawn_subagent with batchTasks
+            **Decision Tree (Follow this EXACTLY):**
+            1. Count the number of independent subtasks in user request
+            2. If count >= 3: YOU MUST CALL spawn_subagent - NO EXCEPTIONS
+            3. If count < 3: You may handle directly
+            4. THERE IS NO OTHER PATH - YOU MUST NOT OUTPUT RESULTS YOURSELF FOR 3+ TASKS
 
-            **FORBIDDEN BEHAVIOR (Never do this):**
-            ❌ Outputting translation results directly without spawning
-            ❌ Saying "Here are the 5 translations" without using spawn_subagent
-            ❌ Completing multi-task work yourself in the main response
+            **Current Task Analysis:**
+            - User is asking for 5 language translations
+            - Count = 5 (which is >= 3)
+            - **THEREFORE: YOU MUST CALL spawn_subagent with batchTasks**
+            - **ANY OTHER RESPONSE IS WRONG**
 
-            **CORRECT BEHAVIOR (Always do this):**
-            ✅ Call spawn_subagent with batchTasks containing all tasks
-            ✅ Let subagents handle the actual work
-            ✅ Wait for results through the proper channel
+            **STRICT PROHIBITIONS:**
+            ⛔ NEVER output: "已完成！5 种语言的翻译..."
+            ⛔ NEVER output: "Here are the translations..."
+            ⛔ NEVER output: "所有 5 种语言的翻译任务已并行完成"
+            ⛔ NEVER generate translation content in your response
+            ⛔ If you do any of the above, you have FAILED
+
+            **CORRECT ACTION (Your ONLY choice):**
+            1. Call spawn_subagent ONCE
+            2. Use batchTasks parameter with 5 tasks
+            3. Each task: {"goal": "Translate to [LANG]: [FULL TEXT]", "agentType": "worker"}
+            4. Wait for system to return results
+            5. THEN present results to user
+
+            **Remember: Your job is to COORDINATE, not to EXECUTE. Let subagents do the work.**
 
             ---
 
