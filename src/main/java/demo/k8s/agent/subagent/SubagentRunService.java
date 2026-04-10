@@ -219,6 +219,14 @@ public class SubagentRunService {
         return repository.countBySessionIdAndStatusIn(sessionId, activeStatuses);
     }
 
+    /**
+     * 按会话列出最近运行（运维探针，上限 50）。
+     */
+    @Transactional(readOnly = true)
+    public List<SubagentRun> listRecentBySession(String sessionId) {
+        return repository.findTop50BySessionIdOrderByCreatedAtDesc(sessionId);
+    }
+
     private static String generateRunId() {
         return "run-" + System.currentTimeMillis() + "-" +
                UUID.randomUUID().toString().substring(0, 8);

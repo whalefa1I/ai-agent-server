@@ -85,6 +85,10 @@ demo:
     skip-quota-check: true
     # 开发阶段可关闭全部鉴权（仅本地联调使用）
     disable-auth: ${DEMO_DEV_DISABLE_AUTH:true}
+  # 运维探针 /api/ops/** ：默认关闭；生产启用时请设置强 secret 并限制网络可达范围
+  ops:
+    enabled: ${DEMO_OPS_ENABLED:false}
+    secret: ${DEMO_OPS_SECRET:}
   # 记忆系统配置
   memory:
     # 是否启用记忆系统（包括语义搜索和 Embedding）

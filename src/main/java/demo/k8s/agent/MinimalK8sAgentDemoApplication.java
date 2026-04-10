@@ -5,6 +5,7 @@ import demo.k8s.agent.config.DemoContextObjectWriteProperties;
 import demo.k8s.agent.config.DemoCoordinatorProperties;
 import demo.k8s.agent.config.DemoDebugProperties;
 import demo.k8s.agent.config.DemoMultiAgentProperties;
+import demo.k8s.agent.config.DemoOpsProperties;
 import demo.k8s.agent.config.DemoQueryProperties;
 import demo.k8s.agent.config.DemoToolsProperties;
 import demo.k8s.agent.k8s.DemoK8sProperties;
@@ -31,6 +32,7 @@ import org.springframework.context.event.ContextRefreshedEvent;
     DemoQueryProperties.class,
     DemoCoordinatorProperties.class,
     DemoMultiAgentProperties.class,
+    DemoOpsProperties.class,
     DemoContextObjectProperties.class,
     DemoContextObjectWriteProperties.class,
     DemoDebugProperties.class

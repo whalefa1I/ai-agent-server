@@ -48,4 +48,9 @@ public interface SubagentRunRepository extends JpaRepository<SubagentRun, String
      * 统计会话中运行中的任务数
      */
     int countBySessionIdAndStatusIn(String sessionId, List<SubagentRun.RunStatus> statuses);
+
+    /**
+     * 运维列表：按会话最近创建的运行记录
+     */
+    List<SubagentRun> findTop50BySessionIdOrderByCreatedAtDesc(String sessionId);
 }

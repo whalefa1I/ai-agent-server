@@ -87,6 +87,32 @@ public class SpawnGatekeeper {
     }
 
     /**
+     * 只读探测：与 {@link #checkAndAcquire} 相同的深度、白名单与并发占用判断，但<strong>不</strong>占位并发槽，
+     * 供运维接口验收门控策略而不影响线上计数。
+     */
+    public MustDoNext peekSpawnAllowed(String sessionId, int currentDepth, Set<String> allowedTools) {
+        if (currentDepth >= props.getMaxSpawnDepth()) {
+            return MustDoNext.simplify(
+                    "Maximum spawn depth (" + props.getMaxSpawnDepth() + ") reached. Complete current subtasks first or simplify the request.");
+        }
+        Set<String> globalSafeTools = getGlobalSafeTools();
+        for (String tool : allowedTools) {
+            if (!globalSafeTools.contains(tool)) {
+                return MustDoNext.simplify(
+                        "Tool '" + tool + "' is not available in this context. Remove it from your request.");
+            }
+        }
+        AtomicInteger c = sessionConcurrentCounter.get(sessionId);
+        int v = c != null ? c.get() : 0;
+        if (v >= props.getMaxConcurrentSpawns()) {
+            return MustDoNext.simplify(
+                    "Too many concurrent subtasks (" + v + "/" + props.getMaxConcurrentSpawns()
+                            + "). Wait for existing tasks to complete.");
+        }
+        return null;
+    }
+
+    /**
      * 释放一个并发槽位（与 {@link #tryAcquireConcurrentSlot} 配对；可安全多次调用，计数不低于 0）。
      */
     public void releaseConcurrentSlot(String sessionId) {

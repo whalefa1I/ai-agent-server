@@ -66,6 +66,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // 公开端点 - 不需要认证
                 .requestMatchers("/api/v1/**").permitAll()          // Happy Protocol API
+                // 运维探针：由 X-Ops-Secret 在控制器内校验，此处仅放行 HTTP 层
+                .requestMatchers("/api/ops/**").permitAll()
                 .requestMatchers("/api/health").permitAll()         // 健康检查
                 .requestMatchers("/api/public/**").permitAll()      // 公开 API
                 .requestMatchers("/api/auth/**").permitAll()        // 认证相关

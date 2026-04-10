@@ -29,7 +29,8 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/api/logs/**",      // 日志查询 API 不需要配额检查
                         "/api/permissions/**", // 权限请求不需要配额检查
-                        "/api/channels/**"    // 频道 webhook 不需要配额检查
+                        "/api/channels/**",   // 频道 webhook 不需要配额检查
+                        "/api/ops/**"         // 运维探针（自带 X-Ops-Secret）
                 );
     }
 
