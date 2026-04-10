@@ -70,6 +70,18 @@ public class SubagentRun {
     @Column(name = "retry_count", nullable = false)
     private int retryCount = 0;
 
+    @Column(name = "batch_id", length = 64)
+    private String batchId;
+
+    @Column(name = "batch_total", nullable = false)
+    private int batchTotal = 1;
+
+    @Column(name = "batch_index", nullable = false)
+    private int batchIndex = 0;
+
+    @Column(name = "main_run_id", length = 64)
+    private String mainRunId;
+
     public String getRunId() {
         return runId;
     }
@@ -220,6 +232,38 @@ public class SubagentRun {
 
     public void setRetryCount(int retryCount) {
         this.retryCount = retryCount;
+    }
+
+    public String getBatchId() {
+        return batchId;
+    }
+
+    public void setBatchId(String batchId) {
+        this.batchId = batchId;
+    }
+
+    public int getBatchTotal() {
+        return batchTotal;
+    }
+
+    public void setBatchTotal(int batchTotal) {
+        this.batchTotal = batchTotal;
+    }
+
+    public int getBatchIndex() {
+        return batchIndex;
+    }
+
+    public void setBatchIndex(int batchIndex) {
+        this.batchIndex = batchIndex;
+    }
+
+    public String getMainRunId() {
+        return mainRunId;
+    }
+
+    public void setMainRunId(String mainRunId) {
+        this.mainRunId = mainRunId;
     }
 
     /**

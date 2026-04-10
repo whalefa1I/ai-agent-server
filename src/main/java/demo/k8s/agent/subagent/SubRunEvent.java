@@ -90,7 +90,7 @@ public class SubRunEvent {
     }
 
     /**
-     * 事件类型（对齐 v2 终态语义）
+     * 事件类型（对齐 v2 终态语义，含 SSE 流式事件）
      */
     public enum EventType {
         STARTED,
@@ -103,7 +103,14 @@ public class SubRunEvent {
         COMPLETED,
         FAILED,
         TIMEOUT,
-        REJECTED
+        REJECTED,
+        CANCELLED,
+        /** 实时日志输出（SSE 推送） */
+        LOG_OUTPUT,
+        /** 进度更新（SSE 推送） */
+        PROGRESS,
+        /** 基础设施致命错误（SSE 推送，立即终止卡片） */
+        FATAL_ERROR
     }
 
     /**

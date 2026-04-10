@@ -121,8 +121,14 @@ demo:
     default-tenant-id: ${DEMO_MULTI_AGENT_DEFAULT_TENANT_ID:default}
     # 子 Agent Worker 是否注册 TaskCreate/TaskList 等；默认 false，避免子内再嵌 Task
     worker-expose-task-tools: ${DEMO_MULTI_AGENT_WORKER_TASK_TOOLS:false}
+    # 子 Agent Worker 是否暴露 spawn_subagent；默认 false，避免嵌套派生；true 时仍受 max-spawn-depth / max-concurrent-spawns 约束
+    worker-expose-spawn-subagent: ${DEMO_MULTI_AGENT_WORKER_SPAWN:false}
     # Worker 最大轮次（默认 20，复杂任务可调高）
     worker-max-turns: ${DEMO_MULTI_AGENT_WORKER_MAX_TURNS:50}
+    # 内存批次上下文超时扫描间隔（毫秒）
+    batch-cleanup-interval-ms: ${DEMO_MULTI_AGENT_BATCH_CLEANUP_INTERVAL_MS:60000}
+    # 单会话 SSE 最大并发连接数
+    max-sse-connections-per-session: ${DEMO_MULTI_AGENT_MAX_SSE_CONNECTIONS_PER_SESSION:32}
   tools:
     # default | read_only | bypass — 与 ToolPermissionContext 对齐；read_only 时仅保留只读类工具（如 Skill）
     permission-mode: ${DEMO_TOOLS_PERMISSION_MODE:bypass}

@@ -188,51 +188,49 @@ public final class AgentPrompts {
             说明：file_read / file_write / file_edit 在 FileToolArgs 中会将 **filePath**、**path** 与 **file_path** 视作同一路径；对外 Schema 仍以 **file_path** 为准。
             """;
 
+
     /**
-     * spawn_subagent 工具提示词（与 Claude Code / OpenClaw 的「独立会话 / 委派子运行」语义对齐）
+     * spawn_subagent 工具提示词
      * <p>
-     * 参考产品侧常见触发条件：需要<strong>隔离上下文</strong>的专项子任务、可并行的独立工作单元、
-     * 或主会话不宜直接承载的大范围探索；不等价于「Task 列表」——Task* 仅用于进度追踪展示。
+     * 核心设计哲学：
+     * 1. 强调上下文的完全物理隔离（Blank Memory）。
+     * 2. 拥抱原生 Parallel Tool Calling，禁止自创 JSON 数组批处理。
+     * 3. 明确异步非阻塞的执行期许。
      */
     public static final String SPAWN_SUBAGENT_PROMPT = """
             === spawn_subagent ===
 
             Spawn an **isolated worker run** with its own tool loop to complete one bounded **goal**.
-            This matches Claude Code / OpenClaw-style **delegation**: a child run that executes and returns,
-            not a task row in TaskCreate.
+            This matches a **delegation** pattern: an asynchronous child run that executes independently in the background.
+            This is NOT a task row in TaskCreate (which is purely for UI progress tracking).
 
             ## When to Use spawn_subagent
-
             Prefer spawn_subagent when **any** of these apply:
+            - **Explicit delegation**: The user asks to delegate, run in parallel, use a worker, or offload a subtask.
+            - **Parallel independent units**: Multiple outcomes that do not depend on each other (e.g. scanning N different repositories, processing M independent files).
+            - **Large exploration / search**: Broad codebase exploration that would pollute your main context window.
+            - **Isolation**: You want a clean, isolated context for one complex sub-mission to avoid confusing the main plan.
 
-            - **Explicit delegation**: The user asks to delegate, run in parallel, use a subagent/worker,
-              or offload a subtask while you continue coordinating.
-            - **Parallel independent units**: Multiple outcomes that do not depend on each other
-              (e.g. N translations to N files, N regions, N files to scan) — each unit can be its own goal.
-            - **Large exploration / search**: Broad codebase or repo exploration that would bloat the main
-              thread; delegate a **single** explore goal and get back a summary.
-            - **Specialist fit**: The work clearly matches **agentType** (explore vs edit vs bash vs plan).
-            - **Isolation**: You want a clean context for one sub-mission instead of mixing it with the main plan.
+            ## ⚠️ CRITICAL: Context Isolation Rules (Blank Memory)
+            The spawned subagent starts with a **completely blank memory**. It CANNOT see this current conversation or anything you just discussed.
+            Your `goal` MUST be entirely self-contained.
+            - **DO NOT** use pronouns or relative references (e.g., "Fix the bug we just discussed", "Translate this text").
+            - **MUST** include ALL necessary context within the `goal` string: absolute file paths, exact error logs, target languages, or full code snippets required for the task.
 
-            ## One spawn vs many spawns (UI / progress)
-
-            - **One spawn** = **one** tool block in the parent timeline and **one** SubagentRun.
-              Packing "5 languages" into **one** goal is valid; the parent UI still shows **one** delegation card.
-            - If the user (or product) needs **visible per-unit progress in the main chat** (N separate cards),
-              call spawn_subagent **N times** with **N separate goals** (e.g. one language per spawn), or use
-              TaskCreate/TaskUpdate in the main thread to **track** those N delegations — Task* does **not** execute them.
+            ## Parallel Spawning & Multi-Task Delegation
+            If you need to delegate multiple independent tasks (e.g., scanning 5 separate files, translating to 3 languages), you MUST use **Parallel Tool Calling**.
+            - **DO:** Call the `spawn_subagent` tool **multiple times in a single response**. The engine will process all your tool calls instantly and launch them as concurrent background runs.
+            - **DO NOT:** Attempt to pass a JSON array of tasks into a single tool call. The tool schema does not support arrays.
+            - **DO NOT:** Combine disparate tasks into one vague `goal` (e.g., "Process file A and file B" should be two separate tool calls).
 
             ## When NOT to Use spawn_subagent
-
             Do NOT spawn when:
-            - A **single** trivial step suffices (short Q&A, one file read, one small edit).
-            - Steps are **strictly sequential** with hard dependencies (read result A before acting on B in the same flow)
-              — do it in the main agent unless the user explicitly asked for delegation.
-            - You only need a **checklist** for the user — use TaskCreate / TaskUpdate instead (no execution).
+            - A **single** trivial step suffices (e.g., reading a single file, making a one-line edit). The startup overhead of spawning is too high for micro-tasks. Do it yourself.
+            - Steps are **strictly sequential** with hard data dependencies (e.g., compile code -> read compilation error -> fix error). Do this in your main thread.
+            - You only need to present a plan/checklist to the user — use TaskCreate/TaskUpdate instead.
 
             ## Parameters
-
-            - **goal** (required): Clear, specific description of what the subagent should accomplish
+            - **goal** (required): Extremely detailed description of what the subagent must do, including ALL necessary context, variables, and absolute file paths.
             - **agentType** (optional): Type of agent to spawn
               - "general": General-purpose agent (default)
               - "worker": Worker agent with full tool access
@@ -243,32 +241,26 @@ public final class AgentPrompts {
 
             ## Examples
 
-            Good use cases (spawn subagent):
+            ✅ Good: Self-contained and isolated
             ```json
             {
-              "goal": "Translate the following text to Spanish, Japanese, French, German, and Korean. Each translation should be saved to a separate file: [original text]",
+              "goal": "Translate the following exact text into Spanish, and save it to /app/locales/es.json. Text to translate: {'greeting': 'Hello', 'error': 'Not found'}",
               "agentType": "worker"
             }
             ```
 
-            ```json
-            {
-              "goal": "Generate monthly reports for each of the 12 sales regions",
-              "agentType": "worker"
-            }
-            ```
+            ✅ Good: Parallel Tool Calling (Outputting multiple tool calls in one turn)
+            [Tool Call 1]
+            { "goal": "Analyze the log file at /var/log/app.log for memory leaks", "agentType": "explore" }
+            [Tool Call 2]
+            { "goal": "Analyze the log file at /var/log/db.log for slow queries", "agentType": "explore" }
 
-            ```json
-            {
-              "goal": "Find all TODO comments in TypeScript files and summarize by category",
-              "agentType": "explore"
-            }
-            ```
+            ❌ Bad: Lacks Context (Will fail immediately)
+            - "Read the config file" (Which config file? What should it do with it?)
+            - "Fix the bug in the login function" (Where is the function? What is the bug?)
 
-            Bad use cases (do NOT spawn):
-            - "Read the config file and tell me what it contains"
-            - "Fix the bug in the login function"
-            - "Write a new feature that adds user profile"
+            ❌ Bad: Attempting JSON Arrays (Schema violation)
+            - { "goal": [{"task": "read A"}, {"task": "read B"}] }
             """;
 
     /** 默认（非 Coordinator Mode）：主会话可 Task + k8s + Skill */
@@ -347,7 +339,8 @@ public final class AgentPrompts {
     public static final String WORKER_SUBAGENT_SYSTEM =
             """
                     你是子 Agent（Worker），由上层通过 spawn_subagent 委派。使用当前会话提供的工具完成任务。
-                    本 demo 未向你暴露 Task / SendMessage / TaskStop；专注于执行与如实返回。
+                    默认配置下 **spawn_subagent 不会出现在你的工具列表**（`demo.multi-agent.worker-expose-spawn-subagent=false`）。若运维显式开启，你才可以再委派子 Agent，且仍受最大派生深度与并发上限约束；无该工具时若任务过大请在本轮尽力完成或返回摘要供主 Agent 拆分。
+                    本 demo 未向你暴露 Task / SendMessage / TaskStop（除非单独开启 worker-expose-task-tools）；专注于执行与如实返回。
                     """ + "\n" + FILE_TOOLS_PARAM_RULES;
 
     private AgentPrompts() {}

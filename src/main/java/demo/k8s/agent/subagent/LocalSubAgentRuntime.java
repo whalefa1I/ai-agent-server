@@ -4,6 +4,7 @@ import demo.k8s.agent.config.SubagentAsyncConfiguration;
 import demo.k8s.agent.coordinator.AsyncSubagentExecutor;
 import demo.k8s.agent.coordinator.CoordinatorState;
 import demo.k8s.agent.observability.tracing.TraceContext;
+import demo.k8s.agent.web.SubagentSseController;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -30,16 +31,22 @@ public class LocalSubAgentRuntime implements SubAgentRuntime {
     private final SpawnGatekeeper gatekeeper;
     private final AsyncSubagentExecutor asyncSubagentExecutor;
     private final Executor subagentExecutor;
+    private final BatchCompletionListener batchCompletionListener;
+    private final SubagentSseController sseController;
 
     public LocalSubAgentRuntime(
             SubagentRunService runService,
             SpawnGatekeeper gatekeeper,
             AsyncSubagentExecutor asyncSubagentExecutor,
-            @Qualifier(SubagentAsyncConfiguration.SUBAGENT_TASK_EXECUTOR) Executor subagentExecutor) {
+            @Qualifier(SubagentAsyncConfiguration.SUBAGENT_TASK_EXECUTOR) Executor subagentExecutor,
+            BatchCompletionListener batchCompletionListener,
+            SubagentSseController sseController) {
         this.runService = runService;
         this.gatekeeper = gatekeeper;
         this.asyncSubagentExecutor = asyncSubagentExecutor;
         this.subagentExecutor = subagentExecutor;
+        this.batchCompletionListener = batchCompletionListener;
+        this.sseController = sseController;
     }
 
     @Override
@@ -64,26 +71,42 @@ public class LocalSubAgentRuntime implements SubAgentRuntime {
                 try {
                     bindWorkerThreadTraceContext(request, runId, sessionId);
                     gatekeeper.onSpawnStart(sessionId, runId);
+
+                    // 发布 SSE 启动事件
+                    sseController.publishStatusEvent(runId, sessionId, "running", null, null);
+
                     CoordinatorState.TaskResult tr = asyncSubagentExecutor.runSynchronousAgent(
                             taskName, request.getGoal(), agentType, timeout);
                     if (tr.error() != null && !tr.error().isBlank() && !"stopped".equalsIgnoreCase(tr.error())) {
-                        runService.updateStatus(runId, SubagentRun.RunStatus.FAILED, tr.error());
-                        done.complete(SpawnResult.error(tr.error()));
+                        String errorResult = tr.error();
+                        runService.updateStatus(runId, SubagentRun.RunStatus.FAILED, errorResult);
+                        // 发布 SSE 失败事件
+                        sseController.publishStatusEvent(runId, sessionId, "FAILED", null, errorResult);
+                        // 通知批次监听器（即使是失败也要通知，让批次知道这个任务结束了）
+                        batchCompletionListener.onSubagentCompleted(runId, sessionId, errorResult);
+                        done.complete(SpawnResult.error(errorResult));
                     } else {
                         String out = tr.output() != null ? tr.output() : "";
                         runService.updateStatus(runId, SubagentRun.RunStatus.COMPLETED, out);
+                        // 发布 SSE 完成事件
+                        sseController.publishStatusEvent(runId, sessionId, "COMPLETED", out, null);
+                        // 通知批次监听器
+                        batchCompletionListener.onSubagentCompleted(runId, sessionId, out);
                         done.complete(SpawnResult.success(runId));
                     }
                 } catch (Exception e) {
                     log.error("[LocalRuntime] Subagent run failed: runId={}", runId, e);
+                    String errorMsg = e.getMessage() != null ? e.getMessage() : "subagent failed";
                     try {
-                        runService.updateStatus(runId, SubagentRun.RunStatus.FAILED,
-                                e.getMessage() != null ? e.getMessage() : "subagent failed");
+                        runService.updateStatus(runId, SubagentRun.RunStatus.FAILED, errorMsg);
+                        // 发布 SSE 异常事件
+                        sseController.publishStatusEvent(runId, sessionId, "FAILED", null, "ERROR: " + errorMsg);
+                        // 通知批次监听器（异常情况）
+                        batchCompletionListener.onSubagentCompleted(runId, sessionId, "ERROR: " + errorMsg);
                     } catch (Exception suppress) {
                         log.warn("[LocalRuntime] Failed to persist FAILED status: runId={}", runId, suppress);
                     }
-                    done.complete(SpawnResult.error(
-                            e.getMessage() != null ? e.getMessage() : "Subagent execution failed"));
+                    done.complete(SpawnResult.error(errorMsg));
                 } finally {
                     try {
                         gatekeeper.onSpawnEnd(sessionId, runId);
@@ -118,6 +141,11 @@ public class LocalSubAgentRuntime implements SubAgentRuntime {
     public boolean cancel(String runId) {
         try {
             runService.updateStatus(runId, SubagentRun.RunStatus.CANCELLED, "Cancelled by user");
+            // 发布 SSE 取消事件
+            String sessionId = TraceContext.getSessionId();
+            if (sessionId != null) {
+                sseController.publishStatusEvent(runId, sessionId, "CANCELLED", null, "Cancelled by user");
+            }
             return true;
         } catch (Exception e) {
             log.warn("[LocalRuntime] Cancel failed for runId={}: {}", runId, e.getMessage());

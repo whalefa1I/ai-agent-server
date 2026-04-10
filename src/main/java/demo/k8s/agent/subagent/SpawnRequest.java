@@ -30,10 +30,27 @@ public class SpawnRequest {
      * 父运行 ID；可为 null，表示根运行。
      */
     private final String parentRunId;
+    /**
+     * 批次 ID；可为 null，表示非批次任务。
+     */
+    private final String batchId;
+    /**
+     * 批次总任务数；默认为 1（非批次任务）。
+     */
+    private final int batchTotal;
+    /**
+     * 批次内序号；默认为 0。
+     */
+    private final int batchIndex;
+    /**
+     * 主 Agent 运行 ID；批次完成后用于唤醒主线程。
+     */
+    private final String mainRunId;
     private final SpawnConstraints constraints;
 
     public SpawnRequest(String version, String traceId, String sessionId, String tenantId, String appId,
                         String taskName, String agentType, String goal, String parentRunId,
+                        String batchId, int batchTotal, int batchIndex, String mainRunId,
                         SpawnConstraints constraints) {
         this.version = version != null ? version : "v1";
         this.traceId = traceId;
@@ -44,15 +61,28 @@ public class SpawnRequest {
         this.agentType = agentType;
         this.goal = goal;
         this.parentRunId = parentRunId;
+        this.batchId = batchId;
+        this.batchTotal = batchTotal;
+        this.batchIndex = batchIndex;
+        this.mainRunId = mainRunId;
         this.constraints = constraints;
     }
 
     /**
-     * 向后兼容构造函数（默认 version="v1", parentRunId=null）
+     * 向后兼容构造函数（默认 version="v1", parentRunId=null, batchId=null, batchTotal=1, batchIndex=0, mainRunId=null）
      */
     public SpawnRequest(String traceId, String sessionId, String tenantId, String appId,
                         String taskName, String agentType, String goal, SpawnConstraints constraints) {
-        this("v1", traceId, sessionId, tenantId, appId, taskName, agentType, goal, null, constraints);
+        this("v1", traceId, sessionId, tenantId, appId, taskName, agentType, goal, null, null, 1, 0, null, constraints);
+    }
+
+    /**
+     * 带 parentRunId 的构造函数（向后兼容）
+     */
+    public SpawnRequest(String version, String traceId, String sessionId, String tenantId, String appId,
+                        String taskName, String agentType, String goal, String parentRunId,
+                        SpawnConstraints constraints) {
+        this(version, traceId, sessionId, tenantId, appId, taskName, agentType, goal, parentRunId, null, 1, 0, null, constraints);
     }
 
     public String getVersion() {
@@ -89,6 +119,22 @@ public class SpawnRequest {
 
     public String getParentRunId() {
         return parentRunId;
+    }
+
+    public String getBatchId() {
+        return batchId;
+    }
+
+    public int getBatchTotal() {
+        return batchTotal;
+    }
+
+    public int getBatchIndex() {
+        return batchIndex;
+    }
+
+    public String getMainRunId() {
+        return mainRunId;
     }
 
     public SpawnConstraints getConstraints() {

@@ -337,11 +337,11 @@ class TaskIntegrationTest {
     void multiTaskScenario_createAndFilterByStatus() {
         // 创建多个不同状态的任务
         TaskTools.executeTaskCreate(Map.of("subject", "任务 A", "description", "待处理")); // PENDING
-        TaskTools.executeTaskCreate(Map.of("subject", "任务 B", "description", "进行中"));
-        TaskTools.executeTaskUpdate(Map.of("name", "任务 B", "status", "in_progress"));
+        LocalToolResult cB = TaskTools.executeTaskCreate(Map.of("subject", "任务 B", "description", "进行中"));
+        TaskTools.executeTaskUpdate(Map.of("taskId", extractTaskId(cB.getMetadata()), "status", "in_progress"));
 
-        TaskTools.executeTaskCreate(Map.of("subject", "任务 C", "description", "已完成"));
-        TaskTools.executeTaskUpdate(Map.of("name", "任务 C", "status", "completed"));
+        LocalToolResult cC = TaskTools.executeTaskCreate(Map.of("subject", "任务 C", "description", "已完成"));
+        TaskTools.executeTaskUpdate(Map.of("taskId", extractTaskId(cC.getMetadata()), "status", "completed"));
 
         // 验证总任务数
         LocalToolResult allResult = TaskTools.executeTaskList(Map.of());
@@ -381,9 +381,9 @@ class TaskIntegrationTest {
         ));
 
         // 同时启动所有任务
-        TaskTools.executeTaskUpdate(Map.of("name", "前端开发", "status", "in_progress"));
-        TaskTools.executeTaskUpdate(Map.of("name", "后端开发", "status", "in_progress"));
-        TaskTools.executeTaskUpdate(Map.of("name", "测试", "status", "in_progress"));
+        TaskTools.executeTaskUpdate(Map.of("taskId", extractTaskId(r1.getMetadata()), "status", "in_progress"));
+        TaskTools.executeTaskUpdate(Map.of("taskId", extractTaskId(r2.getMetadata()), "status", "in_progress"));
+        TaskTools.executeTaskUpdate(Map.of("taskId", extractTaskId(r3.getMetadata()), "status", "in_progress"));
 
         // 验证所有任务状态
         Map<String, Task> allTasks = TaskTools.getAllTasks();
@@ -474,7 +474,7 @@ class TaskIntegrationTest {
         // task_id 为空（TaskGet）
         LocalToolResult r3 = TaskTools.executeTaskGet(Map.of());
         assertFalse(r3.isSuccess());
-        assertTrue(r3.getError() != null && r3.getError().contains("task_id"), "应该返回 task_id 错误");
+        assertTrue(r3.getError() != null && r3.getError().contains("taskId"), "应该返回 taskId 必填类错误");
     }
 
     @Test

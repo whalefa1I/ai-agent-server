@@ -226,11 +226,12 @@ public class SpawnSubagentTool {
                     sessionId, truncate(goal, 100), agentType);
 
             Set<String> allowed = spawnGatekeeper.globalSafeToolNames();
+            int currentDepth = resolveCallerSubagentDepth(sessionId);
             SpawnResult spawnResult = multiAgentFacade.getObject().spawnTask(
                     "spawn_subagent_task", // taskName
                     goal,
                     agentType,
-                    0, // currentDepth
+                    currentDepth,
                     allowed);
 
             if (!spawnResult.isSuccess()) {
@@ -257,6 +258,28 @@ public class SpawnSubagentTool {
         } catch (Exception e) {
             log.error("[SpawnSubagent] Failed", e);
             return spawnRejected(e.getMessage() != null ? e.getMessage() : "spawn error");
+        }
+    }
+
+    /**
+     * 主会话调用时无对应 {@code subagent_run}，深度为 0；Worker 线程内 {@link TraceContext#getRunId()} 绑定当前子运行，
+     * 用其 DB 中的 {@link SubagentRun#getDepth()} 作为门控 {@code currentDepth}，使嵌套 spawn 受 {@code max-spawn-depth} 约束。
+     */
+    /**
+     * 供 {@link demo.k8s.agent.tools.local.LocalToolExecutor} 等在派生前计算门控深度。
+     */
+    public int resolveCallerSubagentDepth(String sessionId) {
+        String callerRunId = TraceContext.getRunId();
+        if (callerRunId == null || callerRunId.isBlank()) {
+            return 0;
+        }
+        try {
+            SubagentRun self = subagentRunService.getRun(callerRunId, sessionId);
+            return self.getDepth();
+        } catch (Exception e) {
+            log.debug("[SpawnSubagent] No subagent_run for runId={}, sessionId={} — using depth 0: {}",
+                    callerRunId, sessionId, e.getMessage());
+            return 0;
         }
     }
 

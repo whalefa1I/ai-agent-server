@@ -52,9 +52,28 @@ public class DemoMultiAgentProperties {
     private boolean workerExposeTaskTools = false;
 
     /**
+     * 子 Agent（Worker）工具列表是否包含 {@code spawn_subagent}。
+     * <p>
+     * 默认 {@code false}：与主会话解耦，避免嵌套派生爆炸；设为 {@code true} 时 Worker 可再 spawn，
+     * 仍受 {@link #maxSpawnDepth}、{@link #maxConcurrentSpawns} 约束；{@link demo.k8s.agent.tools.local.planning.SpawnSubagentTool}
+     * 会根据当前 {@code subagent_run} 深度传入门控。
+     */
+    private boolean workerExposeSpawnSubagent = false;
+
+    /**
      * Worker 最大轮次（默认 50，复杂任务可调高）。
      */
     private int workerMaxTurns = 50;
+
+    /**
+     * 内存中批次上下文的超时扫描间隔（毫秒），供 {@link demo.k8s.agent.subagent.BatchCompletionListener} 使用。
+     */
+    private long batchCleanupIntervalMs = 60_000L;
+
+    /**
+     * 单会话允许的 SSE 订阅连接数上限（防止慢连接占满内存）。
+     */
+    private int maxSseConnectionsPerSession = 32;
 
     public boolean isEnabled() {
         return enabled;
@@ -112,12 +131,36 @@ public class DemoMultiAgentProperties {
         this.workerExposeTaskTools = workerExposeTaskTools;
     }
 
+    public boolean isWorkerExposeSpawnSubagent() {
+        return workerExposeSpawnSubagent;
+    }
+
+    public void setWorkerExposeSpawnSubagent(boolean workerExposeSpawnSubagent) {
+        this.workerExposeSpawnSubagent = workerExposeSpawnSubagent;
+    }
+
     public int getWorkerMaxTurns() {
         return workerMaxTurns;
     }
 
     public void setWorkerMaxTurns(int workerMaxTurns) {
         this.workerMaxTurns = workerMaxTurns;
+    }
+
+    public long getBatchCleanupIntervalMs() {
+        return batchCleanupIntervalMs;
+    }
+
+    public void setBatchCleanupIntervalMs(long batchCleanupIntervalMs) {
+        this.batchCleanupIntervalMs = batchCleanupIntervalMs;
+    }
+
+    public int getMaxSseConnectionsPerSession() {
+        return maxSseConnectionsPerSession;
+    }
+
+    public void setMaxSseConnectionsPerSession(int maxSseConnectionsPerSession) {
+        this.maxSseConnectionsPerSession = maxSseConnectionsPerSession;
     }
 
     public enum Mode {

@@ -35,7 +35,7 @@ public class SubagentRunService {
     }
 
     /**
-     * 创建新的运行记录（支持父子关系）。
+     * 创建新的运行记录（支持父子关系和批次）。
      *
      * @param request 派生请求
      * @param parentRunId 父运行 ID（可为 null，表示根运行）
@@ -57,13 +57,18 @@ public class SubagentRunService {
         run.setTokenBudget(request.getConstraints().maxBudgetTokens());
         run.setAllowedTools(String.join(",", request.getConstraints().allowedToolScopes()));
         run.setDeadlineAt(Instant.ofEpochMilli(request.getConstraints().deadlineEpochMs()));
+        run.setBatchId(request.getBatchId());
+        run.setBatchTotal(request.getBatchTotal());
+        run.setBatchIndex(request.getBatchIndex());
+        run.setMainRunId(request.getMainRunId());
         run.setCreatedAt(now);
         run.setStartedAt(now);
         run.setUpdatedAt(now);
 
         repository.save(run);
-        log.info("[SubagentRun] Created run: runId={}, sessionId={}, parentRunId={}, goal={}",
+        log.info("[SubagentRun] Created run: runId={}, sessionId={}, parentRunId={}, batchId={}, goal={}",
                 runId, request.getSessionId(), parentRunId != null ? parentRunId : "(root)",
+                request.getBatchId() != null ? request.getBatchId() : "(single)",
                 truncate(request.getGoal(), 50));
 
         return run;
@@ -225,6 +230,46 @@ public class SubagentRunService {
     @Transactional(readOnly = true)
     public List<SubagentRun> listRecentBySession(String sessionId) {
         return repository.findTop50BySessionIdOrderByCreatedAtDesc(sessionId);
+    }
+
+    /**
+     * 按批次 ID 查询所有子任务（Fan-in 场景）。
+     */
+    @Transactional(readOnly = true)
+    public List<SubagentRun> findByBatchId(String batchId, String sessionId) {
+        return repository.findByBatchIdAndSessionId(batchId, sessionId);
+    }
+
+    /**
+     * 统计批次中 pending/running 等未终态任务数（按会话隔离）。
+     */
+    @Transactional(readOnly = true)
+    public int countPendingTasksInBatch(String batchId, String sessionId) {
+        List<SubagentRun.RunStatus> pendingStatuses = List.of(
+                SubagentRun.RunStatus.PENDING,
+                SubagentRun.RunStatus.RUNNING,
+                SubagentRun.RunStatus.WAITING,
+                SubagentRun.RunStatus.SUSPENDED
+        );
+        return repository.countByBatchIdAndSessionIdAndStatusIn(batchId, sessionId, pendingStatuses);
+    }
+
+    /**
+     * 获取会话中所有活跃批次 ID（用于运维 API）。
+     */
+    @Transactional(readOnly = true)
+    public java.util.Set<String> findActiveBatchIdsBySession(String sessionId) {
+        List<SubagentRun.RunStatus> activeStatuses = List.of(
+                SubagentRun.RunStatus.PENDING,
+                SubagentRun.RunStatus.RUNNING,
+                SubagentRun.RunStatus.WAITING,
+                SubagentRun.RunStatus.SUSPENDED
+        );
+        List<SubagentRun> runs = repository.findBySessionIdAndStatusIn(sessionId, activeStatuses);
+        return runs.stream()
+                .map(SubagentRun::getBatchId)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(java.util.stream.Collectors.toSet());
     }
 
     private static String generateRunId() {

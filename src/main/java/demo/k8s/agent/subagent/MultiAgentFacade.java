@@ -24,15 +24,18 @@ public class MultiAgentFacade {
     private final SpawnGatekeeper gatekeeper;
     private final SubAgentRuntime runtime;
     private final SubagentMetrics metrics;
+    private final BatchCompletionListener batchCompletionListener;
 
     public MultiAgentFacade(DemoMultiAgentProperties props,
                             SpawnGatekeeper gatekeeper,
                             SubAgentRuntime runtime,
-                            SubagentMetrics metrics) {
+                            SubagentMetrics metrics,
+                            BatchCompletionListener batchCompletionListener) {
         this.props = props;
         this.gatekeeper = gatekeeper;
         this.runtime = runtime;
         this.metrics = metrics;
+        this.batchCompletionListener = batchCompletionListener;
     }
 
     /**
@@ -46,6 +49,25 @@ public class MultiAgentFacade {
      * 派生子 Agent（与 TaskCreate / 编排层对齐：显式任务名与 Worker 类型）。
      */
     public SpawnResult spawnTask(String taskName, String goal, String agentType, int currentDepth, Set<String> allowedTools) {
+        return spawnTask(taskName, goal, agentType, currentDepth, allowedTools, null, 1, 0, null);
+    }
+
+    /**
+     * 派生子 Agent（支持批次字段）。
+     *
+     * @param taskName   任务名
+     * @param goal       目标
+     * @param agentType  Agent 类型
+     * @param currentDepth 当前深度
+     * @param allowedTools 允许的工具
+     * @param batchId    批次 ID（可为 null）
+     * @param batchTotal 批次总任务数
+     * @param batchIndex 批次内序号
+     * @param mainRunId  主 Agent 运行 ID（可为 null）
+     */
+    public SpawnResult spawnTask(String taskName, String goal, String agentType, int currentDepth,
+                                  Set<String> allowedTools, String batchId, int batchTotal, int batchIndex,
+                                  String mainRunId) {
         return metrics.recordSpawnDuration(() -> {
             String sessionId = TraceContext.getSessionId();
             String tenantId = TraceContext.getTenantId();
@@ -99,6 +121,10 @@ public class MultiAgentFacade {
                     agentType,
                     goal,
                     currentRunId, // parentRunId
+                    batchId,      // batchId
+                    batchTotal,   // batchTotal
+                    batchIndex,   // batchIndex
+                    mainRunId,    // mainRunId
                     new SpawnRequest.SpawnConstraints(
                             8000, // maxBudgetTokens
                             currentDepth + 1,
@@ -107,7 +133,7 @@ public class MultiAgentFacade {
                     )
             );
 
-            // 执行派生（运行时负责 onSpawnStart/onSpawnEnd 与 DB 终态；此处仅处理“未进入运行时”的失败）
+            // 执行派生（运行时负责 onSpawnStart/onSpawnEnd 与 DB 终态；此处仅处理"未进入运行时"的失败）
             try {
                 SpawnResult result = runtime.spawn(request).join();
                 if (result.isSuccess()) {
@@ -124,6 +150,65 @@ public class MultiAgentFacade {
             }
         });
     }
+
+    /**
+     * 批量派生子 Agent（Map-Reduce 模式）。
+     * <p>
+     * 创建批次上下文，派发所有子任务，并注册批次完成监听器。
+     *
+     * @param sessionId  会话 ID
+     * @param mainRunId  主 Agent 运行 ID
+     * @param tasks      任务列表（每个任务包含 goal 和 agentType）
+     * @param currentDepth 当前深度
+     * @param allowedTools 允许的工具
+     * @return 批次结果（包含 batchId 和所有 runId）
+     */
+    public BatchSpawnResult spawnBatch(String sessionId, String mainRunId,
+                                        java.util.List<BatchTask> tasks,
+                                        int currentDepth, Set<String> allowedTools) {
+        log.info("[Facade] Spawning batch: sessionId={}, mainRunId={}, totalTasks={}",
+                sessionId, mainRunId, tasks.size());
+
+        String previousSession = TraceContext.getSessionId();
+        try {
+            TraceContext.setSessionId(sessionId);
+
+            BatchContext batchContext = batchCompletionListener.createBatch(sessionId, mainRunId, tasks.size());
+            String batchId = batchContext.getBatchId();
+
+            java.util.List<SpawnResult> results = new java.util.ArrayList<>();
+            int index = 0;
+            for (BatchTask task : tasks) {
+                SpawnResult result = spawnTask(
+                        task.taskName,
+                        task.goal,
+                        task.agentType,
+                        currentDepth,
+                        allowedTools,
+                        batchId,
+                        tasks.size(),
+                        index++,
+                        mainRunId
+                );
+                results.add(result);
+            }
+
+            return new BatchSpawnResult(batchId, sessionId, tasks.size(), results);
+        } finally {
+            TraceContext.setSessionId(previousSession);
+        }
+    }
+
+    /**
+     * 批次任务定义
+     */
+    public record BatchTask(String taskName, String goal, String agentType) {}
+
+    /**
+     * 批量派生结果
+     */
+    public record BatchSpawnResult(String batchId, String sessionId, int totalTasks,
+                                    java.util.List<SpawnResult> taskResults) {}
 
     /**
      * 完成子任务（回调）。

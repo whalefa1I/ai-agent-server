@@ -53,4 +53,29 @@ public interface SubagentRunRepository extends JpaRepository<SubagentRun, String
      * 运维列表：按会话最近创建的运行记录
      */
     List<SubagentRun> findTop50BySessionIdOrderByCreatedAtDesc(String sessionId);
+
+    /**
+     * 按批次 ID 查询所有子任务（Fan-in 场景）
+     */
+    List<SubagentRun> findByBatchId(String batchId);
+
+    /**
+     * 按批次与会话查询（避免跨会话 batchId 碰撞）
+     */
+    List<SubagentRun> findByBatchIdAndSessionId(String batchId, String sessionId);
+
+    /**
+     * 统计批次中 pending/running 状态的任务数（用于检测批次是否全部完成）
+     */
+    int countByBatchIdAndStatusIn(String batchId, List<SubagentRun.RunStatus> statuses);
+
+    /**
+     * 按批次、会话与状态统计（与会话隔离）
+     */
+    int countByBatchIdAndSessionIdAndStatusIn(String batchId, String sessionId, List<SubagentRun.RunStatus> statuses);
+
+    /**
+     * 按主运行 ID 查询（用于查找需要唤醒的主 Agent）
+     */
+    List<SubagentRun> findByMainRunId(String mainRunId);
 }

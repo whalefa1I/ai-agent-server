@@ -6,6 +6,7 @@ import demo.k8s.agent.subagent.MultiAgentFacade;
 import demo.k8s.agent.subagent.SpawnGatekeeper;
 import demo.k8s.agent.subagent.SpawnResult;
 import demo.k8s.agent.subagent.SubRunEvent;
+import demo.k8s.agent.subagent.SubagentBatchService;
 import demo.k8s.agent.subagent.SubagentRun;
 import demo.k8s.agent.subagent.SubagentRunService;
 import demo.k8s.agent.tools.local.planning.SpawnSubagentTool;
@@ -45,6 +46,7 @@ public class OpsSubagentController {
     private final ObjectProvider<ToolRegistry> toolRegistryProvider;
     private final SpawnGatekeeper gatekeeper;
     private final SubagentRunService subagentRunService;
+    private final SubagentBatchService subagentBatchService;
 
     public OpsSubagentController(
             OpsApiAuthorizer authorizer,
@@ -53,7 +55,8 @@ public class OpsSubagentController {
             ObjectProvider<SpawnSubagentTool> spawnSubagentToolProvider,
             ObjectProvider<ToolRegistry> toolRegistryProvider,
             SpawnGatekeeper gatekeeper,
-            SubagentRunService subagentRunService) {
+            SubagentRunService subagentRunService,
+            SubagentBatchService subagentBatchService) {
         this.authorizer = authorizer;
         this.multiAgentProperties = multiAgentProperties;
         this.facadeProvider = facadeProvider;
@@ -61,6 +64,7 @@ public class OpsSubagentController {
         this.toolRegistryProvider = toolRegistryProvider;
         this.gatekeeper = gatekeeper;
         this.subagentRunService = subagentRunService;
+        this.subagentBatchService = subagentBatchService;
     }
 
     /**
@@ -85,6 +89,7 @@ public class OpsSubagentController {
                 "maxConcurrentSpawns", multiAgentProperties.getMaxConcurrentSpawns(),
                 "wallclockTtlSeconds", multiAgentProperties.getWallclockTtlSeconds(),
                 "workerExposeTaskTools", multiAgentProperties.isWorkerExposeTaskTools(),
+                "workerExposeSpawnSubagent", multiAgentProperties.isWorkerExposeSpawnSubagent(),
                 "workerMaxTurns", multiAgentProperties.getWorkerMaxTurns(),
                 "defaultTenantId", multiAgentProperties.getDefaultTenantId()
         ));
@@ -297,6 +302,160 @@ public class OpsSubagentController {
         }
     }
 
+    /**
+     * 批量派生子 Agent（运维路径）。
+     * <p>
+     * 运维路径：跳过用户级归属校验，但记录审计日志。
+     */
+    @PostMapping("/batch-spawn")
+    public ResponseEntity<?> batchSpawn(HttpServletRequest request,
+                                         @RequestBody(required = false) OpsBatchSpawnBody body) {
+        ResponseEntity<Map<String, Object>> deny = authorizer.preflight(request);
+        if (deny != null) {
+            return deny;
+        }
+
+        OpsBatchSpawnBody b = body != null ? body : new OpsBatchSpawnBody();
+        String sessionId = b.sessionId != null && !b.sessionId.isBlank() ? b.sessionId : "ops-batch-session";
+        String mainRunId = b.mainRunId;
+
+        // 构建调用上下文（运维路径）
+        SubagentBatchService.InvocationContext ctx = new SubagentBatchService.InvocationContext(
+                "OPS", // principal
+                sessionId,
+                "ops_batch_spawn" // auditReason
+        );
+
+        // 获取允许的工具列表
+        Set<String> allowed = gatekeeper.globalSafeToolNames();
+
+        // 转换任务请求
+        List<SubagentBatchService.BatchTaskRequest> tasks = b.tasks != null ? b.tasks.stream()
+                .map(t -> new SubagentBatchService.BatchTaskRequest(t.taskName, t.goal, t.agentType))
+                .toList() : List.of();
+
+        SubagentBatchService.BatchSpawnResponse response = subagentBatchService.spawnBatch(
+                ctx, sessionId, mainRunId, tasks, 0, allowed
+        );
+
+        if (response.success()) {
+            return ResponseEntity.ok(response);
+        } else {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", response.error(),
+                    "errorCode", response.errorCode()
+            ));
+        }
+    }
+
+    /**
+     * 批次取消（运维路径）。
+     */
+    @PostMapping("/batch/cancel")
+    public ResponseEntity<?> batchCancel(HttpServletRequest request,
+                                          @RequestBody(required = false) OpsBatchCancelBody body) {
+        ResponseEntity<Map<String, Object>> deny = authorizer.preflight(request);
+        if (deny != null) {
+            return deny;
+        }
+
+        OpsBatchCancelBody b = body != null ? body : new OpsBatchCancelBody();
+        String sessionId = b.sessionId != null && !b.sessionId.isBlank() ? b.sessionId : "ops-batch-session";
+        String batchId = b.batchId;
+
+        if (batchId == null || batchId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "batchId is required"));
+        }
+
+        // 构建调用上下文（运维路径）
+        SubagentBatchService.InvocationContext ctx = new SubagentBatchService.InvocationContext(
+                "OPS",
+                sessionId,
+                b.reason != null ? b.reason : "ops_cancel"
+        );
+
+        SubagentBatchService.BatchCancelResponse response = subagentBatchService.cancelBatch(
+                ctx, sessionId, batchId, b.reason != null ? b.reason : "ops_cancel"
+        );
+
+        if (response.success()) {
+            return ResponseEntity.ok(response);
+        } else if ("BATCH_ALREADY_TERMINAL".equals(response.error())) {
+            return ResponseEntity.status(409).body(Map.of(
+                    "error", response.error(),
+                    "batchId", batchId,
+                    "status", response.status()
+            ));
+        } else {
+            return ResponseEntity.status(404).body(Map.of(
+                    "error", response.error(),
+                    "batchId", batchId
+            ));
+        }
+    }
+
+    /**
+     * 批次状态查询（运维路径）。
+     */
+    @GetMapping("/batch/{batchId}")
+    public ResponseEntity<?> batchQuery(HttpServletRequest request,
+                                         @PathVariable String batchId,
+                                         @RequestParam String sessionId) {
+        ResponseEntity<Map<String, Object>> deny = authorizer.preflight(request);
+        if (deny != null) {
+            return deny;
+        }
+
+        // 构建调用上下文（运维路径）
+        SubagentBatchService.InvocationContext ctx = new SubagentBatchService.InvocationContext(
+                "OPS",
+                sessionId,
+                "ops_batch_query"
+        );
+
+        SubagentBatchService.BatchQueryResponse response = subagentBatchService.queryBatch(ctx, sessionId, batchId);
+
+        if (response.success()) {
+            return ResponseEntity.ok(response);
+        } else {
+            return ResponseEntity.status(404).body(Map.of(
+                    "error", response.error(),
+                    "batchId", batchId
+            ));
+        }
+    }
+
+    /**
+     * 获取所有活跃批次（运维路径）。
+     */
+    @GetMapping("/batches")
+    public ResponseEntity<?> batches(HttpServletRequest request,
+                                      @RequestParam(required = false) String sessionId) {
+        ResponseEntity<Map<String, Object>> deny = authorizer.preflight(request);
+        if (deny != null) {
+            return deny;
+        }
+
+        java.util.Set<String> batchIds;
+        if (sessionId != null && !sessionId.isBlank()) {
+            batchIds = subagentRunService.findActiveBatchIdsBySession(sessionId);
+        } else {
+            // 获取所有会话的活跃批次（简化实现：返回空列表，实际可从内存注册表获取）
+            batchIds = java.util.Collections.emptySet();
+        }
+
+        List<Map<String, Object>> batches = batchIds.stream()
+                .map(batchId -> {
+                    Map<String, Object> b = new LinkedHashMap<>();
+                    b.put("batchId", batchId);
+                    b.put("sessionId", sessionId);
+                    return b;
+                })
+                .toList();
+
+        return ResponseEntity.ok(Map.of("batches", batches, "count", batches.size()));
+    }
+
     private String predictFacadeBranch() {
         if (!multiAgentProperties.isEnabled() || multiAgentProperties.getMode() == DemoMultiAgentProperties.Mode.off) {
             return "disabled";
@@ -364,5 +523,35 @@ public class OpsSubagentController {
         public String goal;
         public String agentType;
         public Boolean execute;
+    }
+
+    /**
+     * 运维批量派生请求
+     */
+    @SuppressWarnings("unused")
+    public static class OpsBatchSpawnBody {
+        public String sessionId;
+        public String mainRunId;
+        public List<OpsBatchTask> tasks;
+    }
+
+    /**
+     * 运维批次任务请求
+     */
+    @SuppressWarnings("unused")
+    public static class OpsBatchTask {
+        public String taskName;
+        public String goal;
+        public String agentType = "worker";
+    }
+
+    /**
+     * 运维批次取消请求
+     */
+    @SuppressWarnings("unused")
+    public static class OpsBatchCancelBody {
+        public String sessionId;
+        public String batchId;
+        public String reason;
     }
 }

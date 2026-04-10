@@ -53,6 +53,9 @@ class SubagentPerformanceTest {
     private SubagentSuspendRepository suspendRepository;
 
     @Mock
+    private BatchCompletionListener batchCompletionListener;
+
+    @Mock
     private ContextObjectRepository contextObjectRepository;
 
     private SubagentMetrics metrics;
@@ -80,7 +83,7 @@ class SubagentPerformanceTest {
         lenient().doNothing().when(gatekeeper).onSpawnStart(any(), any());
         lenient().doNothing().when(gatekeeper).onSpawnEnd(any(), any());
 
-        facade = new MultiAgentFacade(props, gatekeeper, runtime, metrics);
+        facade = new MultiAgentFacade(props, gatekeeper, runtime, metrics, batchCompletionListener);
 
         DemoContextObjectWriteProperties writeProps = new DemoContextObjectWriteProperties();
         writeProps.setWriteEnabled(true);

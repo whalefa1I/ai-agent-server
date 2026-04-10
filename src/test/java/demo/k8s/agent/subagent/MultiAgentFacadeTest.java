@@ -39,6 +39,9 @@ class MultiAgentFacadeTest {
     @Mock
     private SubAgentRuntime runtime;
 
+    @Mock
+    private BatchCompletionListener batchCompletionListener;
+
     private SubagentMetrics metrics;
 
     private MultiAgentFacade facade;
@@ -49,7 +52,7 @@ class MultiAgentFacadeTest {
         TraceContext.setTenantId("test-tenant");
         TraceContext.setAppId("test-app");
         metrics = new SubagentMetrics(new SimpleMeterRegistry());
-        facade = new MultiAgentFacade(props, gatekeeper, runtime, metrics);
+        facade = new MultiAgentFacade(props, gatekeeper, runtime, metrics, batchCompletionListener);
     }
 
     @AfterEach

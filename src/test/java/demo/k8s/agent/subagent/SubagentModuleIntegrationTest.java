@@ -4,6 +4,8 @@ import demo.k8s.agent.MinimalK8sAgentDemoApplication;
 import demo.k8s.agent.coordinator.AsyncSubagentExecutor;
 import demo.k8s.agent.coordinator.CoordinatorState;
 import demo.k8s.agent.observability.tracing.TraceContext;
+import demo.k8s.agent.state.ConversationManager;
+import demo.k8s.agent.state.MessageType;
 import demo.k8s.agent.tools.local.LocalToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolResult;
 import demo.k8s.agent.toolsystem.ClaudeLikeTool;
@@ -21,6 +23,7 @@ import org.springframework.test.context.TestPropertySource;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -43,6 +46,10 @@ import static org.mockito.Mockito.when;
                 "demo.multi-agent.mode=on",
                 "spring.ai.openai.api-key=test-dummy-key-for-integration",
                 "demo.dev.disable-auth=true",
+                // 与实体一致的干净 schema（避免沿用文件 H2 上旧表结构导致缺列）
+                "spring.datasource.url=jdbc:h2:mem:subagent_integration;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+                "spring.jpa.hibernate.ddl-auto=create-drop",
+                "spring.flyway.enabled=false",
         }
 )
 class SubagentModuleIntegrationTest {
@@ -56,10 +63,13 @@ class SubagentModuleIntegrationTest {
     @Autowired
     private LocalToolExecutor localToolExecutor;
 
+    @Autowired
+    private ConversationManager conversationManager;
+
     @BeforeEach
     void setUp() {
         TraceContext.init("integration-trace", TraceContext.generateSpanId());
-        TraceContext.setSessionId("integration-session");
+        TraceContext.setSessionId(conversationManager.getSessionId());
         TraceContext.setTenantId("default");
         TraceContext.setAppId("integration-app");
     }
@@ -80,6 +90,29 @@ class SubagentModuleIntegrationTest {
         assertEquals(SubagentRun.RunStatus.COMPLETED, row.get().getStatus());
         assertNotNull(row.get().getResult());
         assertTrue(row.get().getResult().contains("worker-output"));
+    }
+
+    @Test
+    void spawnBatch_allWorkersComplete_injectsSystemResumeMessage() throws Exception {
+        String sid = conversationManager.getSessionId();
+        List<MultiAgentFacade.BatchTask> tasks = List.of(
+                new MultiAgentFacade.BatchTask("t1", "goal-1", "general"),
+                new MultiAgentFacade.BatchTask("t2", "goal-2", "general"),
+                new MultiAgentFacade.BatchTask("t3", "goal-3", "general"));
+        MultiAgentFacade.BatchSpawnResult br =
+                multiAgentFacade.spawnBatch(sid, "main-run-batch", tasks, 0, Set.of("file_read"));
+        assertEquals(3, br.totalTasks());
+
+        boolean ok = false;
+        for (int i = 0; i < 150; i++) {
+            Thread.sleep(50);
+            ok = conversationManager.getFullHistory().stream()
+                    .anyMatch(m -> m.type() == MessageType.SYSTEM && m.content().contains("SUBAGENT BATCH COMPLETED"));
+            if (ok) {
+                break;
+            }
+        }
+        assertTrue(ok, "应在全部子任务完成后注入批次完成 SYSTEM 消息");
     }
 
     @Test

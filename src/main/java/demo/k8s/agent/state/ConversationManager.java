@@ -93,6 +93,25 @@ public class ConversationManager {
     }
 
     /**
+     * 向当前会话追加一条消息（如子 Agent 批次完成时的系统提示）。
+     * <p>
+     * 仅当 {@code sessionId} 与当前会话 ID 一致时写入，避免多会话部署下误注入。
+     */
+    public void addMessage(String sessionId, MessageType type, String content) {
+        if (sessionId == null || !sessionId.equals(currentSession.getSessionId())) {
+            log.warn("addMessage 已跳过：会话不匹配，currentSessionId={}，requested={}",
+                    currentSession.getSessionId(), sessionId);
+            return;
+        }
+        if (type != MessageType.SYSTEM) {
+            log.debug("addMessage: 非 SYSTEM 类型按 SYSTEM 落库，type={}", type);
+        }
+        ChatMessage msg = ChatMessage.system(content != null ? content : "");
+        currentSession.addMessage(msg);
+        repository.saveMessage(currentSession.getSessionId(), msg);
+    }
+
+    /**
      * 添加工具响应消息
      */
     public void addToolResponse(String toolResponseId, String content) {

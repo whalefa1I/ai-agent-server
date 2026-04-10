@@ -1,6 +1,8 @@
 package demo.k8s.agent.config;
 
 import demo.k8s.agent.contextobject.ContextObjectReadService;
+import demo.k8s.agent.subagent.MultiAgentFacade;
+import demo.k8s.agent.subagent.SpawnGatekeeper;
 import demo.k8s.agent.tools.local.planning.SpawnSubagentTool;
 import demo.k8s.agent.tools.UnifiedToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolExecutor;
@@ -239,7 +241,15 @@ public class DemoToolRegistryConfiguration {
     @Bean
     LocalToolExecutor localToolExecutor(
             ContextObjectReadService contextObjectReadService,
-            SpawnSubagentTool spawnSubagentTool) {
-        return new LocalToolExecutor(contextObjectReadService, spawnSubagentTool);
+            SpawnSubagentTool spawnSubagentTool,
+            DemoMultiAgentProperties multiAgentProperties,
+            MultiAgentFacade multiAgentFacade,
+            SpawnGatekeeper spawnGatekeeper) {
+        return new LocalToolExecutor(
+                contextObjectReadService,
+                spawnSubagentTool,
+                multiAgentProperties,
+                multiAgentFacade,
+                spawnGatekeeper);
     }
 }

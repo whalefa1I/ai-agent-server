@@ -337,9 +337,9 @@ public class WorkerAgentExecutor {
     }
 
     /**
-     * 默认从 Worker 移除 Task* 和 spawn_subagent，与主会话 Task 工具解耦；
-     * 开启 {@link DemoMultiAgentProperties#isWorkerExposeTaskTools()} 可恢复 Task*，
-     * 但 spawn_subagent 始终不在 Worker 中可用（防止递归派生）。
+     * 默认从 Worker 移除 Task* 与 spawn_subagent，与主会话解耦；
+     * 开启 {@link DemoMultiAgentProperties#isWorkerExposeTaskTools()} 可恢复 Task*；
+     * 开启 {@link DemoMultiAgentProperties#isWorkerExposeSpawnSubagent()} 可恢复 spawn_subagent（仍受门控深度/并发约束）。
      */
     private List<ToolCallback> applyWorkerTaskToolPolicy(List<ToolCallback> tools) {
         List<ToolCallback> out = new ArrayList<>();
@@ -352,8 +352,7 @@ public class WorkerAgentExecutor {
                 removedTask++;
                 continue;
             }
-            // 始终移除 spawn_subagent（防止子 agent 递归派生）
-            if ("spawn_subagent".equals(name)) {
+            if ("spawn_subagent".equals(name) && !multiAgentProperties.isWorkerExposeSpawnSubagent()) {
                 removedSpawn++;
                 continue;
             }
@@ -363,7 +362,7 @@ public class WorkerAgentExecutor {
             log.info("[WorkerAgent] 已移除 {} 个 Task* 工具（worker-expose-task-tools=false）", removedTask);
         }
         if (removedSpawn > 0) {
-            log.info("[WorkerAgent] 已移除 spawn_subagent 工具（防止递归派生）", removedSpawn);
+            log.info("[WorkerAgent] 已移除 {} 个 spawn_subagent 工具（worker-expose-spawn-subagent=false）", removedSpawn);
         }
         return out;
     }

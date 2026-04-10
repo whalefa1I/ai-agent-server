@@ -1,6 +1,10 @@
 package demo.k8s.agent.tools.local;
 
+import demo.k8s.agent.config.DemoMultiAgentProperties;
 import demo.k8s.agent.contextobject.ContextObjectReadService;
+import demo.k8s.agent.observability.tracing.TraceContext;
+import demo.k8s.agent.subagent.MultiAgentFacade;
+import demo.k8s.agent.subagent.SpawnGatekeeper;
 import demo.k8s.agent.tools.local.context.ReadContextObjectTool;
 import demo.k8s.agent.tools.local.file.LocalGlobTool;
 import demo.k8s.agent.tools.local.file.LocalFileReadTool;
@@ -24,19 +28,34 @@ public class LocalToolExecutor {
 
     private final ContextObjectReadService contextObjectReadService;
     private final SpawnSubagentTool spawnSubagentTool;
+    private final DemoMultiAgentProperties multiAgentProperties;
+    private final MultiAgentFacade multiAgentFacade;
+    private final SpawnGatekeeper spawnGatekeeper;
 
     public LocalToolExecutor() {
-        this(null, null);
+        this(null, null, null, null, null);
     }
 
     public LocalToolExecutor(ContextObjectReadService contextObjectReadService) {
-        this(contextObjectReadService, null);
+        this(contextObjectReadService, null, null, null, null);
     }
 
     public LocalToolExecutor(ContextObjectReadService contextObjectReadService,
                              SpawnSubagentTool spawnSubagentTool) {
+        this(contextObjectReadService, spawnSubagentTool, null, null, null);
+    }
+
+    public LocalToolExecutor(
+            ContextObjectReadService contextObjectReadService,
+            SpawnSubagentTool spawnSubagentTool,
+            DemoMultiAgentProperties multiAgentProperties,
+            MultiAgentFacade multiAgentFacade,
+            SpawnGatekeeper spawnGatekeeper) {
         this.contextObjectReadService = contextObjectReadService;
         this.spawnSubagentTool = spawnSubagentTool;
+        this.multiAgentProperties = multiAgentProperties;
+        this.multiAgentFacade = multiAgentFacade;
+        this.spawnGatekeeper = spawnGatekeeper;
     }
 
     /**
@@ -63,7 +82,7 @@ public class LocalToolExecutor {
             case "bash" -> LocalBashTool.execute(input);
             case "read_context_object" -> ReadContextObjectTool.execute(input, contextObjectReadService);
             // Task 工具集
-            case "TaskCreate" -> TaskTools.executeTaskCreate(input);
+            case "TaskCreate" -> executeTaskCreateRouted(input);
             case "TaskList" -> TaskTools.executeTaskList(input);
             case "TaskGet" -> TaskTools.executeTaskGet(input);
             case "TaskUpdate" -> TaskTools.executeTaskUpdate(input);
@@ -75,5 +94,24 @@ public class LocalToolExecutor {
                     : LocalToolResult.error("spawn_subagent tool not initialized");
             default -> LocalToolResult.error("Unknown tool: " + toolName);
         };
+    }
+
+    /**
+     * multi-agent {@code mode=on} 时 TaskCreate 经 {@link MultiAgentFacade} 派生子运行，并在成功文案中带 {@code runId=}；
+     * 否则保持纯内存任务行。
+     */
+    private LocalToolResult executeTaskCreateRouted(Map<String, Object> input) {
+        if (multiAgentProperties != null
+                && multiAgentProperties.isEnabled()
+                && multiAgentProperties.getMode() == DemoMultiAgentProperties.Mode.on
+                && multiAgentFacade != null
+                && spawnGatekeeper != null) {
+            int depth =
+                    spawnSubagentTool != null
+                            ? spawnSubagentTool.resolveCallerSubagentDepth(TraceContext.getSessionId())
+                            : 0;
+            return TaskTools.executeTaskCreate(input, multiAgentFacade, spawnGatekeeper, depth);
+        }
+        return TaskTools.executeTaskCreate(input);
     }
 }

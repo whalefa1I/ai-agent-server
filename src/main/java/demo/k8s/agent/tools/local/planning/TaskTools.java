@@ -1,6 +1,10 @@
 package demo.k8s.agent.tools.local.planning;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import demo.k8s.agent.observability.tracing.TraceContext;
+import demo.k8s.agent.subagent.MultiAgentFacade;
+import demo.k8s.agent.subagent.SpawnGatekeeper;
+import demo.k8s.agent.subagent.SpawnResult;
 import demo.k8s.agent.tools.local.LocalToolResult;
 import demo.k8s.agent.toolsystem.ClaudeLikeTool;
 import demo.k8s.agent.toolsystem.ClaudeToolFactory;
@@ -96,6 +100,25 @@ public class TaskTools {
      */
     private static final Map<String, Task> tasks = new ConcurrentHashMap<>();
     private static final AtomicInteger nextTaskId = new AtomicInteger(1);
+
+    /**
+     * TaskGet / TaskUpdate / TaskStop / TaskOutput 共用：支持 {@code taskId}、{@code id}、{@code task_id}。
+     */
+    private static String coalesceTaskId(Map<String, Object> input) {
+        if (input == null) {
+            return null;
+        }
+        for (String key : List.of("taskId", "id", "task_id")) {
+            Object v = input.get(key);
+            if (v != null) {
+                String s = String.valueOf(v).trim();
+                if (!s.isBlank()) {
+                    return s;
+                }
+            }
+        }
+        return null;
+    }
 
     private static LocalToolResult contractError(String toolName, String errorCode, String message, Map<String, Object> input, List<String> required) {
         Map<String, Object> contract = new LinkedHashMap<>();
@@ -309,15 +332,92 @@ public class TaskTools {
     }
 
     public static LocalToolResult executeTaskCreate(Map<String, Object> input) {
+        return executeTaskCreate(input, null, null, 0);
+    }
+
+    /**
+     * TaskCreate：可选经 {@link MultiAgentFacade} 派生子运行（与 {@code demo.multi-agent.mode=on} 对齐），
+     * 成功时在文案中包含 {@code runId=} 并在 metadata 中附带 {@code subagent.runId}。
+     *
+     * @param facade    非空且 {@code sessionId} 有效时尝试 spawn；否则退化为纯内存任务
+     * @param gatekeeper 与 facade 配对；任一为 null 则退化为内存路径
+     * @param currentDepth 传入 {@link MultiAgentFacade#spawnTask} 的门控深度（主会话一般为 0）
+     */
+    public static LocalToolResult executeTaskCreate(
+            Map<String, Object> input,
+            MultiAgentFacade facade,
+            SpawnGatekeeper gatekeeper,
+            int currentDepth) {
         try {
             return switch (parseTaskCreateInput(input)) {
                 case TaskCreateParseResult.ParseError e -> e.error();
-                case TaskCreateParseResult.Parsed p -> executeInMemoryTaskCreate(input, p);
+                case TaskCreateParseResult.Parsed p -> {
+                    String sessionId = TraceContext.getSessionId();
+                    if (facade == null
+                            || gatekeeper == null
+                            || sessionId == null
+                            || sessionId.isBlank()) {
+                        yield executeInMemoryTaskCreate(input, p);
+                    }
+                    yield executeTaskCreateWithSubagentSpawn(input, p, facade, gatekeeper, currentDepth);
+                }
             };
         } catch (Exception e) {
             log.error("TaskCreate 执行失败", e);
             return contractError("TaskCreate", "TASK_CREATE_EXECUTION_ERROR", "Error: " + e.getMessage(), input, List.of("subject", "description"));
         }
+    }
+
+    private static LocalToolResult executeTaskCreateWithSubagentSpawn(
+            Map<String, Object> input,
+            TaskCreateParseResult.Parsed p,
+            MultiAgentFacade facade,
+            SpawnGatekeeper gatekeeper,
+            int currentDepth) {
+        String taskId = String.valueOf(nextTaskId.getAndIncrement());
+        Task task = new Task(taskId, p.subject(), p.description());
+        task.activeForm = p.activeForm();
+        if (p.metadata() != null) {
+            task.metadata.putAll(p.metadata());
+        }
+        tasks.put(taskId, task);
+        log.info("创建任务（将派生子运行）：{} - {}", taskId, p.subject());
+
+        String goal = p.subject() + "\n\n" + p.description();
+        Set<String> allowed = gatekeeper.globalSafeToolNames();
+        SpawnResult spawnResult =
+                facade.spawnTask("task-" + taskId, goal, "general", currentDepth, allowed);
+
+        if (!spawnResult.isSuccess()) {
+            String msg = spawnResult.getMessage() != null ? spawnResult.getMessage() : "spawn failed";
+            task.metadata.put("subagentSpawnError", msg);
+            log.info("TaskCreate 子运行派生未成功: taskId={}, msg={}", taskId, msg);
+            return contractError(
+                    "TaskCreate",
+                    "TASK_CREATE_SPAWN_REJECTED",
+                    "Task row created (taskId=" + taskId + ") but subagent spawn failed: " + msg,
+                    input,
+                    List.of("subject", "description"));
+        }
+
+        String runId = spawnResult.getRunId();
+        task.metadata.put("subagentRunId", runId);
+
+        Map<String, Object> output = new LinkedHashMap<>();
+        Map<String, Object> taskInfo = new LinkedHashMap<>();
+        taskInfo.put("id", taskId);
+        taskInfo.put("subject", p.subject());
+        output.put("task", taskInfo);
+        output.put("subagent", Map.of("runId", runId));
+
+        String content =
+                "Task created successfully: taskId="
+                        + taskId
+                        + ", runId="
+                        + runId
+                        + ", subject="
+                        + p.subject();
+        return contractSuccess(content, "TaskCreate", output);
     }
 
     private static LocalToolResult executeInMemoryTaskCreate(Map<String, Object> input, TaskCreateParseResult.Parsed p) {
@@ -414,7 +514,7 @@ public class TaskTools {
 
     public static LocalToolResult executeTaskGet(Map<String, Object> input) {
         try {
-            String taskId = (String) input.get("taskId");
+            String taskId = coalesceTaskId(input);
             if (taskId == null || taskId.isBlank()) return contractError("TaskGet", "TASK_ID_REQUIRED", "taskId is required", input, List.of("taskId"));
             if (looksLikeSubagentRunId(taskId)) return invalidTaskIdForRun("TaskGet", taskId, input);
             Task task = tasks.get(taskId);
@@ -530,7 +630,7 @@ public class TaskTools {
 
     public static LocalToolResult executeTaskUpdate(Map<String, Object> input) {
         try {
-            String taskId = (String) input.get("taskId");
+            String taskId = coalesceTaskId(input);
             if (taskId == null || taskId.isBlank()) return contractError("TaskUpdate", "TASK_ID_REQUIRED", "taskId is required", input, List.of("taskId"));
             if (looksLikeSubagentRunId(taskId)) return invalidTaskIdForRun("TaskUpdate", taskId, input);
             Task task = tasks.get(taskId);
@@ -678,7 +778,7 @@ public class TaskTools {
 
     public static LocalToolResult executeTaskStop(Map<String, Object> input) {
         try {
-            String taskId = (String) input.get("taskId");
+            String taskId = coalesceTaskId(input);
             if (taskId == null || taskId.isBlank()) return contractError("TaskStop", "TASK_ID_REQUIRED", "taskId is required", input, List.of("taskId"));
             if (looksLikeSubagentRunId(taskId)) return invalidTaskIdForRun("TaskStop", taskId, input);
             Task task = tasks.get(taskId);
@@ -725,7 +825,7 @@ public class TaskTools {
 
     public static LocalToolResult executeTaskOutput(Map<String, Object> input) {
         try {
-            String taskId = (String) input.get("taskId");
+            String taskId = coalesceTaskId(input);
             if (taskId == null || taskId.isBlank()) return contractError("TaskOutput", "TASK_ID_REQUIRED", "taskId is required", input, List.of("taskId"));
             if (looksLikeSubagentRunId(taskId)) return invalidTaskIdForRun("TaskOutput", taskId, input);
             Task task = tasks.get(taskId);
