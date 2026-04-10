@@ -58,7 +58,6 @@ public class SubagentBatchService {
      * @param allowedTools 允许的工具
      * @return 批次派生结果
      */
-    @Transactional
     public BatchSpawnResponse spawnBatch(InvocationContext ctx, String sessionId, String mainRunId,
                                           List<BatchTaskRequest> tasks, int currentDepth,
                                           Set<String> allowedTools) {
