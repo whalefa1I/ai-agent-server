@@ -204,15 +204,39 @@
 - C1（20 个并行任务）：HTTP 502 错误
 - C2（取消批次）：HTTP 502 错误
 
-**可能原因**：
-1. **并发上限未正确配置**：SpawnGatekeeper 可能未正确处理大批次请求
-2. **资源耗尽**：20 个并行子 Agent 同时执行可能导致内存/CPU 耗尽
-3. **超时配置**：批次查询可能超时，导致 502 错误
+**根因确认**：
 
-**待验证**：
-- 检查 SpawnGatekeeper 并发上限配置
-- 检查应用日志确认 502 错误根因
-- 测试并发上限（如 10 个、15 个任务）
+检查 `SpawnGatekeeper.checkAndAcquire()` 和 `DemoMultiAgentProperties` 配置：
+
+```java
+// DemoMultiAgentProperties.java (line 34)
+private int maxConcurrentSpawns = 5;  // 每个会话最多 5 个并发子任务
+
+// SpawnGatekeeper.java (line 75-81)
+int max = props.getMaxConcurrentSpawns();  // max = 5
+if (v >= max) {
+    log.info("[Gatekeeper] Concurrent limit exceeded: current={}, max={}", v, max);
+    return MustDoNext.simplify("Too many concurrent subtasks (" + v + "/" + max + ")...");
+}
+```
+
+**C1 失败根因**：
+- 用户请求：20 个并行任务
+- 并发上限：5
+- 结果：第 6-20 个任务被门控拒绝，但拒绝响应未正确返回，导致 502 错误
+
+**C2 失败根因**：
+- 取消批次查询可能超时或会话状态异常
+- 需要进一步检查日志确认
+
+**设计合理性**：
+- `maxConcurrentSpawns = 5` 是合理的默认值，防止资源耗尽
+- 20 个并行任务超过上限 4 倍，应被门控拒绝而非导致 502
+
+**待改进**：
+1. 门控拒绝应返回 400 而非 502（错误码优化）
+2. 批次派发应在 spawn 前检查总任务数是否超过上限
+3. 添加配置说明文档，指导用户调整并发上限
 
 ### 4.4 可观测性验证
 
@@ -338,8 +362,10 @@ will not see the parallel execution benefits.
 | 强化系统提示词（MANDATORY 规则） | P0 | 立即 |
 | 添加 few-shot batch 示例 | P1 | 提示词优化后 |
 | 添加知识型任务触发规则 | P1 | 提示词优化后 |
-| **调查 C 组 502 错误根因** | **P0** | **立即** |
-| **配置并测试并发上限** | **P0** | **根因修复后** |
+| ~~调查 C 组 502 错误根因~~ | ~~P0~~ | ~~已完成：并发上限 5，20 任务超限~~ |
+| ~~配置并测试并发上限~~ | ~~P0~~ | ~~已确认：配置 maxConcurrentSpawns=5~~ |
+| **优化门控拒绝响应（400 vs 502）** | **P1** | **近期** |
+| **批次派发前检查总任务数** | **P1** | **近期** |
 | 执行第三轮验证测试 | P0 | 提示词优化后 |
 | 测量 spawn 路径时延收益 | P2 | 触发率达标后 |
 
