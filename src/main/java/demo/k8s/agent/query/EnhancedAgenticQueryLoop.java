@@ -261,12 +261,12 @@ public class EnhancedAgenticQueryLoop {
      */
     public AgenticTurnResult runWithCallbacks(
             String userMessage,
-            java.util.function.BiConsumer<String, String, JsonNode> onToolCall,
+            TriConsumer<String, String, JsonNode> onToolCall,
             java.util.function.Consumer<String> onTextDelta,
             java.util.function.Consumer<String> onReasoningDelta,
             java.util.function.Consumer<String> onIntermediateAssistantText,
             java.util.function.Consumer<LoopStateEvent> onStateTransition,
-            java.util.function.BiConsumer<String, String, LocalToolResult> onToolResult) {
+            TriConsumer<String, String, LocalToolResult> onToolResult) {
 
         log.info("开始 agentic query loop: userMessage={}", truncate(userMessage, 100));
 
@@ -565,8 +565,8 @@ public class EnhancedAgenticQueryLoop {
             ChatResponse response,
             Prompt prompt,
             ToolCallingChatOptions options,
-            java.util.function.BiConsumer<String, String, JsonNode> onToolCall,
-            java.util.function.BiConsumer<String, String, LocalToolResult> onToolResult) {
+            TriConsumer<String, String, JsonNode> onToolCall,
+            TriConsumer<String, String, LocalToolResult> onToolResult) {
 
         AssistantMessage output = response.getResult().getOutput();
         List<AssistantMessage.ToolCall> toolCalls = output.getToolCalls();
@@ -606,8 +606,8 @@ public class EnhancedAgenticQueryLoop {
      */
     private List<ExecutedToolCall> executeToolsInParallel(
             List<AssistantMessage.ToolCall> toolCalls,
-            java.util.function.BiConsumer<String, String, JsonNode> onToolCall,
-            java.util.function.BiConsumer<String, String, LocalToolResult> onToolResult) {
+            TriConsumer<String, String, JsonNode> onToolCall,
+            TriConsumer<String, String, LocalToolResult> onToolResult) {
 
         String sessionId = TraceContext.getSessionId();
         String userId = TraceContext.getUserId();
@@ -618,7 +618,7 @@ public class EnhancedAgenticQueryLoop {
 
         for (AssistantMessage.ToolCall tc : toolCalls) {
             // 包装 onToolCall 回调，传递工具调用 ID 和工具名称
-            java.util.function.BiConsumer<String, String, JsonNode> wrappedOnToolCall = onToolCall != null
+            TriConsumer<String, String, JsonNode> wrappedOnToolCall = onToolCall != null
                 ? (toolCallId, toolName, input) -> onToolCall.accept(tc.id(), tc.name(), input)
                 : null;
             PreparedToolCall prepared = prepareToolCall(tc, wrappedOnToolCall, sessionId, userId);
@@ -661,7 +661,7 @@ public class EnhancedAgenticQueryLoop {
         for (StreamingToolExecutor.ToolResultWithId toolResult : toolResults) {
             String toolName = toolIdToName.getOrDefault(toolResult.toolUseId, "unknown");
             String artifactId = toolIdToArtifactId.get(toolResult.toolUseId);
-            java.util.function.BiConsumer<String, String, LocalToolResult> wrappedOnToolResult = onToolResult != null
+            TriConsumer<String, String, LocalToolResult> wrappedOnToolResult = onToolResult != null
                 ? (tId, tName, result) -> onToolResult.accept(toolResult.toolUseId, toolName, result)
                 : null;
             ExecutedToolCall executed = processToolResult(
@@ -686,7 +686,7 @@ public class EnhancedAgenticQueryLoop {
      */
     private PreparedToolCall prepareToolCall(
             AssistantMessage.ToolCall tc,
-            java.util.function.BiConsumer<String, String, JsonNode> onToolCall,
+            TriConsumer<String, String, JsonNode> onToolCall,
             String sessionId,
             String userId) {
 
@@ -758,7 +758,7 @@ public class EnhancedAgenticQueryLoop {
             LocalToolResult result,
             String sessionId,
             String userId,
-            java.util.function.BiConsumer<String, String, LocalToolResult> onToolResult) {
+            TriConsumer<String, String, LocalToolResult> onToolResult) {
 
         String toolOutput;
         boolean success = result.isSuccess();
