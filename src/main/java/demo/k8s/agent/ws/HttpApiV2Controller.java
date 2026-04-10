@@ -104,6 +104,8 @@ public class HttpApiV2Controller {
 
     /**
      * 发送消息并获取响应（阻塞模式，适用于简单客户端）
+     * <p>
+     * 增强可观测性：透传工具调用详情，便于验证 spawn_subagent 触发率。
      */
     @PostMapping(value = "/chat", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<SimpleChatResponse> chat(@RequestBody ChatRequest request) {
@@ -112,12 +114,39 @@ public class HttpApiV2Controller {
 
         try {
             applyChatTraceContext(request);
+
+            // 收集工具调用详情（用于可观测性）
+            java.util.List<Map<String, Object>> toolCallsDetail = new java.util.ArrayList<>();
+
             // 执行 query loop（TaskCreate → MultiAgentFacade 等依赖 TraceContext.sessionId）
             AgenticTurnResult result = queryLoop.runWithCallbacks(
                     request.message,
                     (toolName, input) -> {
-                        // 工具调用回调 - 记录但不推送（阻塞模式）
+                        // 工具调用回调 - 记录详情
                         log.info("工具调用：{} {}", toolName, input);
+                        Map<String, Object> callDetail = new java.util.LinkedHashMap<>();
+                        callDetail.put("toolName", toolName);
+                        callDetail.put("input", input);
+                        callDetail.put("timestamp", System.currentTimeMillis());
+
+                        // 检测是否为 spawn_subagent 调用
+                        if ("spawn_subagent".equals(toolName)) {
+                            callDetail.put("isSpawn", true);
+                            if (input instanceof Map) {
+                                Map<?, ?> inputMap = (Map<?, ?>) input;
+                                if (inputMap.containsKey("batchTasks")) {
+                                    callDetail.put("spawnType", "batch");
+                                    callDetail.put("taskCount", ((java.util.Collection<?>) inputMap.get("batchTasks")).size());
+                                } else {
+                                    callDetail.put("spawnType", "single");
+                                    callDetail.put("taskCount", 1);
+                                }
+                            }
+                        } else {
+                            callDetail.put("isSpawn", false);
+                        }
+
+                        toolCallsDetail.add(callDetail);
                     },
                     delta -> {
                         // 文本增量回调 - 累积到 StringBuilder
@@ -125,12 +154,14 @@ public class HttpApiV2Controller {
             );
 
             if (result.reason() == LoopTerminalReason.COMPLETED) {
-                return ResponseEntity.ok(new SimpleChatResponse(
+                SimpleChatResponse response = new SimpleChatResponse(
                         result.replyText(),
                         0,  // inputTokens 需要从会话统计中获取
                         0,  // outputTokens
-                        0   // toolCallCount
-                ));
+                        toolCallsDetail.size()
+                );
+                response.toolCallsDetail = toolCallsDetail;
+                return ResponseEntity.ok(response);
             } else {
                 return ResponseEntity.internalServerError()
                         .body(new SimpleChatResponse("Error: " + result.reason(), 0, 0, 0));
@@ -435,6 +466,7 @@ public class HttpApiV2Controller {
         public long inputTokens;
         public long outputTokens;
         public int toolCalls;
+        public java.util.List<Map<String, Object>> toolCallsDetail;  // 工具调用详情（可观测性增强）
 
         public SimpleChatResponse() {}
 
@@ -443,6 +475,7 @@ public class HttpApiV2Controller {
             this.inputTokens = inputTokens;
             this.outputTokens = outputTokens;
             this.toolCalls = toolCalls;
+            this.toolCallsDetail = null;  // 默认不填充，需要可观测性时填充
         }
     }
 

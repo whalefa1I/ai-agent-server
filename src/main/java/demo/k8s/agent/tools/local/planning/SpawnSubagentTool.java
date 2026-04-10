@@ -48,8 +48,23 @@ public class SpawnSubagentTool {
 
     /**
      * spawn_subagent 工具提示词（与 Claude Code 的 delegate / spawn 对齐）
+     * <p>
+     * 增强触发规则：明确何时应该使用 spawn_subagent，强化并行任务场景。
      */
     public static final String SPAWN_SUBAGENT_PROMPT = """
+            ### CRITICAL RULE: When to Use spawn_subagent (Hard Priority)
+
+            **You MUST use spawn_subagent when the task contains 3 or more independent subtasks:**
+            - Multi-language translation (3+ languages)
+            - Multi-file analysis (3+ files)
+            - Multi-solution comparison (3+ solutions)
+            - Multi-role documentation (3+ user roles)
+            - Parallel data processing (3+ items)
+
+            **Do NOT answer directly for these cases - spawn subagents instead.**
+
+            ---
+
             Use this tool to spawn a subagent that handles complex or parallelizable tasks.
 
             ## When to Use spawn_subagent
@@ -90,12 +105,13 @@ public class SpawnSubagentTool {
               - "explore": Code explorer for reading/searching code
               - "edit": Code editor for file modifications
               - "plan": Planning specialist for complex task breakdown
-            - **batchTasks** (optional): Array of tasks for parallel Map-Reduce spawning. When provided, all tasks are spawned together and results are automatically aggregated as a system message.
+            - **batchTasks** (RECOMMENDED for multi-task): Array of tasks for parallel Map-Reduce spawning. When provided, all tasks are spawned together and results are automatically aggregated as a system message.
               - Each item: {"goal": "task description", "agentType": "worker" (optional), "taskName": "name" (optional)}
+              - Use batchTasks when you have 3+ independent tasks - this is MORE EFFICIENT than multiple single spawns
 
             ## Example Usage
 
-            Single spawn:
+            Single spawn (for 1-2 simple tasks):
             ```json
             {
               "goal": "Translate the following text to Spanish: [original text here]",
@@ -103,13 +119,15 @@ public class SpawnSubagentTool {
             }
             ```
 
-            Batch spawn (parallel with auto-aggregation):
+            Batch spawn (RECOMMENDED for 3+ parallel tasks):
             ```json
             {
               "batchTasks": [
                 {"goal": "Translate document to Spanish", "agentType": "worker"},
                 {"goal": "Translate document to French", "agentType": "worker"},
-                {"goal": "Translate document to German", "agentType": "worker"}
+                {"goal": "Translate document to German", "agentType": "worker"},
+                {"goal": "Translate document to Japanese", "agentType": "worker"},
+                {"goal": "Translate document to Korean", "agentType": "worker"}
               ]
             }
             ```
