@@ -55,12 +55,28 @@ public final class ModelRequestDebugLogger {
             }
         }
 
-        if (messages != null) {
-            for (int i = 0; i < messages.size(); i++) {
+        // 只打印关键消息（最近的用户消息和助手消息），避免日志爆炸
+        if (messages != null && !messages.isEmpty()) {
+            // 只找最后几条关键消息
+            int startIdx = Math.max(0, messages.size() - 3);
+            for (int i = startIdx; i < messages.size(); i++) {
                 Message m = messages.get(i);
+                // 跳过 SystemMessage（避免打印完整的 prompt）
+                if (m instanceof SystemMessage) {
+                    log.info("[model-request-debug] msg[{}] SystemMessage (skipped, {} chars)",
+                            i, ((SystemMessage) m).getText().length());
+                    continue;
+                }
                 String text = textOf(m);
-                log.info("[model-request-debug] msg[{}] {} chars={} preview={}",
-                        i, m.getClass().getSimpleName(), text.length(), preview(text, prev));
+                String msgType = m.getClass().getSimpleName();
+                // 高亮 spawn_subagent 工具调用
+                if (text.contains("spawn_subagent")) {
+                    log.info("[model-request-debug] msg[{}] {} chars={} preview={} [SPAWN-TOOL]",
+                            i, msgType, text.length(), preview(text, prev));
+                } else {
+                    log.info("[model-request-debug] msg[{}] {} chars={} preview={}",
+                            i, msgType, text.length(), preview(text, prev));
+                }
             }
         }
     }
