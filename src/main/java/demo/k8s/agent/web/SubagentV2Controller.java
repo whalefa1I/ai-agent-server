@@ -5,7 +5,9 @@ import demo.k8s.agent.subagent.SubagentBatchService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -38,15 +40,33 @@ public class SubagentV2Controller {
 
     @PostMapping("/batch-spawn")
     public ResponseEntity<?> batchSpawn(HttpServletRequest request,
-                                         @RequestBody BatchSpawnRequest body) {
-        ResponseEntity<?> authResult = sessionAuthHelper.validateSessionOwnership(request, body.sessionId);
+                                         @RequestBody(required = false) BatchSpawnRequest body) {
+        BatchSpawnRequest b = body != null ? body : new BatchSpawnRequest();
+        log.info("[SubagentV2Controller] batch-spawn request: sessionId={}, taskCount={}, mainRunId={}",
+                b.sessionId, b.tasks != null ? b.tasks.size() : 0, b.mainRunId);
+
+        if (b.sessionId == null || b.sessionId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "sessionId is required",
+                    "errorCode", "BAD_REQUEST"
+            ));
+        }
+
+        if (b.tasks == null || b.tasks.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "tasks is required and must not be empty",
+                    "errorCode", "BAD_REQUEST"
+            ));
+        }
+
+        ResponseEntity<?> authResult = sessionAuthHelper.validateSessionOwnership(request, b.sessionId);
         if (authResult != null) {
             return authResult;
         }
 
         SubagentBatchService.InvocationContext ctx = new SubagentBatchService.InvocationContext(
                 sessionAuthHelper.getCurrentUserPrincipal(request),
-                body.sessionId,
+                b.sessionId,
                 null
         );
 
@@ -54,9 +74,9 @@ public class SubagentV2Controller {
 
         SubagentBatchService.BatchSpawnResponse response = batchService.spawnBatch(
                 ctx,
-                body.sessionId,
-                body.mainRunId,
-                toTaskRequests(body.tasks),
+                b.sessionId,
+                b.mainRunId,
+                toTaskRequests(b.tasks),
                 0,
                 allowedTools
         );
@@ -73,23 +93,32 @@ public class SubagentV2Controller {
 
     @PostMapping("/batch/cancel")
     public ResponseEntity<?> batchCancel(HttpServletRequest request,
-                                          @RequestBody BatchCancelRequest body) {
-        ResponseEntity<?> authResult = sessionAuthHelper.validateSessionOwnership(request, body.sessionId);
+                                          @RequestBody(required = false) BatchCancelRequest body) {
+        BatchCancelRequest b = body != null ? body : new BatchCancelRequest();
+        log.info("[SubagentV2Controller] batch-cancel request: sessionId={}, batchId={}",
+                b.sessionId, b.batchId);
+        if (b.sessionId == null || b.sessionId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "sessionId is required"));
+        }
+        if (b.batchId == null || b.batchId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "batchId is required"));
+        }
+        ResponseEntity<?> authResult = sessionAuthHelper.validateSessionOwnership(request, b.sessionId);
         if (authResult != null) {
             return authResult;
         }
 
         SubagentBatchService.InvocationContext ctx = new SubagentBatchService.InvocationContext(
                 sessionAuthHelper.getCurrentUserPrincipal(request),
-                body.sessionId,
+                b.sessionId,
                 "user_cancel"
         );
 
         SubagentBatchService.BatchCancelResponse response = batchService.cancelBatch(
                 ctx,
-                body.sessionId,
-                body.batchId,
-                body.reason != null ? body.reason : "user_cancel"
+                b.sessionId,
+                b.batchId,
+                b.reason != null ? b.reason : "user_cancel"
         );
 
         if (response.success()) {
@@ -137,9 +166,24 @@ public class SubagentV2Controller {
 
     private List<SubagentBatchService.BatchTaskRequest> toTaskRequests(
             List<BatchTaskRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return List.of();
+        }
         return requests.stream()
                 .map(r -> new SubagentBatchService.BatchTaskRequest(r.taskName, r.goal, r.agentType))
                 .toList();
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<?> handleBadJson(HttpMessageNotReadableException ex) {
+        log.error("[SubagentV2Controller] JSON parse failed: {}", ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "error", "Invalid JSON request body",
+                "errorCode", "BAD_JSON",
+                "message", ex.getMostSpecificCause() != null
+                        ? ex.getMostSpecificCause().getMessage()
+                        : ex.getMessage()
+        ));
     }
 
     public static class BatchSpawnRequest {

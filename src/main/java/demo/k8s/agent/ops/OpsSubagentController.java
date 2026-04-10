@@ -15,7 +15,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
@@ -245,6 +247,8 @@ public class OpsSubagentController {
             return deny;
         }
         ProbeSpawnBody b = body != null ? body : new ProbeSpawnBody();
+        log.info("[OpsSubagentController] probe-spawn request: sessionId={}, execute={}, agentType={}",
+                b.sessionId, b.execute, b.agentType);
         String sessionId = b.sessionId != null && !b.sessionId.isBlank() ? b.sessionId : "ops-probe-session";
         String tenantId = b.tenantId != null && !b.tenantId.isBlank() ? b.tenantId : multiAgentProperties.getDefaultTenantId();
         String appId = b.appId != null && !b.appId.isBlank() ? b.appId : "ops-probe";
@@ -316,6 +320,8 @@ public class OpsSubagentController {
         }
 
         OpsBatchSpawnBody b = body != null ? body : new OpsBatchSpawnBody();
+        log.info("[OpsSubagentController] batch-spawn request: sessionId={}, taskCount={}, mainRunId={}",
+                b.sessionId, b.tasks != null ? b.tasks.size() : 0, b.mainRunId);
         String sessionId = b.sessionId != null && !b.sessionId.isBlank() ? b.sessionId : "ops-batch-session";
         String mainRunId = b.mainRunId;
 
@@ -341,6 +347,8 @@ public class OpsSubagentController {
         if (response.success()) {
             return ResponseEntity.ok(response);
         } else {
+            log.warn("[OpsSubagentController] batch-spawn rejected: sessionId={}, errorCode={}, error={}",
+                    sessionId, response.errorCode(), response.error());
             return ResponseEntity.badRequest().body(Map.of(
                     "error", response.error(),
                     "errorCode", response.errorCode()
@@ -360,6 +368,7 @@ public class OpsSubagentController {
         }
 
         OpsBatchCancelBody b = body != null ? body : new OpsBatchCancelBody();
+        log.info("[OpsSubagentController] batch-cancel request: sessionId={}, batchId={}", b.sessionId, b.batchId);
         String sessionId = b.sessionId != null && !b.sessionId.isBlank() ? b.sessionId : "ops-batch-session";
         String batchId = b.batchId;
 
@@ -553,5 +562,17 @@ public class OpsSubagentController {
         public String sessionId;
         public String batchId;
         public String reason;
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<?> handleBadJson(HttpMessageNotReadableException ex) {
+        log.error("[OpsSubagentController] JSON parse failed: {}", ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "error", true,
+                "message", "Invalid JSON request body",
+                "detail", ex.getMostSpecificCause() != null
+                        ? ex.getMostSpecificCause().getMessage()
+                        : ex.getMessage()
+        ));
     }
 }
