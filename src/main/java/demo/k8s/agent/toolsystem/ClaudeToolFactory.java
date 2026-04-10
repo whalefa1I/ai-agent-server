@@ -28,21 +28,23 @@ public final class ClaudeToolFactory {
     }
 
     /**
-     * 构建工具定义，支持自定义权限检查和输入验证
+     * 构建工具定义，支持自定义权限检查、输入验证和并发安全检查
      *
      * @param def 工具定义
      * @param permissionChecker 权限检查函数 (inputJson, ctx) -> PermissionResult
      * @param inputValidator 输入验证函数 (input) -> errorMessage (null = 通过)
+     * @param concurrencySafeChecker 并发安全检查函数 (input) -> boolean
      */
     public static ClaudeLikeTool buildTool(
             ToolDefPartial def,
             BiFunction<String, ToolPermissionContext, PermissionResult> permissionChecker,
-            Function<JsonNode, String> inputValidator) {
+            Function<JsonNode, String> inputValidator,
+            Function<JsonNode, Boolean> concurrencySafeChecker) {
 
         Supplier<Boolean> enabled = def.isEnabled();
         boolean ro = def.readOnly();
         // concurrencySafe 默认等于 readOnly（只读工具通常并发安全）
-        boolean concurrencySafe = def.concurrencySafe();
+        boolean defaultConcurrencySafe = def.concurrencySafe();
 
         return new ClaudeLikeTool() {
             @Override
@@ -82,8 +84,16 @@ public final class ClaudeToolFactory {
 
             @Override
             public boolean isConcurrencySafe(JsonNode input) {
-                // 如果工具定义中明确标记为并发安全，则直接返回
-                return concurrencySafe;
+                // 优先使用自定义检查器，如果没有则使用默认值
+                if (concurrencySafeChecker != null) {
+                    try {
+                        return concurrencySafeChecker.apply(input);
+                    } catch (Exception e) {
+                        // 检查失败时返回默认值（保守策略）
+                        return defaultConcurrencySafe;
+                    }
+                }
+                return defaultConcurrencySafe;
             }
 
             @Override
@@ -102,6 +112,21 @@ public final class ClaudeToolFactory {
                 return ClaudeLikeTool.super.validateInput(input);
             }
         };
+    }
+
+    /**
+     * 构建工具定义，支持自定义权限检查和输入验证
+     *
+     * @param def 工具定义
+     * @param permissionChecker 权限检查函数 (inputJson, ctx) -> PermissionResult
+     * @param inputValidator 输入验证函数 (input) -> errorMessage (null = 通过)
+     */
+    public static ClaudeLikeTool buildTool(
+            ToolDefPartial def,
+            BiFunction<String, ToolPermissionContext, PermissionResult> permissionChecker,
+            Function<JsonNode, String> inputValidator) {
+
+        return buildTool(def, permissionChecker, inputValidator, null);
     }
 
     /**

@@ -120,7 +120,53 @@ public class LocalBashTool {
                 // 权限检查器
                 LocalBashTool::checkPermissions,
                 // 输入验证器
-                LocalBashTool::validateInput);
+                LocalBashTool::validateInput,
+                // isConcurrencySafe: 只读命令视为并发安全（类似 Claude Code）
+                LocalBashTool::isConcurrencySafe);
+    }
+
+    /**
+     * 判断 bash 命令是否并发安全
+     * 参考 Claude Code 的实现：只读命令（curl, grep, cat, ls 等）视为并发安全
+     */
+    private static boolean isConcurrencySafe(JsonNode input) {
+        String command = input.has("command") ? input.get("command").asText("") : "";
+        if (command.isBlank()) {
+            return false;
+        }
+
+        // 提取命令的第一个词（忽略前导空格和管道）
+        String firstCmd = command.trim().split("[|&;\\s]+")[0].toLowerCase();
+
+        // 只读命令列表（类似 Claude Code 的 checkReadOnlyConstraints）
+        return switch (firstCmd) {
+            case "curl", "wget", "httpie" -> true;  // HTTP 下载
+            case "cat", "head", "tail", "less", "more" -> true;  // 文件读取
+            case "grep", "egrep", "fgrep", "rg", "ripgrep" -> true;  // 搜索
+            case "ls", "dir", "vdir" -> true;  // 目录列表
+            case "glob", "find", "fd" -> true;  // 文件查找
+            case "wc", "sort", "uniq", "cut", "awk", "sed" -> true;  // 文本处理（只读模式）
+            case "echo", "printf" -> true;  // 输出
+            case "date", "time", "whoami", "pwd", "hostname", "uname" -> true;  // 系统信息
+            case "git", "git2" -> isReadOnlyGitCommand(command);  // git 只读命令
+            default -> false;
+        };
+    }
+
+    /**
+     * 判断 git 命令是否是只读的
+     */
+    private static boolean isReadOnlyGitCommand(String command) {
+        String[] parts = command.trim().split("\\s+");
+        if (parts.length < 2) return false;
+
+        String subcommand = parts[1].toLowerCase();
+        return switch (subcommand) {
+            case "status", "log", "diff", "show", "branch", "tag", "remote", "config" -> true;
+            case "ls-remote", "describe", "rev-parse", "rev-list" -> true;
+            case "stash", "reflog" -> true;
+            default -> false;  // commit, push, pull, merge, rebase 等都不是只读
+        };
     }
 
     /**
