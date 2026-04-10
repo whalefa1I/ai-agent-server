@@ -92,24 +92,24 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
 
         // 从 URL 路径中提取 Token
         String token = extractTokenFromSession(session);
-        log.info("客户端连接：sessionId={}, remote={}, tokenPresent={}",
-                sessionId, session.getRemoteAddress(), token != null && !token.isEmpty());
+        log.info("【WebSocket】客户端连接：sessionId={}, remote={}, uri={}, tokenPresent={}",
+                sessionId, session.getRemoteAddress(), session.getUri(), token != null && !token.isEmpty());
 
         // Token 验证（如果启用）
         if (tokenService != null && tokenService.isAuthEnabled()) {
             if (token == null || token.isEmpty()) {
-                log.warn("连接被拒绝：未提供 Token");
+                log.warn("【WebSocket】连接被拒绝：未提供 Token");
                 session.close(new CloseStatus(CloseStatus.POLICY_VIOLATION.getCode(), "Missing token"));
                 return;
             }
 
             if (!tokenService.validateToken(token)) {
-                log.warn("连接被拒绝：Token 无效或已过期");
+                log.warn("【WebSocket】连接被拒绝：Token 无效或已过期");
                 session.close(new CloseStatus(CloseStatus.POLICY_VIOLATION.getCode(), "Invalid or expired token"));
                 return;
             }
 
-            log.info("Token 验证通过：hash={}", tokenService.hashToken(token));
+            log.info("【WebSocket】Token 验证通过：hash={}", tokenService.hashToken(token));
         }
 
         // 创建会话上下文
@@ -129,7 +129,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             broadcastService.broadcastPermissionRequest(sessionId, request)
                 .whenComplete((response, error) -> {
                     if (error != null) {
-                        log.info("权限请求超时或取消：requestId={}", request.id());
+                        log.info("【WebSocket】权限请求超时或取消：requestId={}", request.id());
                         future.complete(PermissionResult.deny("Timeout or cancelled"));
                     } else {
                         // 处理响应
@@ -146,7 +146,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         connected.serverVersion = PROTOCOL_VERSION;
         sendMessage(session, connected);
 
-        log.info("客户端连接成功：sessionId={}, protocolVersion={}", sessionId, PROTOCOL_VERSION);
+        log.info("【WebSocket】客户端连接成功：sessionId={}, protocolVersion={}", sessionId, PROTOCOL_VERSION);
     }
 
     /**
@@ -194,15 +194,17 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         SessionContext ctx = sessions.get(sessionId);
 
         if (ctx == null) {
-            log.warn("会话不存在：{}", sessionId);
+            log.warn("【WebSocket】会话不存在：{}", sessionId);
             return;
         }
 
         try {
             // 解析客户端消息
             ClientMessage clientMsg = objectMapper.readValue(message.getPayload(), ClientMessage.class);
+            log.info("【WebSocket】收到消息：sessionId={}, type={}", sessionId, clientMsg.getType());
 
             if (clientMsg instanceof UserMessage) {
+                log.info("【WebSocket】用户消息：sessionId={}, content={}", sessionId, truncate(((UserMessage) clientMsg).content, 50));
                 handleUserMessage(ctx, (UserMessage) clientMsg);
             } else if (clientMsg instanceof PermissionResponseMessage) {
                 handlePermissionResponse(ctx, (PermissionResponseMessage) clientMsg);
@@ -213,11 +215,11 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             } else if (clientMsg instanceof GetStatsMessage) {
                 handleGetStats(ctx, (GetStatsMessage) clientMsg);
             } else {
-                log.warn("未知消息类型：{}", clientMsg.getClass());
+                log.warn("【WebSocket】未知消息类型：{}", clientMsg.getClass());
             }
 
         } catch (Exception e) {
-            log.error("处理消息失败", e);
+            log.error("【WebSocket】处理消息失败", e);
             ErrorMessage error = new ErrorMessage("INTERNAL_ERROR", e.getMessage());
             sendMessage(session, error);
         }
@@ -249,12 +251,15 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
      * 执行 query loop（异步）
      */
     private void executeQueryLoop(SessionContext ctx, UserMessage userMsg) throws Exception {
+        log.info("【WebSocket】开始执行 query loop：sessionId={}, requestId={}", ctx.sessionId, userMsg.requestId);
+
         // 开始回合
         ConversationManager.TurnContext turnCtx = conversationManager.startTurn(userMsg.content);
 
         // 发送响应开始
         ResponseStartMessage startMsg = new ResponseStartMessage(userMsg.requestId, turnCtx.turnId());
         sendMessage(ctx.session, startMsg);
+        log.info("【WebSocket】已发送 RESPONSE_START：turnId={}", turnCtx.turnId());
 
         Instant startTime = Instant.now();
         int toolCallCount = 0;
@@ -267,12 +272,14 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                     // 工具调用回调（工具开始执行）
                     (toolCallId, toolName, input) -> {
                         try {
+                            log.info("【WebSocket】工具开始：toolCallId={}, toolName={}", toolCallId, toolName);
                             ToolCallMessage toolMsg = ToolCallMessage.create(toolName, "started");
                             toolMsg.toolCallId = toolCallId;
                             toolMsg.input = input != null ? objectMapper.convertValue(input, Map.class) : null;
                             sendMessage(ctx.session, toolMsg);
+                            log.info("【WebSocket】已发送 TOOL_CALL(started)：toolCallId={}, toolName={}", toolCallId, toolName);
                         } catch (Exception e) {
-                            log.error("发送工具调用通知失败", e);
+                            log.error("【WebSocket】发送工具调用通知失败", e);
                         }
                     },
                     // 文本增量回调（流式输出）
@@ -282,7 +289,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                                 TextDeltaMessage deltaMsg = new TextDeltaMessage(delta);
                                 sendMessage(ctx.session, deltaMsg);
                             } catch (Exception e) {
-                                log.error("发送文本增量失败", e);
+                                log.error("【WebSocket】发送文本增量失败", e);
                             }
                         }
                     },
@@ -300,6 +307,9 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                             String error = toolResult.isSuccess() ? null : toolResult.getError();
                             Long durationMs = toolResult.getDurationMs();
 
+                            log.info("【WebSocket】工具完成：toolCallId={}, toolName={}, success={}, output={}",
+                                    toolCallId, toolName, toolResult.isSuccess(), truncate(output, 100));
+
                             ToolCallMessage toolMsg = ToolCallMessage.create(toolName, toolResult.isSuccess() ? "completed" : "failed");
                             toolMsg.toolCallId = toolCallId;
                             toolMsg.output = output;
@@ -314,8 +324,10 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                             }
 
                             sendMessage(ctx.session, toolMsg);
+                            log.info("【WebSocket】已发送 TOOL_CALL({}): toolCallId={}, toolName={}",
+                                    toolResult.isSuccess() ? "completed" : "failed", toolCallId, toolName);
                         } catch (Exception e) {
-                            log.error("发送工具完成通知失败", e);
+                            log.error("【WebSocket】发送工具完成通知失败", e);
                         }
                     }
             );
