@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -56,6 +57,8 @@ public class SubagentBatchService {
 
     /**
      * 批量派生子 Agent（门面方法）。
+     * <p>
+     * 异步并行派发所有子任务，而非串行等待，以实现真正的并发加速。
      *
      * @param ctx          调用上下文（用于区分产品/运维路径）
      * @param sessionId    会话 ID
@@ -93,50 +96,68 @@ public class SubagentBatchService {
                 BatchStatus batchStatus = new BatchStatus(batchId, sessionId, tasks.size());
                 batchStatusRegistry.put(batchId, batchStatus);
 
-                // 派发所有子任务
-                List<TaskSpawnResult> taskResults = new ArrayList<>();
-                int rejectedCount = 0;
+                // 异步并行派发所有子任务（使用 CompletableFuture）
+                List<java.util.concurrent.CompletableFuture<TaskSpawnResult>> futures = new java.util.ArrayList<>();
                 int index = 0;
                 for (BatchTaskRequest task : tasks) {
-                    SpawnResult result = multiAgentFacade.spawnTask(
-                            task.taskName,
-                            task.goal,
-                            task.agentType,
-                            currentDepth,
-                            allowedTools,
-                            batchId,
-                            tasks.size(),
-                            index++,
-                            mainRunId
-                    );
+                    final int taskIndex = index++;
+                    final BatchTaskRequest taskRef = task;
 
-                    TaskSpawnResult taskResult;
-                    if (result.isSuccess()) {
-                        taskResult = new TaskSpawnResult(
-                                result.getRunId(),
-                                "accepted",
-                                null
+                    java.util.concurrent.CompletableFuture<TaskSpawnResult> future = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                        SpawnResult result = multiAgentFacade.spawnTask(
+                                taskRef.taskName,
+                                taskRef.goal,
+                                taskRef.agentType,
+                                currentDepth,
+                                allowedTools,
+                                batchId,
+                                tasks.size(),
+                                taskIndex,
+                                mainRunId
                         );
-                        batchStatus.addRunId(result.getRunId());
-                        log.info("[SubagentBatchService] Task spawned: batchId={}, runId={}, goal={}",
-                                batchId, result.getRunId(), task.goal);
-                    } else {
-                        rejectedCount++;
-                        taskResult = new TaskSpawnResult(
-                                null,
-                                "rejected",
-                                result.getMessage()
-                        );
-                        log.warn("[SubagentBatchService] Task spawn rejected: batchId={}, goal={}, reason={}",
-                                batchId, task.goal, result.getMessage());
-                    }
-                    taskResults.add(taskResult);
 
-                    // 发布 SSE 事件
-                    if (result.isSuccess()) {
-                        sseController.publishStatusEvent(result.getRunId(), sessionId, "accepted", null, null);
-                    }
+                        TaskSpawnResult taskResult;
+                        if (result.isSuccess()) {
+                            taskResult = new TaskSpawnResult(
+                                    result.getRunId(),
+                                    "accepted",
+                                    null
+                            );
+                            batchStatus.addRunId(result.getRunId());
+                            log.info("[SubagentBatchService] Task spawned: batchId={}, runId={}, goal={}",
+                                    batchId, result.getRunId(), taskRef.goal);
+                        } else {
+                            taskResult = new TaskSpawnResult(
+                                    null,
+                                    "rejected",
+                                    result.getMessage()
+                            );
+                            log.warn("[SubagentBatchService] Task spawn rejected: batchId={}, goal={}, reason={}",
+                                    batchId, taskRef.goal, result.getMessage());
+                        }
+
+                        // 发布 SSE 事件
+                        if (result.isSuccess()) {
+                            sseController.publishStatusEvent(result.getRunId(), sessionId, "accepted", null, null);
+                        }
+
+                        return taskResult;
+                    });
+
+                    futures.add(future);
                 }
+
+                // 等待所有任务派发完成
+                java.util.concurrent.CompletableFuture<Void> allSpawned = java.util.concurrent.CompletableFuture.allOf(
+                        futures.toArray(new java.util.concurrent.CompletableFuture[0]));
+                allSpawned.join();
+
+                // 收集结果
+                List<TaskSpawnResult> taskResults = futures.stream()
+                        .map(java.util.concurrent.CompletableFuture::join)
+                        .toList();
+
+                int rejectedCount = (int) taskResults.stream().filter(t -> "rejected".equals(t.status())).count();
 
                 if (rejectedCount > 0) {
                     String errorCode = rejectedCount == tasks.size()
