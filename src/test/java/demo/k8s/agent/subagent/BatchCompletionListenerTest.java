@@ -6,13 +6,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-import java.time.Duration;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -33,6 +26,9 @@ class BatchCompletionListenerTest {
     private demo.k8s.agent.config.DemoMultiAgentProperties agentProperties;
 
     @Mock
+    private SubagentResultStorage resultStorage;
+
+    @Mock
     private SubagentRun subagentRun;
 
     private BatchCompletionListener listener;
@@ -41,7 +37,20 @@ class BatchCompletionListenerTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         when(agentProperties.getWallclockTtlSeconds()).thenReturn(300); // 5 minutes TTL
-        listener = new BatchCompletionListener(runService, eventBus, agentProperties);
+        when(resultStorage.writeResult(anyString(), anyString(), anyString(), anyString()))
+                .thenAnswer(inv -> "results/" + inv.getArgument(0) + "/run-" + inv.getArgument(1) + ".txt");
+        when(resultStorage.getResultPath(anyString(), anyString()))
+                .thenAnswer(inv -> "results/" + inv.getArgument(0) + "/run-" + inv.getArgument(1) + ".txt");
+        when(resultStorage.summarize(anyString(), anyInt()))
+                .thenAnswer(inv -> {
+                    String text = inv.getArgument(0);
+                    int max = inv.getArgument(1);
+                    if (text == null || text.isBlank()) {
+                        return "(no output)";
+                    }
+                    return text.length() <= max ? text : text.substring(0, max) + "... [truncated]";
+                });
+        listener = new BatchCompletionListener(runService, eventBus, agentProperties, resultStorage);
     }
 
     @Test
