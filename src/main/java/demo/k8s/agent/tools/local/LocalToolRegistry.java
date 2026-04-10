@@ -7,6 +7,7 @@ import demo.k8s.agent.tools.local.lsp.LspDiagnosticTool;
 import demo.k8s.agent.tools.local.memory.MemorySearchTool;
 import demo.k8s.agent.tools.local.interaction.AskUserQuestionTool;
 import demo.k8s.agent.tools.local.planning.ExitPlanModeTool;
+import demo.k8s.agent.tools.local.planning.QuerySubagentResultTool;
 import demo.k8s.agent.tools.local.planning.SpawnSubagentTool;
 import demo.k8s.agent.tools.local.planning.TaskTools;
 import demo.k8s.agent.tools.local.search.LocalGrepTool;
@@ -69,6 +70,8 @@ public class LocalToolRegistry {
         tools.add(TaskTools.createTaskOutputTool());
         // spawn_subagent 工具（直接派生子 Agent）
         tools.add(SpawnSubagentTool.createTool());
+        // query_subagent_result 工具（查询子 Agent 结果）
+        tools.add(QuerySubagentResultTool.createTool());
 
         // LSP 工具
         tools.add(LspDiagnosticTool.createTool());

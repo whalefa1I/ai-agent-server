@@ -11,6 +11,7 @@ import demo.k8s.agent.tools.local.file.LocalFileReadTool;
 import demo.k8s.agent.tools.local.file.LocalFileWriteTool;
 import demo.k8s.agent.tools.local.file.LocalFileEditTool;
 import demo.k8s.agent.tools.local.planning.SpawnSubagentTool;
+import demo.k8s.agent.tools.local.planning.QuerySubagentResultTool;
 import demo.k8s.agent.tools.local.planning.TaskTools;
 import demo.k8s.agent.tools.local.search.LocalGrepTool;
 import demo.k8s.agent.tools.local.shell.LocalBashTool;
@@ -28,31 +29,34 @@ public class LocalToolExecutor {
 
     private final ContextObjectReadService contextObjectReadService;
     private final SpawnSubagentTool spawnSubagentTool;
+    private final QuerySubagentResultTool querySubagentResultTool;
     private final DemoMultiAgentProperties multiAgentProperties;
     private final MultiAgentFacade multiAgentFacade;
     private final SpawnGatekeeper spawnGatekeeper;
 
     public LocalToolExecutor() {
-        this(null, null, null, null, null);
+        this(null, null, null, null, null, null);
     }
 
     public LocalToolExecutor(ContextObjectReadService contextObjectReadService) {
-        this(contextObjectReadService, null, null, null, null);
+        this(contextObjectReadService, null, null, null, null, null);
     }
 
     public LocalToolExecutor(ContextObjectReadService contextObjectReadService,
                              SpawnSubagentTool spawnSubagentTool) {
-        this(contextObjectReadService, spawnSubagentTool, null, null, null);
+        this(contextObjectReadService, spawnSubagentTool, null, null, null, null);
     }
 
     public LocalToolExecutor(
             ContextObjectReadService contextObjectReadService,
             SpawnSubagentTool spawnSubagentTool,
+            QuerySubagentResultTool querySubagentResultTool,
             DemoMultiAgentProperties multiAgentProperties,
             MultiAgentFacade multiAgentFacade,
             SpawnGatekeeper spawnGatekeeper) {
         this.contextObjectReadService = contextObjectReadService;
         this.spawnSubagentTool = spawnSubagentTool;
+        this.querySubagentResultTool = querySubagentResultTool;
         this.multiAgentProperties = multiAgentProperties;
         this.multiAgentFacade = multiAgentFacade;
         this.spawnGatekeeper = spawnGatekeeper;
@@ -92,6 +96,10 @@ public class LocalToolExecutor {
             case "spawn_subagent" -> spawnSubagentTool != null
                     ? spawnSubagentTool.executeSpawnSubagent(input)
                     : LocalToolResult.error("spawn_subagent tool not initialized");
+            // query_subagent_result 工具
+            case "query_subagent_result" -> querySubagentResultTool != null
+                    ? querySubagentResultTool.executeQuery(input)
+                    : LocalToolResult.error("query_subagent_result tool not initialized");
             default -> LocalToolResult.error("Unknown tool: " + toolName);
         };
     }

@@ -152,6 +152,33 @@ public class MultiAgentFacade {
     }
 
     /**
+     * 派生单个子 Agent，并通过合成批次（batch-of-1）确保完成后能唤醒主 Agent。
+     * <p>
+     * 与 {@link #spawnTask(String, String, String, int, Set)} 的不同之处在于：此方法会先在
+     * {@link BatchCompletionListener} 中注册一个 totalTasks=1 的批次上下文，
+     * 使得子任务完成时能正常触发 {@link BatchCompletionListener.BatchCompletedEvent}，
+     * 进而通过 {@link MainAgentResumeListener} 将结果作为 SYSTEM 消息注入主会话。
+     * <p>
+     * mainRunId 通过 {@link TraceContext#getRunId()} 自动获取（调用方的运行 ID）。
+     */
+    public SpawnResult spawnSingle(String taskName, String goal, String agentType,
+                                    int currentDepth, Set<String> allowedTools) {
+        String sessionId = TraceContext.getSessionId();
+        String mainRunId = TraceContext.getRunId();
+
+        BatchContext batchContext = batchCompletionListener.createBatch(sessionId, mainRunId, 1);
+        String batchId = batchContext.getBatchId();
+
+        return spawnTask(
+                taskName, goal, agentType, currentDepth, allowedTools,
+                batchId,   // batchId
+                1,          // batchTotal
+                0,          // batchIndex
+                mainRunId   // mainRunId
+        );
+    }
+
+    /**
      * 批量派生子 Agent（Map-Reduce 模式）。
      * <p>
      * 创建批次上下文，派发所有子任务，并注册批次完成监听器。

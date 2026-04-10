@@ -2,6 +2,7 @@ package demo.k8s.agent.tools.local.planning;
 
 import demo.k8s.agent.config.DemoMultiAgentProperties;
 import demo.k8s.agent.observability.tracing.TraceContext;
+import demo.k8s.agent.subagent.BatchCompletionListener;
 import demo.k8s.agent.subagent.MultiAgentFacade;
 import demo.k8s.agent.subagent.SpawnGatekeeper;
 import demo.k8s.agent.subagent.SpawnResult;
@@ -34,16 +35,19 @@ public class SpawnSubagentTool {
     private final ObjectProvider<MultiAgentFacade> multiAgentFacade;
     private final SpawnGatekeeper spawnGatekeeper;
     private final SubagentRunService subagentRunService;
+    private final BatchCompletionListener batchCompletionListener;
 
     public SpawnSubagentTool(
             DemoMultiAgentProperties multiAgentProperties,
             ObjectProvider<MultiAgentFacade> multiAgentFacade,
             SpawnGatekeeper spawnGatekeeper,
-            SubagentRunService subagentRunService) {
+            SubagentRunService subagentRunService,
+            BatchCompletionListener batchCompletionListener) {
         this.multiAgentProperties = multiAgentProperties;
         this.multiAgentFacade = multiAgentFacade;
         this.spawnGatekeeper = spawnGatekeeper;
         this.subagentRunService = subagentRunService;
+        this.batchCompletionListener = batchCompletionListener;
     }
 
     /**
@@ -82,7 +86,7 @@ public class SpawnSubagentTool {
 
             ## Parameters
 
-            - **goal** (required): Clear, specific description of what the subagent should accomplish
+            - **goal** (required for single spawn): Clear, specific description of what the subagent should accomplish
             - **agentType** (optional): Type of agent to spawn ("general", "worker", "bash", "explore", "edit", "plan")
               - "general": General-purpose agent (default)
               - "worker": Worker agent with full tool access
@@ -90,22 +94,31 @@ public class SpawnSubagentTool {
               - "explore": Code explorer for reading/searching code
               - "edit": Code editor for file modifications
               - "plan": Planning specialist for complex task breakdown
+            - **batchTasks** (optional): Array of tasks for parallel Map-Reduce spawning. When provided, all tasks are spawned together and results are automatically aggregated as a system message.
+              - Each item: {"goal": "task description", "agentType": "worker" (optional), "taskName": "name" (optional)}
 
             ## Example Usage
 
+            Single spawn:
             ```json
             {
-              "goal": "Translate the following text to Spanish, Japanese, French, German, and Korean. Each translation should be saved to a separate file: [original text here]",
+              "goal": "Translate the following text to Spanish: [original text here]",
               "agentType": "worker"
             }
             ```
 
+            Batch spawn (parallel with auto-aggregation):
             ```json
             {
-              "goal": "Analyze the project structure and identify all TODO comments in TypeScript files",
-              "agentType": "explore"
+              "batchTasks": [
+                {"goal": "Translate document to Spanish", "agentType": "worker"},
+                {"goal": "Translate document to French", "agentType": "worker"},
+                {"goal": "Translate document to German", "agentType": "worker"}
+              ]
             }
             ```
+
+            After batch spawn, wait for the system message "=== SUBAGENT BATCH COMPLETED ===" before giving your consolidated response.
             """;
 
     /**
@@ -116,9 +129,10 @@ public class SpawnSubagentTool {
             "  \"type\": \"object\"," +
             "  \"properties\": {" +
             "    \"goal\": {\"type\": \"string\", \"description\": \"Clear, specific description of what the subagent should accomplish\"}," +
-            "    \"agentType\": {\"type\": \"string\", \"enum\": [\"general\", \"worker\", \"bash\", \"explore\", \"edit\", \"plan\"], \"description\": \"Type of agent to spawn (default: general)\"}" +
+            "    \"agentType\": {\"type\": \"string\", \"enum\": [\"general\", \"worker\", \"bash\", \"explore\", \"edit\", \"plan\"], \"description\": \"Type of agent to spawn (default: general)\"}," +
+            "    \"batchTasks\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"goal\": {\"type\": \"string\"}, \"agentType\": {\"type\": \"string\", \"enum\": [\"general\", \"worker\", \"bash\", \"explore\", \"edit\", \"plan\"]}, \"taskName\": {\"type\": \"string\"}}, \"required\": [\"goal\"]}, \"description\": \"Array of batch tasks for parallel Map-Reduce spawning. When provided, spawns all tasks in one call and aggregates results automatically.\"}" +
             "  }," +
-            "  \"required\": [\"goal\"]" +
+            "  \"required\": []" +
             "}";
 
     /**
@@ -148,16 +162,24 @@ public class SpawnSubagentTool {
                 Optional parameter:
                 - agentType: Type of agent to spawn ("general", "worker", "bash", "explore", "edit", "plan")
 
-                Example (parallel translation task):
+                Batch spawning (optional):
+                - batchTasks: Array of tasks to spawn in parallel. Each task has "goal" (required),
+                  "agentType" (optional), and "taskName" (optional).
+                  When batchTasks is provided, all tasks are spawned together and results are
+                  aggregated automatically as a system message.
+
+                Example (single):
                 {
-                  "goal": "Translate product description to Spanish, Japanese, French, German, and Korean. Each translation saved to a separate file.",
+                  "goal": "Translate product description to Spanish",
                   "agentType": "worker"
                 }
 
-                Example (code exploration):
+                Example (batch):
                 {
-                  "goal": "Find all TODO comments in TypeScript files and summarize by category",
-                  "agentType": "explore"
+                  "batchTasks": [
+                    {"goal": "Translate to Spanish", "agentType": "worker"},
+                    {"goal": "Translate to French", "agentType": "worker"}
+                  ]
                 }
 
                 When to use spawn_subagent:
@@ -189,7 +211,7 @@ public class SpawnSubagentTool {
     }
 
     /**
-     * 执行 spawn_subagent 工具
+     * 执行 spawn_subagent 工具（支持单任务和批量派生）
      */
     public LocalToolResult executeSpawnSubagent(Map<String, Object> input) {
         try {
@@ -206,29 +228,37 @@ public class SpawnSubagentTool {
                 return spawnRejected("Shadow mode: spawn evaluation only");
             }
 
-            // 3. 解析输入参数
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            String goal = input.get("goal") != null ? mapper.convertValue(input.get("goal"), String.class) : "";
-            String agentType = input.get("agentType") != null ? mapper.convertValue(input.get("agentType"), String.class) : "general";
-
-            if (goal == null || goal.isBlank()) {
-                return spawnRejected("goal is required and cannot be empty");
-            }
-
-            // 4. 获取会话上下文
+            // 3. 获取会话上下文
             String sessionId = TraceContext.getSessionId();
             if (sessionId == null || sessionId.isBlank()) {
                 return spawnRejected("No active session for subagent spawn");
             }
 
-            // 5. 检查门控并派生子 Agent
-            log.info("[SpawnSubagent] Spawning subagent: sessionId={}, goal={}, agentType={}",
+            // 4. 检测是否为批量派生
+            Object batchTasksObj = input.get("batchTasks");
+            if (batchTasksObj instanceof java.util.List<?> batchList && !batchList.isEmpty()) {
+                return executeBatchSpawn(sessionId, batchList);
+            }
+
+            // === 单任务派生路径 ===
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String goal = input.get("goal") != null ? mapper.convertValue(input.get("goal"), String.class) : "";
+            String agentType = input.get("agentType") != null ? mapper.convertValue(input.get("agentType"), String.class) : "general";
+
+            if (goal == null || goal.isBlank()) {
+                return spawnRejected("goal is required when batchTasks is not provided");
+            }
+
+            log.info("[SpawnSubagent] Spawning single subagent: sessionId={}, goal={}, agentType={}",
                     sessionId, truncate(goal, 100), agentType);
 
             Set<String> allowed = spawnGatekeeper.globalSafeToolNames();
             int currentDepth = resolveCallerSubagentDepth(sessionId);
-            SpawnResult spawnResult = multiAgentFacade.getObject().spawnTask(
-                    "spawn_subagent_task", // taskName
+
+            // 使用 spawnSingle() 创建合成批次，确保完成后触发 SYSTEM 消息注入
+            // mainRunId 通过 TraceContext.getRunId() 自动获取
+            SpawnResult spawnResult = multiAgentFacade.getObject().spawnSingle(
+                    "spawn_subagent_task",
                     goal,
                     agentType,
                     currentDepth,
@@ -239,7 +269,7 @@ public class SpawnSubagentTool {
                 if (spawnResult.getMustDoNext() != null && spawnResult.getMustDoNext().suggestion() != null) {
                     msg = spawnResult.getMustDoNext().suggestion();
                 }
-                log.info("[SpawnSubagent] Spawn rejected or failed: sessionId={}, goal={}, msg={}",
+                log.info("[SpawnSubagent] Spawn rejected: sessionId={}, goal={}, msg={}",
                         sessionId, truncate(goal, 50), msg);
                 return spawnRejected(msg);
             }
@@ -252,13 +282,100 @@ public class SpawnSubagentTool {
             log.info("[SpawnSubagent] Spawn success: sessionId={}, runId={}, runStatus={}",
                     sessionId, runId, row.getStatus());
 
-            // 7. 返回结果（与 TaskCreate 成功响应格式对齐）
             return spawnSuccess(runId, goal, preview);
 
         } catch (Exception e) {
             log.error("[SpawnSubagent] Failed", e);
             return spawnRejected(e.getMessage() != null ? e.getMessage() : "spawn error");
         }
+    }
+
+    /**
+     * 执行批量派生（当 input 中包含非空 batchTasks 数组时调用）
+     */
+    private LocalToolResult executeBatchSpawn(String sessionId, java.util.List<?> batchList) {
+        log.info("[SpawnSubagent] Batch spawn requested: sessionId={}, totalTasks={}",
+                sessionId, batchList.size());
+
+        Set<String> allowed = spawnGatekeeper.globalSafeToolNames();
+        int currentDepth = resolveCallerSubagentDepth(sessionId);
+
+        // 解析 batchTasks
+        java.util.List<MultiAgentFacade.BatchTask> tasks = new java.util.ArrayList<>();
+        for (Object item : batchList) {
+            MultiAgentFacade.BatchTask batchTask = parseBatchTaskItem(item);
+            if (batchTask != null) {
+                tasks.add(batchTask);
+            }
+        }
+
+        if (tasks.isEmpty()) {
+            return spawnRejected("batchTasks must contain at least one valid task with a non-empty goal");
+        }
+
+        // mainRunId 通过 TraceContext.getRunId() 自动获取
+        String mainRunId = TraceContext.getRunId();
+
+        MultiAgentFacade facade = multiAgentFacade.getObject();
+        MultiAgentFacade.BatchSpawnResult batchResult = facade.spawnBatch(
+                sessionId, mainRunId, tasks, currentDepth, allowed);
+
+        // 构建响应
+        java.util.List<String> runIds = batchResult.taskResults().stream()
+                .filter(SpawnResult::isSuccess)
+                .map(SpawnResult::getRunId)
+                .collect(java.util.stream.Collectors.toList());
+
+        StringBuilder content = new StringBuilder();
+        content.append("Batch spawned successfully: batchId=").append(batchResult.batchId())
+                .append(", totalTasks=").append(batchResult.totalTasks());
+        if (!runIds.isEmpty()) {
+            content.append(", runIds=").append(String.join(", ", runIds));
+        }
+        content.append(". Wait for system message '=== SUBAGENT BATCH COMPLETED ===' before consolidating results.");
+
+        // 构建 metadata
+        java.util.Map<String, Object> output = new java.util.LinkedHashMap<>();
+        java.util.Map<String, Object> batchInfo = new java.util.LinkedHashMap<>();
+        batchInfo.put("batchId", batchResult.batchId());
+        batchInfo.put("totalTasks", batchResult.totalTasks());
+        batchInfo.put("runIds", runIds);
+        output.put("batch", batchInfo);
+
+        return LocalToolResult.builder()
+                .success(true)
+                .content(content.toString())
+                .executionLocation("local")
+                .metadata(new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(output))
+                .build();
+    }
+
+    /**
+     * 解析 batchTasks 数组中的单个任务项
+     */
+    private MultiAgentFacade.BatchTask parseBatchTaskItem(Object item) {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        java.util.Map<?, ?> map;
+        try {
+            if (item instanceof String str) {
+                return new MultiAgentFacade.BatchTask(null, str, "general");
+            }
+            map = mapper.convertValue(item, java.util.Map.class);
+        } catch (Exception e) {
+            log.warn("[SpawnSubagent] Failed to parse batch task item: {}", item);
+            return null;
+        }
+
+        String goal = map.get("goal") != null ? String.valueOf(map.get("goal")) : null;
+        if (goal == null || goal.isBlank()) {
+            log.warn("[SpawnSubagent] Batch task item missing goal, skipping: {}", item);
+            return null;
+        }
+
+        String agentType = map.get("agentType") != null ? String.valueOf(map.get("agentType")) : "general";
+        String taskName = map.get("taskName") != null ? String.valueOf(map.get("taskName")) : null;
+
+        return new MultiAgentFacade.BatchTask(taskName, goal, agentType);
     }
 
     /**

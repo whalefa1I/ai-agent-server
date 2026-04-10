@@ -4,6 +4,7 @@ import demo.k8s.agent.contextobject.ContextObjectReadService;
 import demo.k8s.agent.subagent.MultiAgentFacade;
 import demo.k8s.agent.subagent.SpawnGatekeeper;
 import demo.k8s.agent.tools.local.planning.SpawnSubagentTool;
+import demo.k8s.agent.tools.local.planning.QuerySubagentResultTool;
 import demo.k8s.agent.tools.UnifiedToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolRegistry;
@@ -242,12 +243,14 @@ public class DemoToolRegistryConfiguration {
     LocalToolExecutor localToolExecutor(
             ContextObjectReadService contextObjectReadService,
             SpawnSubagentTool spawnSubagentTool,
+            QuerySubagentResultTool querySubagentResultTool,
             DemoMultiAgentProperties multiAgentProperties,
             MultiAgentFacade multiAgentFacade,
             SpawnGatekeeper spawnGatekeeper) {
         return new LocalToolExecutor(
                 contextObjectReadService,
                 spawnSubagentTool,
+                querySubagentResultTool,
                 multiAgentProperties,
                 multiAgentFacade,
                 spawnGatekeeper);
