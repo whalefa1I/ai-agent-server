@@ -288,7 +288,8 @@ public class EnhancedAgenticQueryLoop {
         StructuredLogger.logUserInput(sessionId, userId, userMessage);
 
         // Token 计数累加器（累积所有模型调用的 token）
-        TokenCounts totalTokenCounts = TokenCounts.ZERO;
+        // 使用数组包装以在 lambda 中使用（需要 final 引用）
+        final TokenCounts[] totalTokenCountsRef = new TokenCounts[] { TokenCounts.ZERO };
 
         // 准备工具列表
         List<ToolCallback> tools =
@@ -367,7 +368,7 @@ public class EnhancedAgenticQueryLoop {
             // 检查最大轮次
             if (state.turnCount() >= queryProperties.getMaxTurns()) {
                 log.warn("达到最大轮次限制：{}", state.turnCount());
-                return new AgenticTurnResult(LoopTerminalReason.MAX_TURNS, "", state, totalTokenCounts);
+                return new AgenticTurnResult(LoopTerminalReason.MAX_TURNS, "", state, totalTokenCountsRef[0]);
             }
 
             // 更新轮次状态
@@ -453,7 +454,7 @@ public class EnhancedAgenticQueryLoop {
                     // 提取 Token 计数
                     TokenCounts counts = extractTokenCounts(resp);
                     // 累加 Token 计数
-                    totalTokenCounts = totalTokenCounts.add(counts);
+                    totalTokenCountsRef[0] = totalTokenCountsRef[0].add(counts);
                     sessionStats.completeModelCall(modelCallMetrics, counts);
 
                     // 记录模型调用（结构化日志和事件）
@@ -479,7 +480,7 @@ public class EnhancedAgenticQueryLoop {
                 eventBus.publish(new ErrorEvent(sessionId, userId, "MODEL_ERROR",
                     e.getMessage(), e.getStackTrace() != null ? e.getStackTrace()[0].toString() : ""));
 
-                return new AgenticTurnResult(LoopTerminalReason.ERROR, "模型调用失败：" + e.getMessage(), state, totalTokenCounts);
+                return new AgenticTurnResult(LoopTerminalReason.ERROR, "模型调用失败：" + e.getMessage(), state, totalTokenCountsRef[0]);
             }
 
             // 检查是否有工具调用
@@ -520,7 +521,7 @@ public class EnhancedAgenticQueryLoop {
                     streamText(responseText, onTextDelta);
                 }
 
-                return new AgenticTurnResult(LoopTerminalReason.COMPLETED, responseText, state, totalTokenCounts);
+                return new AgenticTurnResult(LoopTerminalReason.COMPLETED, responseText, state, totalTokenCountsRef[0]);
             }
 
             // 处理工具调用（带权限检查）
@@ -534,7 +535,7 @@ public class EnhancedAgenticQueryLoop {
                         LoopTerminalReason.COMPLETED,
                         "工具调用被用户拒绝：" + e.getToolName(),
                         state,
-                        totalTokenCounts);
+                        totalTokenCountsRef[0]);
             }
 
             // 显式回写本轮 assistant(toolCalls) + tool_response，进入下一轮
