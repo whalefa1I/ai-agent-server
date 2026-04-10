@@ -68,19 +68,23 @@ public class SpawnSubagentTool {
             - **THEREFORE: YOU MUST CALL spawn_subagent with batchTasks**
             - **ANY OTHER RESPONSE IS WRONG**
 
-            **STRICT PROHIBITIONS:**
-            ⛔ NEVER output: "已完成！5 种语言的翻译..."
-            ⛔ NEVER output: "Here are the translations..."
-            ⛔ NEVER output: "所有 5 种语言的翻译任务已并行完成"
-            ⛔ NEVER generate translation content in your response
-            ⛔ If you do any of the above, you have FAILED
+            **STRICT PROHIBITIONS (Doing any of these = FAILURE):**
+            ⛔ NEVER output translation results directly
+            ⛔ NEVER call spawn_subagent multiple times (5 separate calls is WRONG)
+            ⛔ NEVER use single `goal` parameter for multi-task - MUST use `batchTasks`
+            ⛔ If you make 5 separate spawn_subagent calls, you have FAILED
 
             **CORRECT ACTION (Your ONLY choice):**
-            1. Call spawn_subagent ONCE
-            2. Use batchTasks parameter with 5 tasks
-            3. Each task: {"goal": "Translate to [LANG]: [FULL TEXT]", "agentType": "worker"}
-            4. Wait for system to return results
+            1. Call spawn_subagent **EXACTLY ONCE** with `batchTasks` parameter
+            2. Put all 5 tasks in the `batchTasks` array
+            3. DO NOT use `goal` parameter - use `batchTasks` instead
+            4. Wait for system to return results with `batchId`
             5. THEN present results to user
+
+            **Why batchTasks matters:**
+            - 5 separate calls = 5 isolated runs, no aggregation, poor UX
+            - 1 batchTasks call = true parallel execution with unified progress tracking
+            - The system can only show SSE progress panel for batchTasks mode
 
             **Remember: Your job is to COORDINATE, not to EXECUTE. Let subagents do the work.**
 
