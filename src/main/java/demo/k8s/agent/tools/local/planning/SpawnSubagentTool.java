@@ -52,16 +52,25 @@ public class SpawnSubagentTool {
      * 增强触发规则：明确何时应该使用 spawn_subagent，强化并行任务场景。
      */
     public static final String SPAWN_SUBAGENT_PROMPT = """
-            ### CRITICAL RULE: When to Use spawn_subagent (Hard Priority)
+            ### 🚨 ABSOLUTE REQUIREMENT: ALWAYS USE spawn_subagent for 3+ Tasks
 
-            **You MUST use spawn_subagent when the task contains 3 or more independent subtasks:**
-            - Multi-language translation (3+ languages)
-            - Multi-file analysis (3+ files)
-            - Multi-solution comparison (3+ solutions)
-            - Multi-role documentation (3+ user roles)
-            - Parallel data processing (3+ items)
+            **VIOLATION CONSEQUENCE:** If you answer directly for tasks with 3+ items, the system will fail to track progress and user experience will be broken.
 
-            **Do NOT answer directly for these cases - spawn subagents instead.**
+            **When user asks for ANY of these, you MUST call spawn_subagent (NO EXCEPTIONS):**
+            - "Translate to 3+ languages" → MUST use spawn_subagent with batchTasks
+            - "Analyze 3+ files" → MUST use spawn_subagent with batchTasks  
+            - "Process 3+ items" → MUST use spawn_subagent with batchTasks
+            - "Compare 3+ solutions" → MUST use spawn_subagent with batchTasks
+
+            **FORBIDDEN BEHAVIOR (Never do this):**
+            ❌ Outputting translation results directly without spawning
+            ❌ Saying "Here are the 5 translations" without using spawn_subagent
+            ❌ Completing multi-task work yourself in the main response
+
+            **CORRECT BEHAVIOR (Always do this):**
+            ✅ Call spawn_subagent with batchTasks containing all tasks
+            ✅ Let subagents handle the actual work
+            ✅ Wait for results through the proper channel
 
             ---
 
@@ -84,11 +93,25 @@ public class SpawnSubagentTool {
 
             ## Examples
 
-            **Good use cases (spawn subagent):**
-            - "Translate this document to Spanish, French, German, Japanese, and Korean"
-            - "Generate monthly reports for each of the 12 sales regions"
-            - "Analyze these 5 datasets and produce summaries"
-            - "Create 10 unit tests for the authentication module"
+            **✅ CORRECT (Always do this for multi-task):**
+            User: "请将以下产品说明文档并行翻译成 5 种语言..."
+            Your action: Call spawn_subagent ONCE with batchTasks array containing 5 tasks
+            ```json
+            {
+              "batchTasks": [
+                {"goal": "Translate to Spanish: [full text]", "agentType": "worker"},
+                {"goal": "Translate to Japanese: [full text]", "agentType": "worker"},
+                {"goal": "Translate to French: [full text]", "agentType": "worker"},
+                {"goal": "Translate to German: [full text]", "agentType": "worker"},
+                {"goal": "Translate to Korean: [full text]", "agentType": "worker"}
+              ]
+            }
+            ```
+
+            **❌ WRONG (Never do this):**
+            User: "请将以下产品说明文档并行翻译成 5 种语言..."
+            Your action: Outputting "已完成！5 种语言的翻译已并行处理完成，结果如下：[表格]"
+            This is WRONG because you did the work yourself instead of spawning subagents.
 
             **Bad use cases (do NOT spawn):**
             - "Read the config file and tell me what it contains"
