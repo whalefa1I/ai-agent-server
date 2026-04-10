@@ -189,27 +189,46 @@ public final class AgentPrompts {
             """;
 
     /**
-     * spawn_subagent 工具提示词（与 Claude Code / OpenCLaw 的 delegate / spawn 对齐）
+     * spawn_subagent 工具提示词（与 Claude Code / OpenClaw 的「独立会话 / 委派子运行」语义对齐）
+     * <p>
+     * 参考产品侧常见触发条件：需要<strong>隔离上下文</strong>的专项子任务、可并行的独立工作单元、
+     * 或主会话不宜直接承载的大范围探索；不等价于「Task 列表」——Task* 仅用于进度追踪展示。
      */
     public static final String SPAWN_SUBAGENT_PROMPT = """
             === spawn_subagent ===
 
-            Use this tool to spawn a subagent that handles complex or parallelizable tasks.
+            Spawn an **isolated worker run** with its own tool loop to complete one bounded **goal**.
+            This matches Claude Code / OpenClaw-style **delegation**: a child run that executes and returns,
+            not a task row in TaskCreate.
 
             ## When to Use spawn_subagent
 
-            Spawn a subagent when:
-            - You need to process multiple independent items in parallel (e.g., "Translate to 5 languages", "Process 10 files")
-            - The task can be split into parallel branches that do not depend on each other
-            - You want to leverage parallel execution for speed
-            - The task is complex enough to benefit from independent execution
+            Prefer spawn_subagent when **any** of these apply:
+
+            - **Explicit delegation**: The user asks to delegate, run in parallel, use a subagent/worker,
+              or offload a subtask while you continue coordinating.
+            - **Parallel independent units**: Multiple outcomes that do not depend on each other
+              (e.g. N translations to N files, N regions, N files to scan) — each unit can be its own goal.
+            - **Large exploration / search**: Broad codebase or repo exploration that would bloat the main
+              thread; delegate a **single** explore goal and get back a summary.
+            - **Specialist fit**: The work clearly matches **agentType** (explore vs edit vs bash vs plan).
+            - **Isolation**: You want a clean context for one sub-mission instead of mixing it with the main plan.
+
+            ## One spawn vs many spawns (UI / progress)
+
+            - **One spawn** = **one** tool block in the parent timeline and **one** SubagentRun.
+              Packing "5 languages" into **one** goal is valid; the parent UI still shows **one** delegation card.
+            - If the user (or product) needs **visible per-unit progress in the main chat** (N separate cards),
+              call spawn_subagent **N times** with **N separate goals** (e.g. one language per spawn), or use
+              TaskCreate/TaskUpdate in the main thread to **track** those N delegations — Task* does **not** execute them.
 
             ## When NOT to Use spawn_subagent
 
-            Do NOT spawn a subagent for:
-            - Simple sequential tasks (e.g., "Read this file, then edit it, then save")
-            - Tasks that must be done one after another due to dependencies
-            - When you want to handle the task directly with the main agent
+            Do NOT spawn when:
+            - A **single** trivial step suffices (short Q&A, one file read, one small edit).
+            - Steps are **strictly sequential** with hard dependencies (read result A before acting on B in the same flow)
+              — do it in the main agent unless the user explicitly asked for delegation.
+            - You only need a **checklist** for the user — use TaskCreate / TaskUpdate instead (no execution).
 
             ## Parameters
 
@@ -256,6 +275,7 @@ public final class AgentPrompts {
     public static final String DEMO_COORDINATOR_SYSTEM =
             """
                     你是协调者 Agent。需要委派专门子任务时，直接使用 spawn_subagent。
+                    与 Claude Code / OpenClaw 一致：子运行是「独立执行体」；主会话里一次 spawn_subagent 对应一条委派记录；若要在时间线上出现多条委派卡片，应对多个独立子目标多次调用 spawn_subagent，或用 Task* 仅做追踪展示。
                     Task 工具集（TaskCreate/TaskList/TaskGet/TaskUpdate/TaskStop/TaskOutput）仅用于任务追踪展示，不用于触发子 Agent。
                     需要执行受控 shell 时，使用 k8s_sandbox_run（K8s Job 沙盒）。可先调用 Skill「demo-k8s」阅读说明。不要编造工具输出。
                     说明：spawn_subagent 由子 Agent 运行时执行，默认带本地文件/Shell 等工具，仅适合受信开发环境。
