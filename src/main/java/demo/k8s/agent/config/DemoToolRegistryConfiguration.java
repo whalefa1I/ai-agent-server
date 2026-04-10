@@ -8,6 +8,7 @@ import demo.k8s.agent.tools.local.planning.QuerySubagentResultTool;
 import demo.k8s.agent.tools.UnifiedToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolRegistry;
+import demo.k8s.agent.tools.local.StreamingToolExecutor;
 import demo.k8s.agent.toolsystem.ClaudeLikeTool;
 import demo.k8s.agent.toolsystem.ClaudeToolFactory;
 import demo.k8s.agent.toolsystem.DemoToolSpecs;
@@ -91,42 +92,42 @@ public class DemoToolRegistryConfiguration {
         return ClaudeToolFactory.buildTool(
                 new ToolDefPartial("TaskCreate", ToolCategory.PLANNING, "创建新任务",
                         "{\"type\":\"object\",\"properties\":{\"subject\":{\"type\":\"string\"},\"description\":{\"type\":\"string\"}},\"required\":[\"subject\",\"description\"]}",
-                        null, false));
+                        null, false, false));
     }
 
     private static ClaudeLikeTool createTaskListToolSpec() {
         return ClaudeToolFactory.buildTool(
                 new ToolDefPartial("TaskList", ToolCategory.PLANNING, "列出所有任务",
                         "{\"type\":\"object\",\"properties\":{\"filter\":{\"type\":\"string\"}}}",
-                        null, true));
+                        null, true, true));
     }
 
     private static ClaudeLikeTool createTaskGetToolSpec() {
         return ClaudeToolFactory.buildTool(
                 new ToolDefPartial("TaskGet", ToolCategory.PLANNING, "获取任务详情",
                         "{\"type\":\"object\",\"properties\":{\"taskId\":{\"type\":\"string\"}},\"required\":[\"taskId\"]}",
-                        null, true));
+                        null, true, true));
     }
 
     private static ClaudeLikeTool createTaskUpdateToolSpec() {
         return ClaudeToolFactory.buildTool(
                 new ToolDefPartial("TaskUpdate", ToolCategory.PLANNING, "更新任务状态",
                         "{\"type\":\"object\",\"properties\":{\"taskId\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}},\"required\":[\"taskId\",\"status\"]}",
-                        null, false));
+                        null, false, false));
     }
 
     private static ClaudeLikeTool createTaskStopToolSpec() {
         return ClaudeToolFactory.buildTool(
                 new ToolDefPartial("TaskStop", ToolCategory.PLANNING, "停止任务",
                         "{\"type\":\"object\",\"properties\":{\"taskId\":{\"type\":\"string\"}},\"required\":[\"taskId\"]}",
-                        null, false));
+                        null, false, false));
     }
 
     private static ClaudeLikeTool createTaskOutputToolSpec() {
         return ClaudeToolFactory.buildTool(
                 new ToolDefPartial("TaskOutput", ToolCategory.PLANNING, "获取任务输出",
                         "{\"type\":\"object\",\"properties\":{\"taskId\":{\"type\":\"string\"}},\"required\":[\"taskId\"]}",
-                        null, true));
+                        null, true, true));
     }
 
     /**
@@ -254,5 +255,14 @@ public class DemoToolRegistryConfiguration {
                 multiAgentProperties,
                 multiAgentFacade,
                 spawnGatekeeper);
+    }
+
+    /**
+     * 流式工具执行器（支持并行工具执行）
+     */
+    @Bean
+    StreamingToolExecutor streamingToolExecutor(LocalToolExecutor localToolExecutor,
+                                                 ToolPermissionContext toolPermissionContext) {
+        return new StreamingToolExecutor(localToolExecutor, toolPermissionContext);
     }
 }

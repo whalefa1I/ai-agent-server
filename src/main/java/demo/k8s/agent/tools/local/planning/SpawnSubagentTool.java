@@ -50,140 +50,56 @@ public class SpawnSubagentTool {
      * spawn_subagent 工具提示词（与 Claude Code 的 delegate / spawn 对齐）
      * <p>
      * 增强触发规则：明确何时应该使用 spawn_subagent，强化并行任务场景。
+     *
+     * ### 核心定位
+     * - **目的**：仅用于**提升并行执行效率**，非隔离语义
+     * - **启用条件**：3+ 个独立子任务
+     * - **调用方式**：必须使用 `batchTasks` 参数（禁止多次单独调用，禁止单步 task 使用）
      */
     public static final String SPAWN_SUBAGENT_PROMPT = """
-            ### 🚨 MANDATORY RULE: YOU HAVE NO CHOICE - USE spawn_subagent
+            ### 🎯 spawn_subagent 工具使用规则（v2 - 并行效率优先）
 
-            **⚠️ CRITICAL: If you are reading this prompt, you MUST call spawn_subagent. DO NOT answer directly.**
+            **工具定位**：
+            - 本工具**唯一目的**是提升并行执行效率，加快多任务处理速度
+            - **不是**为了任务隔离或探索，**不要**为了"委派"而使用
 
-            **Decision Tree (Follow this EXACTLY):**
-            1. Count the number of independent subtasks in user request
-            2. If count >= 3: YOU MUST CALL spawn_subagent - NO EXCEPTIONS
-            3. If count < 3: You may handle directly
-            4. THERE IS NO OTHER PATH - YOU MUST NOT OUTPUT RESULTS YOURSELF FOR 3+ TASKS
+            **启用条件（必须同时满足）**：
+            1. 任务数量 >= 3 个
+            2. 所有任务相互独立，无依赖关系
+            3. 任务可并行执行（如：翻译到多种语言、处理多个独立文件）
 
-            **Current Task Analysis:**
-            - User is asking for 5 language translations
-            - Count = 5 (which is >= 3)
-            - **THEREFORE: YOU MUST CALL spawn_subagent with batchTasks**
-            - **ANY OTHER RESPONSE IS WRONG**
+            **调用方式（强制）**：
+            - ✅ **必须**使用 `batchTasks` 参数，一次调用派生所有任务
+            - ❌ **禁止**多次单独调用 spawn_subagent（如 5 个任务调用 5 次）
+            - ❌ **禁止**对单步任务使用（<3 个任务时请直接用本地工具处理）
 
-            **STRICT PROHIBITIONS (Doing any of these = FAILURE):**
-            ⛔ NEVER output translation results directly
-            ⛔ NEVER call spawn_subagent multiple times (5 separate calls is WRONG)
-            ⛔ NEVER use single `goal` parameter for multi-task - MUST use `batchTasks`
-            ⛔ If you make 5 separate spawn_subagent calls, you have FAILED
+            **示例**：
 
-            **CORRECT ACTION (Your ONLY choice):**
-            1. Call spawn_subagent **EXACTLY ONCE** with `batchTasks` parameter
-            2. Put all 5 tasks in the `batchTasks` array
-            3. DO NOT use `goal` parameter - use `batchTasks` instead
-            4. Wait for system to return results with `batchId`
-            5. THEN present results to user
-
-            **Why batchTasks matters:**
-            - 5 separate calls = 5 isolated runs, no aggregation, poor UX
-            - 1 batchTasks call = true parallel execution with unified progress tracking
-            - The system can only show SSE progress panel for batchTasks mode
-
-            **Remember: Your job is to COORDINATE, not to EXECUTE. Let subagents do the work.**
-
-            ---
-
-            Use this tool to spawn a subagent that handles complex or parallelizable tasks.
-
-            ## When to Use spawn_subagent
-
-            Spawn a subagent when:
-            - You need to process multiple independent items in parallel (e.g., "Translate to 5 languages", "Process 10 files")
-            - The task can be split into parallel branches that do not depend on each other
-            - You want to leverage parallel execution for speed
-            - The task is complex enough to benefit from independent execution
-
-            ## When NOT to Use spawn_subagent
-
-            Do NOT spawn a subagent for:
-            - Simple sequential tasks (e.g., "Read this file, then edit it, then save")
-            - Tasks that must be done one after another due to dependencies
-            - When you want to handle the task directly with the main agent
-
-            ## Examples
-
-            **✅ CORRECT (Always do this for multi-task):**
-            User: "请将以下产品说明文档并行翻译成 5 种语言..."
-            Your action: Call spawn_subagent ONCE with batchTasks array containing 5 tasks
+            ✅ 正确（5 个翻译任务）：
             ```json
             {
               "batchTasks": [
-                {"goal": "Translate to Spanish: [full text]", "agentType": "worker"},
-                {"goal": "Translate to Japanese: [full text]", "agentType": "worker"},
-                {"goal": "Translate to French: [full text]", "agentType": "worker"},
-                {"goal": "Translate to German: [full text]", "agentType": "worker"},
-                {"goal": "Translate to Korean: [full text]", "agentType": "worker"}
+                {"goal": "Translate to Spanish: [原文]", "agentType": "worker", "taskName": "Spanish"},
+                {"goal": "Translate to French: [原文]", "agentType": "worker", "taskName": "French"},
+                {"goal": "Translate to German: [原文]", "agentType": "worker", "taskName": "German"},
+                {"goal": "Translate to Japanese: [原文]", "agentType": "worker", "taskName": "Japanese"},
+                {"goal": "Translate to Korean: [原文]", "agentType": "worker", "taskName": "Korean"}
               ]
             }
             ```
 
-            **❌ WRONG (Never do this):**
-            User: "请将以下产品说明文档并行翻译成 5 种语言..."
-            Your action: Outputting "已完成！5 种语言的翻译已并行处理完成，结果如下：[表格]"
-            This is WRONG because you did the work yourself instead of spawning subagents.
-
-            **Bad use cases (do NOT spawn):**
-            - "Read the config file and tell me what it contains"
-            - "Fix the bug in the login function"
-            - "Write a new feature that adds user profile"
-
-            ## Parameters
-
-            - **goal** (required for single spawn): Clear, specific description of what the subagent should accomplish
-            - **agentType** (optional): Type of agent to spawn ("general", "worker", "bash", "explore", "edit", "plan")
-              - "general": General-purpose agent (default)
-              - "worker": Worker agent with full tool access
-              - "bash": Shell specialist for command execution
-              - "explore": Code explorer for reading/searching code
-              - "edit": Code editor for file modifications
-              - "plan": Planning specialist for complex task breakdown
-            - **batchTasks** (MANDATORY for 3+ tasks): REQUIRED when you have 3 or more independent tasks to run in parallel.
-              - This enables true parallel execution with aggregated progress tracking
-              - Each item: {"goal": "task description", "agentType": "worker" (optional), "taskName": "name" (optional)}
-              - ⚠️ CRITICAL: You MUST use batchTasks instead of multiple single spawns for 3+ tasks
-              - Multiple single spawns will NOT show proper progress and are less efficient
-
-            ## Example Usage
-
-            ❌ WRONG (NEVER do this for multi-task):
-            Calling spawn_subagent 5 separate times for 5 translations - this breaks progress tracking and is inefficient.
-
-            ✅ CORRECT (MANDATORY for 3+ tasks):
-            Single call with batchTasks containing all tasks:
+            ❌ 错误 - 单步任务使用 spawn：
             ```json
-            {
-              "batchTasks": [
-                {"goal": "Translate the following text to Spanish: [full original text here]", "agentType": "worker", "taskName": "Spanish translation"},
-                {"goal": "Translate the following text to French: [full original text here]", "agentType": "worker", "taskName": "French translation"},
-                {"goal": "Translate the following text to German: [full original text here]", "agentType": "worker", "taskName": "German translation"},
-                {"goal": "Translate the following text to Japanese: [full original text here]", "agentType": "worker", "taskName": "Japanese translation"},
-                {"goal": "Translate the following text to Korean: [full original text here]", "agentType": "worker", "taskName": "Korean translation"}
-              ]
-            }
+            {"goal": "Read the config file", "agentType": "worker"}
             ```
+            原因：单步任务直接使用 file_read 即可，spawn 会增加不必要的开销
 
-            ✅ Single spawn (only for 1-2 simple tasks):
-            ```json
-            {
-              "goal": "Translate the following text to Spanish: [original text here]",
-              "agentType": "worker"
-            }
-            ```
+            ❌ 错误 - 多次单独调用：
+            调用 5 次 spawn_subagent，每次一个 goal
+            原因：应使用 1 次 batchTasks 包含所有任务
 
-            ### ⚠️ ENFORCEMENT RULE
-            If the user asks for "Translate to 5 languages" or any task with 3+ parallel items:
-            - You MUST use ONE spawn_subagent call with batchTasks array
-            - You MUST NOT use multiple separate spawn_subagent calls
-            - Violating this rule will result in broken progress display and poor user experience
-
-            After batch spawn, wait for the system message "=== SUBAGENT BATCH COMPLETED ===" before giving your consolidated response.
+            **等待完成**：
+            调用 batchTasks 后，等待系统消息 "=== SUBAGENT BATCH COMPLETED ===" 再汇总结果
             """;
 
     /**
@@ -219,44 +135,32 @@ public class SpawnSubagentTool {
      */
     public static demo.k8s.agent.toolsystem.ClaudeLikeTool createSpawnSubagentToolSpec() {
         String detailedDescription = """
-                Spawn a subagent to handle complex or parallelizable tasks.
+            Spawn subagents for **parallel execution efficiency only**.
 
-                Required parameter:
-                - goal: Clear description of what the subagent should accomplish
+            **When to use (must satisfy all):**
+            - 3+ independent tasks that can run in parallel
+            - Tasks have no dependencies on each other
+            - Examples: translate to multiple languages, process multiple independent files
 
-                Optional parameter:
-                - agentType: Type of agent to spawn ("general", "worker", "bash", "explore", "edit", "plan")
+            **When NOT to use:**
+            - Single task (<3 tasks): use local tools directly (avoid spawn overhead)
+            - Sequential tasks with dependencies
+            - Do NOT call multiple times - use batchTasks instead
 
-                Batch spawning (optional):
-                - batchTasks: Array of tasks to spawn in parallel. Each task has "goal" (required),
-                  "agentType" (optional), and "taskName" (optional).
-                  When batchTasks is provided, all tasks are spawned together and results are
-                  aggregated automatically as a system message.
+            **Parameters:**
+            - goal: Single task goal (NOT RECOMMENDED - use batchTasks for 3+ tasks)
+            - agentType: Agent type ("general", "worker", "bash", "explore", "edit", "plan")
+            - batchTasks: Array of tasks for parallel spawn (REQUIRED for 3+ tasks)
+              - Each: {"goal": "...", "agentType": "worker" (optional), "taskName": "..." (optional)}
 
-                Example (single):
-                {
-                  "goal": "Translate product description to Spanish",
-                  "agentType": "worker"
-                }
+            **Example (correct for multi-task):**
+            {"batchTasks": [
+              {"goal": "Translate to Spanish: [text]", "agentType": "worker", "taskName": "Spanish"},
+              {"goal": "Translate to French: [text]", "agentType": "worker", "taskName": "French"}
+            ]}
 
-                Example (batch):
-                {
-                  "batchTasks": [
-                    {"goal": "Translate to Spanish", "agentType": "worker"},
-                    {"goal": "Translate to French", "agentType": "worker"}
-                  ]
-                }
-
-                When to use spawn_subagent:
-                - Parallel processing of multiple independent items (e.g., "Translate to 5 languages", "Process 10 files")
-                - Complex tasks that can be split into parallel branches
-                - Tasks that benefit from independent execution
-
-                When NOT to use spawn_subagent:
-                - Simple sequential tasks
-                - Tasks with dependencies that require order
-                - When you want to handle the task directly
-                """;
+            After batch spawn, wait for "=== SUBAGENT BATCH COMPLETED ===" system message.
+            """;
 
         return demo.k8s.agent.toolsystem.ClaudeToolFactory.buildTool(
                 new demo.k8s.agent.toolsystem.ToolDefPartial(
@@ -265,7 +169,8 @@ public class SpawnSubagentTool {
                         detailedDescription,
                         SPAWN_SUBAGENT_INPUT_SCHEMA,
                         null,
-                        false),
+                        false,
+                        false), // spawn_subagent 不是并发安全的，因为需要管理子 agent 生命周期
                 (json, ctx) -> null, // 由 PermissionManager 检查
                 (input) -> {
                     boolean hasGoal = input.has("goal") && !input.get("goal").asText("").isBlank();
@@ -309,7 +214,7 @@ public class SpawnSubagentTool {
                 return executeBatchSpawn(sessionId, batchList);
             }
 
-            // === 单任务派生路径 ===
+            // === 单任务派生路径（兼容模式，但记录告警）===
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             String goal = input.get("goal") != null ? mapper.convertValue(input.get("goal"), String.class) : "";
             String agentType = input.get("agentType") != null ? mapper.convertValue(input.get("agentType"), String.class) : "general";
@@ -318,13 +223,19 @@ public class SpawnSubagentTool {
                 return spawnRejected("goal is required when batchTasks is not provided");
             }
 
-            log.info("[SpawnSubagent] Spawning single subagent: sessionId={}, goal={}, agentType={}",
+            // 告警：单步 spawn 不推荐使用，增加不必要的开销
+            log.warn("[SpawnSubagent] SINGLE SPAWN DETECTED (not recommended): sessionId={}, goal={}. " +
+                    "spawn_subagent should only be used for 3+ parallel tasks via batchTasks. " +
+                    "For single tasks, use local tools directly to avoid spawn overhead.",
+                    sessionId, truncate(goal, 100));
+
+            log.info("[SpawnSubagent] Spawning single subagent (compat mode): sessionId={}, goal={}, agentType={}",
                     sessionId, truncate(goal, 100), agentType);
 
             Set<String> allowed = spawnGatekeeper.globalSafeToolNames();
             int currentDepth = resolveCallerSubagentDepth(sessionId);
 
-            // 使用 spawnSingle() 创建合成批次，确保完成后触发 SYSTEM 消息注入
+            // 使用 spawnSingle() 创建合成批次（batch-of-1），确保完成后触发 SYSTEM 消息注入
             // mainRunId 通过 TraceContext.getRunId() 自动获取
             SpawnResult spawnResult = multiAgentFacade.getObject().spawnSingle(
                     "spawn_subagent_task",

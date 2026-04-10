@@ -236,7 +236,7 @@ public class TaskTools {
                 """;
 
         return ClaudeToolFactory.buildTool(
-                new ToolDefPartial("TaskCreate", ToolCategory.PLANNING, detailedDescription, TASK_CREATE_INPUT_SCHEMA, null, false),
+                new ToolDefPartial("TaskCreate", ToolCategory.PLANNING, detailedDescription, TASK_CREATE_INPUT_SCHEMA, null, false, false),
                 (json, ctx) -> {
                     // TaskCreate 需要用户确认（因为会创建新任务）
                     return null; // 由 PermissionManager 检查
@@ -451,7 +451,7 @@ public class TaskTools {
 
     public static ClaudeLikeTool createTaskListTool() {
         return ClaudeToolFactory.buildTool(
-                new ToolDefPartial("TaskList", ToolCategory.PLANNING, "List all tasks", TASK_LIST_INPUT_SCHEMA, null, true),
+                new ToolDefPartial("TaskList", ToolCategory.PLANNING, "List all tasks", TASK_LIST_INPUT_SCHEMA, null, true, true),
                 null,
                 null);
     }
@@ -502,7 +502,7 @@ public class TaskTools {
 
     public static ClaudeLikeTool createTaskGetTool() {
         return ClaudeToolFactory.buildTool(
-                new ToolDefPartial("TaskGet", ToolCategory.PLANNING, "Get details of a specific task", TASK_GET_INPUT_SCHEMA, null, true),
+                new ToolDefPartial("TaskGet", ToolCategory.PLANNING, "Get details of a specific task", TASK_GET_INPUT_SCHEMA, null, true, true),
                 null,
                 (input) -> {
                     if (!input.has("taskId") || input.get("taskId").asText("").isBlank()) {
@@ -618,7 +618,7 @@ public class TaskTools {
 
     public static ClaudeLikeTool createTaskUpdateTool() {
         return ClaudeToolFactory.buildTool(
-                new ToolDefPartial("TaskUpdate", ToolCategory.PLANNING, TASK_UPDATE_PROMPT, TASK_UPDATE_INPUT_SCHEMA, null, false),
+                new ToolDefPartial("TaskUpdate", ToolCategory.PLANNING, TASK_UPDATE_PROMPT, TASK_UPDATE_INPUT_SCHEMA, null, false, false),
                 null,
                 (input) -> {
                     if (!input.has("taskId") || input.get("taskId").asText("").isBlank()) {
@@ -766,7 +766,7 @@ public class TaskTools {
 
     public static ClaudeLikeTool createTaskStopTool() {
         return ClaudeToolFactory.buildTool(
-                new ToolDefPartial("TaskStop", ToolCategory.PLANNING, "Stop a running task", TASK_STOP_INPUT_SCHEMA, null, false),
+                new ToolDefPartial("TaskStop", ToolCategory.PLANNING, "Stop a running task", TASK_STOP_INPUT_SCHEMA, null, false, false),
                 null,
                 (input) -> {
                     if (!input.has("taskId") || input.get("taskId").asText("").isBlank()) {
@@ -813,7 +813,7 @@ public class TaskTools {
 
     public static ClaudeLikeTool createTaskOutputTool() {
         return ClaudeToolFactory.buildTool(
-                new ToolDefPartial("TaskOutput", ToolCategory.PLANNING, "Get the output/result of a task", TASK_OUTPUT_INPUT_SCHEMA, null, true),
+                new ToolDefPartial("TaskOutput", ToolCategory.PLANNING, "Get the output/result of a task", TASK_OUTPUT_INPUT_SCHEMA, null, true, true),
                 null,
                 (input) -> {
                     if (!input.has("taskId") || input.get("taskId").asText("").isBlank()) {

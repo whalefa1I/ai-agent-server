@@ -25,7 +25,9 @@ import demo.k8s.agent.state.ChatMessage;
 import demo.k8s.agent.state.ConversationManager;
 import demo.k8s.agent.state.MessageType;
 import demo.k8s.agent.tools.UnifiedToolExecutor;
+import demo.k8s.agent.tools.local.LocalToolExecutor;
 import demo.k8s.agent.tools.local.LocalToolResult;
+import demo.k8s.agent.tools.local.StreamingToolExecutor;
 import demo.k8s.agent.toolsystem.*;
 import demo.k8s.agent.toolstate.ToolStateService;
 import demo.k8s.agent.toolstate.ToolStatus;
@@ -94,6 +96,8 @@ public class EnhancedAgenticQueryLoop {
     private final ToolCallingManager toolCallingManager;
     private final SkillService skillService;
     private final UnifiedToolExecutor unifiedToolExecutor;
+    private final LocalToolExecutor localToolExecutor;
+    private final StreamingToolExecutor streamingToolExecutor;
     private final DemoDebugProperties demoDebugProperties;
     private final ConversationManager conversationManager;
 
@@ -122,6 +126,8 @@ public class EnhancedAgenticQueryLoop {
             ToolCallingManager toolCallingManager,
             SkillService skillService,
             UnifiedToolExecutor unifiedToolExecutor,
+            LocalToolExecutor localToolExecutor,
+            StreamingToolExecutor streamingToolExecutor,
             DemoDebugProperties demoDebugProperties,
             ConversationManager conversationManager) {
         this.chatModel = chatModel;
@@ -143,6 +149,8 @@ public class EnhancedAgenticQueryLoop {
         this.toolCallingManager = toolCallingManager;
         this.skillService = skillService;
         this.unifiedToolExecutor = unifiedToolExecutor;
+        this.localToolExecutor = localToolExecutor;
+        this.streamingToolExecutor = streamingToolExecutor;
         this.demoDebugProperties = demoDebugProperties;
         this.conversationManager = conversationManager;
 
@@ -520,6 +528,259 @@ public class EnhancedAgenticQueryLoop {
         } else {
             log.info("[TOOL-CALLS] Tools to execute: {}",
                     toolCalls.stream().map(AssistantMessage.ToolCall::name).toList());
+        }
+
+        // 使用并行执行器执行所有工具
+        return executeToolsInParallel(toolCalls, onToolCall);
+    }
+
+    /**
+     * 使用 StreamingToolExecutor 并行执行多个工具调用
+     * <p>
+     * 参考 Claude Code 的 StreamingToolExecutor 实现：
+     * - 并发安全的工具可以并行执行
+     * - 非并发工具独占执行（exclusive access）
+     * - Bash 工具错误会级联取消兄弟工具
+     *
+     * @param toolCalls 工具调用列表
+     * @param onToolCall 工具调用通知回调
+     * @return 执行后的工具调用结果
+     */
+    private List<ExecutedToolCall> executeToolsInParallel(
+            List<AssistantMessage.ToolCall> toolCalls,
+            java.util.function.BiConsumer<String, JsonNode> onToolCall) {
+
+        String sessionId = TraceContext.getSessionId();
+        String userId = TraceContext.getUserId();
+        List<ExecutedToolCall> results = new ArrayList<>();
+
+        // 1. 预处理：对所有工具进行权限检查和 Hook 检查
+        List<PreparedToolCall> preparedCalls = new ArrayList<>();
+
+        for (AssistantMessage.ToolCall tc : toolCalls) {
+            PreparedToolCall prepared = prepareToolCall(tc, onToolCall, sessionId, userId);
+            if (prepared != null) {
+                preparedCalls.add(prepared);
+            }
+        }
+
+        if (preparedCalls.isEmpty()) {
+            return results;
+        }
+
+        log.info("[ParallelExecutor] 准备执行 {} 个工具", preparedCalls.size());
+
+        // 2. 使用 StreamingToolExecutor 并行执行
+        for (PreparedToolCall prepared : preparedCalls) {
+            streamingToolExecutor.addTool(
+                    prepared.toolCall.id(),
+                    prepared.toolCall.name(),
+                    prepared.input,
+                    prepared.tool
+            );
+        }
+
+        // 3. 等待所有工具完成
+        List<StreamingToolExecutor.ToolResultWithId> toolResults =
+                streamingToolExecutor.getAllResults();
+
+        // 4. 处理结果
+        for (StreamingToolExecutor.ToolResultWithId toolResult : toolResults) {
+            ExecutedToolCall executed = processToolResult(
+                    toolResult.toolUseId,
+                    toolResult.result,
+                    sessionId,
+                    userId
+            );
+            if (executed != null) {
+                results.add(executed);
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * 准备单个工具调用（权限检查、Hook 检查）
+     */
+    private PreparedToolCall prepareToolCall(
+            AssistantMessage.ToolCall tc,
+            java.util.function.BiConsumer<String, JsonNode> onToolCall,
+            String sessionId,
+            String userId) {
+
+        // 查找工具定义
+        ClaudeLikeTool tool = findToolByName(tc.name());
+        if (tool == null) {
+            log.warn("未找到工具定义：{}", tc.name());
+            return null;
+        }
+
+        // 解析输入 JSON
+        JsonNode input = parseInput(tc.arguments());
+
+        // 通知工具调用开始
+        if (onToolCall != null) {
+            onToolCall.accept(tc.name(), input);
+        }
+
+        // 创建 ToolArtifact
+        String artifactId = null;
+        if (toolStateService != null && sessionId != null && userId != null) {
+            try {
+                Map<String, Object> initialBody = new HashMap<>();
+                initialBody.put("todo", "执行工具：" + tc.name());
+                initialBody.put("input", objectMapper.valueToTree(input));
+                initialBody.put("version", 1);
+
+                ToolArtifact artifact = toolStateService.createToolArtifact(
+                    sessionId, userId, tc.name(), tc.name(),
+                    ToolStatus.TODO, initialBody, currentWebSocketSession);
+                artifactId = artifact.getId();
+                log.debug("创建 ToolArtifact: artifactId={}, toolName={}", artifactId, tc.name());
+            } catch (Exception e) {
+                log.debug("创建 ToolArtifact 失败：{}", e.getMessage());
+            }
+        }
+
+        // 执行 BEFORE Hook
+        if (hookService != null && !hookService.beforeToolCall(sessionId, userId, tc.name(), input)) {
+            log.info("Hook blocked tool call: {}", tc.name());
+            updateToolArtifactFailed(toolStateService, artifactId, userId, "被 Before Hook 阻止");
+            return null;
+        }
+
+        // 权限检查
+        PermissionRequest request = permissionManager.requiresPermission(tool, input, toolPermissionContext);
+        if (request != null) {
+            PermissionResult result = waitForUserConfirmation(request);
+            if (result.isDenied() || result.needsConfirmation()) {
+                updateToolArtifactFailed(toolStateService, artifactId, userId,
+                        result.isDenied() ? "用户拒绝：" + result.getDenyReason() : "等待用户确认超时");
+                throw new PermissionDeniedException(tc.name(),
+                        result.isDenied() ? result.getDenyReason() : "等待用户确认超时");
+            }
+        }
+
+        updateToolArtifactExecuting(toolStateService, artifactId, userId);
+
+        return new PreparedToolCall(tc, tool, input, artifactId);
+    }
+
+    /**
+     * 处理工具执行结果
+     */
+    private ExecutedToolCall processToolResult(
+            String toolUseId,
+            LocalToolResult result,
+            String sessionId,
+            String userId) {
+
+        String toolOutput;
+        boolean success = result.isSuccess();
+
+        if (success) {
+            Map<String, Object> outputData = new HashMap<>();
+            outputData.put("content", result.getContent());
+            outputData.put("location", result.getExecutionLocation());
+            outputData.put("durationMs", result.getDurationMs());
+            if (result.getMetadata() != null) {
+                outputData.put("metadata", result.getMetadata());
+            }
+            try {
+                toolOutput = objectMapper.writeValueAsString(outputData);
+            } catch (Exception e) {
+                toolOutput = result.getContent();
+            }
+        } else {
+            String toolErr = result.getError();
+            if (toolErr == null || toolErr.isBlank()) {
+                toolErr = result.getContent();
+            }
+            if (toolErr == null || toolErr.isBlank()) {
+                toolErr = "UNKNOWN_TOOL_ERROR";
+            }
+            try {
+                Map<String, Object> errPayload = new HashMap<>();
+                errPayload.put("error", toolErr);
+                errPayload.put("success", false);
+                toolOutput = objectMapper.writeValueAsString(errPayload);
+            } catch (Exception e) {
+                toolOutput = "{\"error\": \"" + toolErr + "\"}";
+            }
+        }
+
+        // 记录工具调用日志
+        long toolLatencyMs = result.getDurationMs();
+        StructuredLogger.logToolCall(sessionId, userId, "unknown",
+                "{}", toolOutput, toolLatencyMs, success);
+
+        eventBus.publish(new ToolCalledEvent(sessionId, userId, "unknown",
+                "{}", toolOutput, toolLatencyMs, success));
+
+        // 构造返回结果
+        AssistantMessage.ToolCall resultCall = new AssistantMessage.ToolCall(
+                toolUseId, "unknown", "{}", toolOutput);
+
+        return new ExecutedToolCall(resultCall, toolOutput);
+    }
+
+    private void updateToolArtifactFailed(ToolStateService service, String artifactId,
+                                           String userId, String error) {
+        if (service != null && artifactId != null) {
+            try {
+                Map<String, Object> failedBody = new HashMap<>();
+                failedBody.put("error", error);
+                failedBody.put("version", 2);
+                service.updateToolArtifact(artifactId, userId, ToolStatus.FAILED, failedBody, 1, currentWebSocketSession);
+            } catch (Exception e) {
+                log.debug("更新 ToolArtifact 失败：{}", e.getMessage());
+            }
+        }
+    }
+
+    private void updateToolArtifactExecuting(ToolStateService service, String artifactId, String userId) {
+        if (service != null && artifactId != null) {
+            try {
+                Map<String, Object> executingBody = new HashMap<>();
+                executingBody.put("progress", "执行中...");
+                executingBody.put("version", 2);
+                service.updateToolArtifact(artifactId, userId, ToolStatus.EXECUTING, executingBody, 1, currentWebSocketSession);
+            } catch (Exception e) {
+                log.debug("更新 ToolArtifact 失败：{}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 预准备的工具调用（已通过权限检查）
+     */
+    private static class PreparedToolCall {
+        final AssistantMessage.ToolCall toolCall;
+        final ClaudeLikeTool tool;
+        final JsonNode input;
+        final String artifactId;
+
+        PreparedToolCall(AssistantMessage.ToolCall toolCall, ClaudeLikeTool tool,
+                        JsonNode input, String artifactId) {
+            this.toolCall = toolCall;
+            this.tool = tool;
+            this.input = input;
+            this.artifactId = artifactId;
+        }
+    }
+
+    private List<ExecutedToolCall> executeToolsWithPermissionCheckOld(
+            ChatResponse response,
+            Prompt prompt,
+            ToolCallingChatOptions options,
+            java.util.function.BiConsumer<String, JsonNode> onToolCall) {
+
+        AssistantMessage output = response.getResult().getOutput();
+        List<AssistantMessage.ToolCall> toolCalls = output.getToolCalls();
+
+        if (CollectionUtils.isEmpty(toolCalls)) {
+            return List.of();
         }
 
         List<ExecutedToolCall> approvedCalls = new ArrayList<>();

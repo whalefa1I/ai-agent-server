@@ -139,6 +139,7 @@ public final class DemoToolSpecs {
                         "在 Kubernetes 中以 Job 执行 shell，返回 Pod 日志。",
                         K8S_SCHEMA,
                         null,
+                        false,
                         false));
     }
 
@@ -151,6 +152,7 @@ public final class DemoToolSpecs {
                         "按名称加载 SKILL.md 技能说明（只读加载）。",
                         SKILL_SCHEMA,
                         null,
+                        true,
                         true));
     }
 
@@ -163,6 +165,7 @@ public final class DemoToolSpecs {
                         "将任务委派给子 Agent（多智能体协调）。",
                         TASK_SCHEMA,
                         null,
+                        false,
                         false));
     }
 
@@ -177,6 +180,7 @@ public final class DemoToolSpecs {
                         "匹配文件路径（支持 glob 模式如 **/*.java）",
                         GLOB_SCHEMA,
                         null,
+                        true,
                         true));
     }
 
@@ -189,6 +193,7 @@ public final class DemoToolSpecs {
                         "读取文件内容（支持范围 offset/limit）",
                         FILE_READ_SCHEMA,
                         null,
+                        true,
                         true));
     }
 
@@ -201,6 +206,7 @@ public final class DemoToolSpecs {
                         "写入文件内容（原子操作，安全写入）",
                         FILE_WRITE_SCHEMA,
                         null,
+                        false,
                         false));
     }
 
@@ -213,6 +219,7 @@ public final class DemoToolSpecs {
                         "编辑文件内容（字符串替换，带匹配验证）",
                         FILE_EDIT_SCHEMA,
                         null,
+                        false,
                         false));
     }
 
@@ -225,6 +232,7 @@ public final class DemoToolSpecs {
                         "执行 Shell 命令（带危险命令检测）",
                         BASH_SCHEMA,
                         null,
+                        false,
                         false));
     }
 
@@ -237,6 +245,7 @@ public final class DemoToolSpecs {
                         "在文件内容中搜索正则表达式匹配项",
                         GREP_SCHEMA,
                         null,
+                        true,
                         true));
     }
 
@@ -249,6 +258,7 @@ public final class DemoToolSpecs {
                         "Retrieve truncated tool output by context object id (session-bound on server).",
                         READ_CONTEXT_OBJECT_SCHEMA,
                         null,
+                        true,
                         true));
     }
 }

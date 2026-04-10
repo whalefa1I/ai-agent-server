@@ -41,6 +41,7 @@ public final class ClaudeToolFactory {
 
         Supplier<Boolean> enabled = def.isEnabled();
         boolean ro = def.readOnly();
+        boolean concurrencySafe = def.concurrencySafe();
 
         return new ClaudeLikeTool() {
             @Override
@@ -76,6 +77,12 @@ public final class ClaudeToolFactory {
             @Override
             public boolean defaultReadOnlyHint() {
                 return ro;
+            }
+
+            @Override
+            public boolean isConcurrencySafe(JsonNode input) {
+                // 如果工具定义中明确标记为并发安全，则直接返回
+                return concurrencySafe;
             }
 
             @Override
