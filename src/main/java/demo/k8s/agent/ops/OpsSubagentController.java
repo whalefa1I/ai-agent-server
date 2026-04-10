@@ -502,6 +502,7 @@ public class OpsSubagentController {
         m.put("updatedAt", r.getUpdatedAt() != null ? r.getUpdatedAt().toString() : null);
         m.put("endedAt", r.getEndedAt() != null ? r.getEndedAt().toString() : null);
         m.put("deadlineAt", r.getDeadlineAt() != null ? r.getDeadlineAt().toString() : null);
+        m.put("batchId", r.getBatchId());
         return m;
     }
 
@@ -514,6 +515,10 @@ public class OpsSubagentController {
         m.put("depth", r.getDepth());
         m.put("tokenBudget", r.getTokenBudget());
         m.put("retryCount", r.getRetryCount());
+        m.put("batchId", r.getBatchId());
+        m.put("batchTotal", r.getBatchTotal());
+        m.put("batchIndex", r.getBatchIndex());
+        m.put("mainRunId", r.getMainRunId());
         return m;
     }
 
