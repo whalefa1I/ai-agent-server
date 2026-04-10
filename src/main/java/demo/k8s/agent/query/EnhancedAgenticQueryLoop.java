@@ -510,6 +510,18 @@ public class EnhancedAgenticQueryLoop {
             return List.of();
         }
 
+        // 高亮显示批量工具调用（特别是 spawn_subagent）
+        long spawnCount = toolCalls.stream().filter(tc -> "spawn_subagent".equals(tc.name())).count();
+        if (spawnCount > 0) {
+            log.info("[BATCH-TOOL-CALLS] Total tools: {}, spawn_subagent count: {}, all tools: {}",
+                    toolCalls.size(),
+                    spawnCount,
+                    toolCalls.stream().map(AssistantMessage.ToolCall::name).toList());
+        } else {
+            log.info("[TOOL-CALLS] Tools to execute: {}",
+                    toolCalls.stream().map(AssistantMessage.ToolCall::name).toList());
+        }
+
         List<ExecutedToolCall> approvedCalls = new ArrayList<>();
 
         for (AssistantMessage.ToolCall tc : toolCalls) {
@@ -645,6 +657,12 @@ public class EnhancedAgenticQueryLoop {
                     tc.name(),
                     truncate(tc.arguments(), 100));
 
+            // 特别高亮 spawn_subagent 调用开始
+            if ("spawn_subagent".equals(tc.name())) {
+                log.info("[SPAWN-START] spawn_subagent executing: sessionId={}, toolCallId={}, args={}",
+                        sessionId, tc.id(), truncate(tc.arguments(), 200));
+            }
+
             try {
                 // 使用 UnifiedToolExecutor 执行工具
                 Map<String, Object> inputMap = objectMapper.convertValue(input, Map.class);
@@ -712,6 +730,12 @@ public class EnhancedAgenticQueryLoop {
                 }
 
                 log.debug("工具调用成功：{} ({} chars)", tc.name(), toolOutput.length());
+
+                // 特别高亮 spawn_subagent 调用（便于排查并行执行问题）
+                if ("spawn_subagent".equals(tc.name())) {
+                    log.info("[SPAWN-SUCCESS] spawn_subagent completed: sessionId={}, toolCallId={}, outputLength={}",
+                            sessionId, tc.id(), toolOutput.length());
+                }
 
             } catch (Exception e) {
                 sessionStats.failToolCall(toolMetrics, e.getMessage());
