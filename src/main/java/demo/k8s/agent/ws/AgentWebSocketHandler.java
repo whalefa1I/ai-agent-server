@@ -1,6 +1,7 @@
 package demo.k8s.agent.ws;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import demo.k8s.agent.query.AgenticTurnResult;
 import demo.k8s.agent.query.EnhancedAgenticQueryLoop;
 import demo.k8s.agent.query.LoopTerminalReason;
@@ -84,6 +85,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         this.conversationManager = conversationManager;
         this.tokenService = tokenService;
         this.broadcastService = broadcastService;
+        // Register JavaTimeModule to handle java.time.Instant serialization
+        objectMapper.registerModule(new JavaTimeModule());
     }
 
     @Override
