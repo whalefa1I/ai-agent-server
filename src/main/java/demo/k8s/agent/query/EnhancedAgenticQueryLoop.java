@@ -77,6 +77,14 @@ public class EnhancedAgenticQueryLoop {
     private static final String COMPACT_BOUNDARY_PREFIX = "__COMPACT_BOUNDARY__:";
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * 三元消费者接口（用于 toolCallId, toolName, input/result）
+     */
+    @FunctionalInterface
+    public interface TriConsumer<T, U, V> {
+        void accept(T t, U u, V v);
+    }
+
     private final ChatModel chatModel;
     private final CompactionPipeline compactionPipeline;
     private final ModelCallRetryPolicy retryPolicy;
