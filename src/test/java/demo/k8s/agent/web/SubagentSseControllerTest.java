@@ -2,13 +2,12 @@ package demo.k8s.agent.web;
 
 import demo.k8s.agent.config.DemoMultiAgentProperties;
 import demo.k8s.agent.observability.events.EventBus;
-import demo.k8s.agent.subagent.SubagentRunService;
+import demo.k8s.agent.ops.OpsApiAuthorizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -20,16 +19,20 @@ import static org.mockito.Mockito.*;
 class SubagentSseControllerTest {
 
     private EventBus eventBus;
-    private SubagentRunService runService;
     private DemoMultiAgentProperties properties;
+    private SubagentSessionAuthHelper sessionAuthHelper;
+    private OpsApiAuthorizer opsApiAuthorizer;
     private SubagentSseController sseController;
 
     @BeforeEach
     void setUp() {
         eventBus = new EventBus();
-        runService = mock(SubagentRunService.class);
         properties = mock(DemoMultiAgentProperties.class);
-        sseController = new SubagentSseController(eventBus, runService, properties);
+        sessionAuthHelper = mock(SubagentSessionAuthHelper.class);
+        opsApiAuthorizer = mock(OpsApiAuthorizer.class);
+        when(sessionAuthHelper.validateSessionOwnership(any(), anyString())).thenReturn(null);
+        when(properties.getMaxSseConnectionsPerSession()).thenReturn(8);
+        sseController = new SubagentSseController(eventBus, properties, sessionAuthHelper, opsApiAuthorizer);
     }
 
     @Test
@@ -39,7 +42,7 @@ class SubagentSseControllerTest {
         String sessionId = "test-session-123";
 
         // When
-        SseEmitter emitter = sseController.subscribe(request, sessionId, null);
+        SseEmitter emitter = sseController.subscribeProduct(request, sessionId, null);
 
         // Then
         assertNotNull(emitter);
@@ -55,7 +58,7 @@ class SubagentSseControllerTest {
         String runId = "run-001";
 
         // When
-        SseEmitter emitter = sseController.subscribe(request, sessionId, runId);
+        SseEmitter emitter = sseController.subscribeProduct(request, sessionId, runId);
 
         // Then
         assertNotNull(emitter);
