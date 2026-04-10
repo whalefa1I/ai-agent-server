@@ -80,6 +80,9 @@ demo:
     log-model-request: ${DEMO_DEBUG_LOG_MODEL_REQUEST:false}
     model-request-preview-chars: 500
     model-request-tool-schema-max-chars: 1200
+    # 为 true 时启动后统一打印全部环境变量（敏感键脱敏）；排查 Railway 注入时开启
+    log-environment-at-startup: ${DEMO_DEBUG_LOG_ENV_AT_STARTUP:false}
+    log-environment-value-max-chars: 2048
   dev:
     # 开发环境跳过配额检查
     skip-quota-check: true

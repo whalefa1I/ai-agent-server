@@ -190,13 +190,11 @@ public class OpsSubagentController {
             TraceContext.init(TraceContext.generateTraceId(), TraceContext.generateSpanId(),
                     multiAgentProperties.getDefaultTenantId(), "ops-status", sessionId, "ops-probe");
             SubRunEvent ev = facade.getStatus(runId);
-            if (ev == null) {
-                return ResponseEntity.ok(Map.of("runId", runId, "sessionId", sessionId, "event", (Object) null));
-            }
-            return ResponseEntity.ok(Map.of(
-                    "runId", runId,
-                    "sessionId", sessionId,
-                    "event", eventToMap(ev)));
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("runId", runId);
+            body.put("sessionId", sessionId);
+            body.put("event", ev == null ? null : eventToMap(ev));
+            return ResponseEntity.ok(body);
         } catch (Exception e) {
             return ResponseEntity.ok(Map.of("runId", runId, "sessionId", sessionId, "error", e.getMessage()));
         } finally {

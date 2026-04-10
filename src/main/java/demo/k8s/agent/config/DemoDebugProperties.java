@@ -20,6 +20,31 @@ public class DemoDebugProperties {
     /** 每个工具 JSON Schema 预览最大字符数 */
     private int modelRequestToolSchemaMaxChars = 1200;
 
+    /**
+     * 为 true 时，应用启动后统一打印 {@link System#getenv()} 全部键值（用于核对 Railway 等环境变量是否注入）。
+     * 键名命中常见敏感模式时仅打印是否为空与长度，不打印明文；非敏感键打印完整值（单条值过长会截断）。
+     */
+    private boolean logEnvironmentAtStartup = false;
+
+    /** 非敏感环境变量值在日志中的最大字符数，避免单条撑爆日志后端 */
+    private int logEnvironmentValueMaxChars = 2048;
+
+    public boolean isLogEnvironmentAtStartup() {
+        return logEnvironmentAtStartup;
+    }
+
+    public void setLogEnvironmentAtStartup(boolean logEnvironmentAtStartup) {
+        this.logEnvironmentAtStartup = logEnvironmentAtStartup;
+    }
+
+    public int getLogEnvironmentValueMaxChars() {
+        return logEnvironmentValueMaxChars;
+    }
+
+    public void setLogEnvironmentValueMaxChars(int logEnvironmentValueMaxChars) {
+        this.logEnvironmentValueMaxChars = logEnvironmentValueMaxChars;
+    }
+
     public boolean isLogModelRequest() {
         return logModelRequest;
     }
