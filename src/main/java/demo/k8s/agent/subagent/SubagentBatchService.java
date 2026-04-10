@@ -48,6 +48,13 @@ public class SubagentBatchService {
     }
 
     /**
+     * 获取 SubagentRunService（供 Controller 使用）。
+     */
+    public SubagentRunService getRunService() {
+        return runService;
+    }
+
+    /**
      * 批量派生子 Agent（门面方法）。
      *
      * @param ctx          调用上下文（用于区分产品/运维路径）

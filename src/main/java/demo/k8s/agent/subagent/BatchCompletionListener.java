@@ -9,6 +9,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -16,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 批次完成监听器：监听子任务完成事件，检测批次是否全部完成。
  * <p>
  * 当批次中所有子任务完成后，自动唤醒主 Agent 进行结果汇总。
+ * 结果全文外置存储到文件系统，主 Agent 上下文仅注入路径和摘要。
  */
 @Component
 public class BatchCompletionListener {
@@ -30,14 +32,17 @@ public class BatchCompletionListener {
     private final SubagentRunService runService;
     private final EventBus eventBus;
     private final DemoMultiAgentProperties agentProperties;
+    private final SubagentResultStorage resultStorage;
 
     public BatchCompletionListener(
             SubagentRunService runService,
             EventBus eventBus,
-            DemoMultiAgentProperties agentProperties) {
+            DemoMultiAgentProperties agentProperties,
+            SubagentResultStorage resultStorage) {
         this.runService = runService;
         this.eventBus = eventBus;
         this.agentProperties = agentProperties;
+        this.resultStorage = resultStorage;
         log.info("[BatchCompletionListener] Initialized with max concurrent spawns: {}",
                 agentProperties.getMaxConcurrentSpawns());
     }
@@ -62,6 +67,8 @@ public class BatchCompletionListener {
 
     /**
      * 子任务完成回调（由 SubagentRunService 或其他组件调用）。
+     * <p>
+     * 结果全文外置存储到文件系统，BatchContext 中仅存储路径和摘要。
      *
      * @param runId     子任务运行 ID
      * @param sessionId 会话 ID
@@ -83,7 +90,12 @@ public class BatchCompletionListener {
             return; // 非批次任务，跳过
         }
 
-        // 2. 更新批次进度
+        // 2. 外置存储结果
+        String status = run.getStatus() != null ? run.getStatus().name() : "COMPLETED";
+        String resultPath = resultStorage.writeResult(batchId, runId, result, status);
+        String summary = resultStorage.summarize(result, 100);
+
+        // 3. 更新批次进度（存储路径和摘要，而非全文）
         BatchContext ctx = batchRegistry.get(batchId);
         if (ctx == null) {
             // 批次上下文不存在，可能是重启后，尝试从 DB 重建
@@ -95,16 +107,16 @@ public class BatchCompletionListener {
             }
         }
 
-        ctx.markCompleted(runId, result);
+        ctx.markCompleted(runId, resultPath, summary, status);
 
-        // 3. 检测是否全部完成
+        // 4. 检测是否全部完成
         if (ctx.isAllCompleted()) {
             log.info("[BatchCompletionListener] Batch completed: batchId={}, total={}", batchId, ctx.getTotalTasks());
 
-            // 4. 唤醒主 Agent
+            // 5. 唤醒主 Agent
             resumeMainThread(ctx);
 
-            // 5. 清理注册表
+            // 6. 清理注册表
             batchRegistry.remove(batchId);
         } else {
             log.info("[BatchCompletionListener] Batch progress: batchId={}/{}, {}%",
@@ -145,7 +157,11 @@ public class BatchCompletionListener {
 
             for (SubagentRun run : runs) {
                 if (isTerminalRunStatus(run.getStatus())) {
-                    ctx.markCompleted(run.getRunId(), terminalResultPreview(run));
+                    // 为已存在的运行生成结果路径
+                    String resultPath = resultStorage.getResultPath(batchId, run.getRunId());
+                    String summary = resultStorage.summarize(
+                            run.getResult() != null ? run.getResult() : run.getErrorMessage(), 100);
+                    ctx.markCompleted(run.getRunId(), resultPath, summary, run.getStatus().name());
                 }
             }
 
@@ -162,16 +178,6 @@ public class BatchCompletionListener {
                 || status == SubagentRun.RunStatus.FAILED
                 || status == SubagentRun.RunStatus.TIMEOUT
                 || status == SubagentRun.RunStatus.CANCELLED;
-    }
-
-    private static String terminalResultPreview(SubagentRun run) {
-        if (run.getStatus() == SubagentRun.RunStatus.COMPLETED) {
-            return run.getResult() != null ? run.getResult() : "(completed)";
-        }
-        if (run.getErrorMessage() != null && !run.getErrorMessage().isBlank()) {
-            return run.getErrorMessage();
-        }
-        return "(" + run.getStatus() + ")";
     }
 
     /**
@@ -196,6 +202,8 @@ public class BatchCompletionListener {
 
     /**
      * 超时清理：定期检查超时批次。
+     * <p>
+     * 对于超时批次，为未完成的任务生成占位结果文件，然后唤醒主 Agent。
      */
     @Scheduled(fixedRateString = "${demo.multi-agent.batch-cleanup-interval-ms:60000}")
     public void cleanupTimeoutBatches() {
@@ -206,6 +214,36 @@ public class BatchCompletionListener {
             if (ctx.isTimedOut()) {
                 log.warn("[BatchCompletionListener] Batch timeout: batchId={}, completed={}/{}",
                         ctx.getBatchId(), ctx.getCompletedCount(), ctx.getTotalTasks());
+
+                // 为未完成的任务生成占位结果
+                List<SubagentRun> runs;
+                try {
+                    runs = runService.findByBatchId(ctx.getBatchId(), ctx.getSessionId());
+                    for (SubagentRun run : runs) {
+                        if (!isTerminalRunStatus(run.getStatus())) {
+                            // 任务尚未完成，生成超时占位结果
+                            String placeholderResult = String.format(
+                                    "Task timed out. Batch: %s, RunId: %s, Goal: %s",
+                                    ctx.getBatchId(), run.getRunId(), run.getGoal());
+                            String resultPath = resultStorage.writeResult(
+                                    ctx.getBatchId(), run.getRunId(), placeholderResult, "TIMEOUT");
+                            String summary = resultStorage.summarize(placeholderResult, 100);
+                            ctx.markCompleted(run.getRunId(), resultPath, summary, "TIMEOUT");
+
+                            // 更新 DB 状态
+                            try {
+                                runService.updateStatus(run.getRunId(), SubagentRun.RunStatus.TIMEOUT,
+                                        "Task timed out during batch cleanup");
+                            } catch (Exception e) {
+                                log.warn("[BatchCompletionListener] Failed to update run status: runId={}",
+                                        run.getRunId(), e);
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("[BatchCompletionListener] Failed to fetch runs for timeout handling: batchId={}",
+                            ctx.getBatchId(), e);
+                }
 
                 // 超时处理：强制标记为完成并唤醒主 Agent（如果有 mainRunId）
                 if (ctx.getMainRunId() != null) {

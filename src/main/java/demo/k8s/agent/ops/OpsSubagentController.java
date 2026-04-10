@@ -7,6 +7,7 @@ import demo.k8s.agent.subagent.SpawnGatekeeper;
 import demo.k8s.agent.subagent.SpawnResult;
 import demo.k8s.agent.subagent.SubRunEvent;
 import demo.k8s.agent.subagent.SubagentBatchService;
+import demo.k8s.agent.subagent.SubagentResultStorage;
 import demo.k8s.agent.subagent.SubagentRun;
 import demo.k8s.agent.subagent.SubagentRunService;
 import demo.k8s.agent.tools.local.planning.SpawnSubagentTool;
@@ -20,6 +21,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +51,7 @@ public class OpsSubagentController {
     private final SpawnGatekeeper gatekeeper;
     private final SubagentRunService subagentRunService;
     private final SubagentBatchService subagentBatchService;
+    private final SubagentResultStorage resultStorage;
 
     public OpsSubagentController(
             OpsApiAuthorizer authorizer,
@@ -58,7 +61,8 @@ public class OpsSubagentController {
             ObjectProvider<ToolRegistry> toolRegistryProvider,
             SpawnGatekeeper gatekeeper,
             SubagentRunService subagentRunService,
-            SubagentBatchService subagentBatchService) {
+            SubagentBatchService subagentBatchService,
+            SubagentResultStorage resultStorage) {
         this.authorizer = authorizer;
         this.multiAgentProperties = multiAgentProperties;
         this.facadeProvider = facadeProvider;
@@ -67,6 +71,7 @@ public class OpsSubagentController {
         this.gatekeeper = gatekeeper;
         this.subagentRunService = subagentRunService;
         this.subagentBatchService = subagentBatchService;
+        this.resultStorage = resultStorage;
     }
 
     /**
@@ -324,6 +329,12 @@ public class OpsSubagentController {
                 b.sessionId, b.tasks != null ? b.tasks.size() : 0, b.mainRunId);
         String sessionId = b.sessionId != null && !b.sessionId.isBlank() ? b.sessionId : "ops-batch-session";
         String mainRunId = b.mainRunId;
+        if (b.tasks == null || b.tasks.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "tasks is required and must not be empty",
+                    "errorCode", "BAD_REQUEST"
+            ));
+        }
 
         // 构建调用上下文（运维路径）
         SubagentBatchService.InvocationContext ctx = new SubagentBatchService.InvocationContext(
@@ -336,9 +347,9 @@ public class OpsSubagentController {
         Set<String> allowed = gatekeeper.globalSafeToolNames();
 
         // 转换任务请求
-        List<SubagentBatchService.BatchTaskRequest> tasks = b.tasks != null ? b.tasks.stream()
+        List<SubagentBatchService.BatchTaskRequest> tasks = b.tasks.stream()
                 .map(t -> new SubagentBatchService.BatchTaskRequest(t.taskName, t.goal, t.agentType))
-                .toList() : List.of();
+                .toList();
 
         SubagentBatchService.BatchSpawnResponse response = subagentBatchService.spawnBatch(
                 ctx, sessionId, mainRunId, tasks, 0, allowed
@@ -432,6 +443,77 @@ public class OpsSubagentController {
                     "batchId", batchId
             ));
         }
+    }
+
+    /**
+     * 获取批次结果详情（运维路径）。
+     * <p>
+     * 返回所有任务的结果，包含 runId, status, summary, resultPath, 和完整 result 内容。
+     */
+    @GetMapping("/batch/{batchId}/results")
+    public ResponseEntity<?> batchResults(HttpServletRequest request,
+                                          @PathVariable String batchId,
+                                          @RequestParam String sessionId) {
+        ResponseEntity<Map<String, Object>> deny = authorizer.preflight(request);
+        if (deny != null) {
+            return deny;
+        }
+
+        // 从 DB 加载批次下的所有子运行
+        List<SubagentRun> runs = subagentRunService.findByBatchId(batchId, sessionId);
+        if (runs.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of(
+                    "error", "Batch not found or sessionId mismatch",
+                    "batchId", batchId
+            ));
+        }
+
+        // 构建结果列表
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (SubagentRun run : runs) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("runId", run.getRunId());
+            result.put("status", run.getStatus() != null ? run.getStatus().name() : null);
+            result.put("goal", truncate(run.getGoal(), 200));
+
+            // 从 SubagentResultStorage 读取结果路径和内容
+            String resultPath = run.getBatchId() != null
+                    ? resultStorage.getResultPath(run.getBatchId(), run.getRunId())
+                    : null;
+            result.put("resultPath", resultPath);
+
+            // 读取完整结果内容
+            String fullResult = run.getResult() != null ? run.getResult() : run.getErrorMessage();
+            result.put("result", fullResult);
+
+            // 生成摘要
+            result.put("summary", resultStorage.summarize(fullResult, 100));
+
+            result.put("createdAt", run.getCreatedAt() != null ? run.getCreatedAt().toString() : null);
+            result.put("endedAt", run.getEndedAt() != null ? run.getEndedAt().toString() : null);
+
+            results.add(result);
+        }
+
+        // 计算批次统计
+        int total = runs.size();
+        int completed = (int) runs.stream().filter(r -> r.getStatus() == SubagentRun.RunStatus.COMPLETED).count();
+        int failed = (int) runs.stream().filter(r ->
+                r.getStatus() == SubagentRun.RunStatus.FAILED ||
+                r.getStatus() == SubagentRun.RunStatus.TIMEOUT ||
+                r.getStatus() == SubagentRun.RunStatus.CANCELLED).count();
+        int pending = total - completed - failed;
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("batchId", batchId);
+        response.put("sessionId", sessionId);
+        response.put("totalTasks", total);
+        response.put("completed", completed);
+        response.put("failed", failed);
+        response.put("pending", pending);
+        response.put("results", results);
+
+        return ResponseEntity.ok(response);
     }
 
     /**

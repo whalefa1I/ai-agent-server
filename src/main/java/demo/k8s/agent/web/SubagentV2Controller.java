@@ -28,14 +28,17 @@ public class SubagentV2Controller {
     private final SubagentBatchService batchService;
     private final SpawnGatekeeper gatekeeper;
     private final SubagentSessionAuthHelper sessionAuthHelper;
+    private final demo.k8s.agent.subagent.SubagentResultStorage resultStorage;
 
     public SubagentV2Controller(SubagentBatchService batchService,
                                  SpawnGatekeeper gatekeeper,
-                                 SubagentSessionAuthHelper sessionAuthHelper) {
+                                 SubagentSessionAuthHelper sessionAuthHelper,
+                                 demo.k8s.agent.subagent.SubagentResultStorage resultStorage) {
         this.batchService = batchService;
         this.gatekeeper = gatekeeper;
         this.sessionAuthHelper = sessionAuthHelper;
-        log.info("[SubagentV2Controller] Initialized");
+        this.resultStorage = resultStorage;
+        log.info("[SubagentV2Controller] Initialized with SubagentResultStorage");
     }
 
     @PostMapping("/batch-spawn")
@@ -162,6 +165,85 @@ public class SubagentV2Controller {
                     "batchId", batchId
             ));
         }
+    }
+
+    /**
+     * 获取批次结果详情（产品路径）。
+     * <p>
+     * 返回所有任务的结果，包含 runId, status, summary, resultPath, 和完整 result 内容。
+     */
+    @GetMapping("/batch/{batchId}/results")
+    public ResponseEntity<?> batchResults(HttpServletRequest request,
+                                          @PathVariable String batchId,
+                                          @RequestParam String sessionId) {
+        ResponseEntity<?> authResult = sessionAuthHelper.validateSessionOwnership(request, sessionId);
+        if (authResult != null) {
+            return authResult;
+        }
+
+        // 从 DB 加载批次下的所有子运行
+        demo.k8s.agent.subagent.SubagentRunService runService = batchService.getRunService();
+        List<demo.k8s.agent.subagent.SubagentRun> runs = runService.findByBatchId(batchId, sessionId);
+        if (runs.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of(
+                    "error", "Batch not found or sessionId mismatch",
+                    "batchId", batchId
+            ));
+        }
+
+        // 构建结果列表
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (demo.k8s.agent.subagent.SubagentRun run : runs) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("runId", run.getRunId());
+            result.put("status", run.getStatus() != null ? run.getStatus().name() : null);
+            result.put("goal", truncate(run.getGoal(), 200));
+
+            // 从 SubagentResultStorage 读取结果路径和内容
+            String resultPath = run.getBatchId() != null
+                    ? resultStorage.getResultPath(run.getBatchId(), run.getRunId())
+                    : null;
+            result.put("resultPath", resultPath);
+
+            // 读取完整结果内容
+            String fullResult = run.getResult() != null ? run.getResult() : run.getErrorMessage();
+            result.put("result", fullResult);
+
+            // 生成摘要
+            result.put("summary", resultStorage.summarize(fullResult, 100));
+
+            result.put("createdAt", run.getCreatedAt() != null ? run.getCreatedAt().toString() : null);
+            result.put("endedAt", run.getEndedAt() != null ? run.getEndedAt().toString() : null);
+
+            results.add(result);
+        }
+
+        // 计算批次统计
+        int total = runs.size();
+        int completed = (int) runs.stream().filter(r -> r.getStatus() == demo.k8s.agent.subagent.SubagentRun.RunStatus.COMPLETED).count();
+        int failed = (int) runs.stream().filter(r ->
+                r.getStatus() == demo.k8s.agent.subagent.SubagentRun.RunStatus.FAILED ||
+                r.getStatus() == demo.k8s.agent.subagent.SubagentRun.RunStatus.TIMEOUT ||
+                r.getStatus() == demo.k8s.agent.subagent.SubagentRun.RunStatus.CANCELLED).count();
+        int pending = total - completed - failed;
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("batchId", batchId);
+        response.put("sessionId", sessionId);
+        response.put("totalTasks", total);
+        response.put("completed", completed);
+        response.put("failed", failed);
+        response.put("pending", pending);
+        response.put("results", results);
+
+        return ResponseEntity.ok(response);
+    }
+
+    private static String truncate(String s, int max) {
+        if (s == null) {
+            return null;
+        }
+        return s.length() <= max ? s : s.substring(0, max) + "...";
     }
 
     private List<SubagentBatchService.BatchTaskRequest> toTaskRequests(
