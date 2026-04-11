@@ -34,8 +34,11 @@ import demo.k8s.agent.toolstate.ToolStatus;
 import demo.k8s.agent.toolstate.ToolArtifact;
 import org.springframework.web.socket.WebSocketSession;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -64,6 +67,9 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.Map;
 import java.util.HashMap;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 /**
  * 增强版 Agentic Query Loop，与 Claude Code {@code query.ts} / {@code QueryEngine.ts} 对齐。
@@ -108,6 +114,7 @@ public class EnhancedAgenticQueryLoop {
     private final StreamingToolExecutor streamingToolExecutor;
     private final DemoDebugProperties demoDebugProperties;
     private final ConversationManager conversationManager;
+    private final String model;
 
     // 权限确认回调（用于 WebSocket TUI）
     private Function<PermissionRequest, CompletableFuture<PermissionResult>> permissionCallback;
@@ -137,7 +144,8 @@ public class EnhancedAgenticQueryLoop {
             LocalToolExecutor localToolExecutor,
             StreamingToolExecutor streamingToolExecutor,
             DemoDebugProperties demoDebugProperties,
-            ConversationManager conversationManager) {
+            ConversationManager conversationManager,
+            @Value("${DASHSCOPE_MODEL:qwen3.5-plus}") String model) {
         this.chatModel = chatModel;
         this.compactionPipeline = compactionPipeline;
         this.retryPolicy = retryPolicy;
@@ -161,6 +169,7 @@ public class EnhancedAgenticQueryLoop {
         this.streamingToolExecutor = streamingToolExecutor;
         this.demoDebugProperties = demoDebugProperties;
         this.conversationManager = conversationManager;
+        this.model = model;
 
         // 订阅 ToolCalledEvent 事件，用于在工具执行时创建 artifact
         // 注意：这是在工具执行之后，但可以用来记录工具调用历史
@@ -445,11 +454,22 @@ public class EnhancedAgenticQueryLoop {
             try {
                 response = retryPolicy.call(() -> {
                     Instant start = Instant.now();
+
+                    // 记录完整的请求体（用于百炼 Code Plan 调试）
+                    if (demoDebugProperties != null && demoDebugProperties.isLogModelRequest()) {
+                        logFullModelRequest(messages, options, state.turnCount(), sessionId);
+                    }
+
                     ModelRequestDebugLogger.logBeforeModelCall(
                             log, demoDebugProperties, toolsForDebugLog, messagesForDebugLog, turnForDebugLog);
                     // Spring AI 会在内部自动执行工具调用
                     ChatResponse resp = chatModel.call(prompt);
                     Instant end = Instant.now();
+
+                    // 记录完整的响应体（用于百炼 Code Plan 调试）
+                    if (demoDebugProperties != null && demoDebugProperties.isLogModelRequest()) {
+                        logFullModelResponse(resp, sessionId, start, end);
+                    }
 
                     // 提取 Token 计数
                     TokenCounts counts = extractTokenCounts(resp);
@@ -1620,6 +1640,156 @@ public class EnhancedAgenticQueryLoop {
 
         public String getToolName() {
             return toolName;
+        }
+    }
+
+    /**
+     * 记录完整的模型请求体（用于百炼 Code Plan 调试）
+     * 将请求保存到本地文件，并记录摘要到日志
+     */
+    private void logFullModelRequest(List<Message> messages, ToolCallingChatOptions options, int turnCount, String sessionId) {
+        try {
+            // 构建请求 JSON
+            ObjectNode requestNode = objectMapper.createObjectNode();
+            requestNode.put("timestamp", Instant.now().toString());
+            requestNode.put("sessionId", sessionId != null ? sessionId : "unknown");
+            requestNode.put("turnCount", turnCount);
+            // 从 chatModel 获取模型名称
+            String modelName = model != null ? model : "unknown";
+            requestNode.put("model", modelName);
+
+            // 序列化消息
+            ArrayNode messagesNode = objectMapper.createArrayNode();
+            for (Message msg : messages) {
+                ObjectNode msgNode = objectMapper.createObjectNode();
+                msgNode.put("type", msg.getMessageType().name());
+
+                if (msg instanceof SystemMessage sm) {
+                    msgNode.put("content", sm.getText());
+                } else if (msg instanceof UserMessage um) {
+                    msgNode.put("content", um.getText());
+                } else if (msg instanceof AssistantMessage am) {
+                    msgNode.put("content", am.getText() != null ? am.getText() : "");
+                    if (am.getToolCalls() != null && !am.getToolCalls().isEmpty()) {
+                        ArrayNode toolCallsNode = objectMapper.createArrayNode();
+                        for (AssistantMessage.ToolCall tc : am.getToolCalls()) {
+                            ObjectNode tcNode = objectMapper.createObjectNode();
+                            tcNode.put("id", tc.id());
+                            tcNode.put("type", tc.type());
+                            tcNode.put("name", tc.name());
+                            tcNode.put("arguments", tc.arguments());
+                            toolCallsNode.add(tcNode);
+                        }
+                        msgNode.set("tool_calls", toolCallsNode);
+                    }
+                } else if (msg instanceof ToolResponseMessage trm) {
+                    ArrayNode responsesNode = objectMapper.createArrayNode();
+                    for (ToolResponseMessage.ToolResponse r : trm.getResponses()) {
+                        ObjectNode rNode = objectMapper.createObjectNode();
+                        rNode.put("name", r.name());
+                        rNode.put("responseData", r.responseData());
+                        responsesNode.add(rNode);
+                    }
+                    msgNode.set("tool_responses", responsesNode);
+                }
+
+                messagesNode.add(msgNode);
+            }
+            requestNode.set("messages", messagesNode);
+
+            // 序列化工具配置
+            if (options != null && options.getToolCallbacks() != null) {
+                ArrayNode toolsNode = objectMapper.createArrayNode();
+                for (var tool : options.getToolCallbacks()) {
+                    ObjectNode toolNode = objectMapper.createObjectNode();
+                    try {
+                        var def = tool.getToolDefinition();
+                        toolNode.put("name", def.name());
+                        toolNode.put("description", def.description());
+                        toolNode.put("inputSchema", def.inputSchema());
+                    } catch (Exception e) {
+                        toolNode.put("error", e.getMessage());
+                    }
+                    toolsNode.add(toolNode);
+                }
+                requestNode.set("tools", toolsNode);
+            }
+
+            // 保存到文件
+            Path dir = Paths.get("/tmp/bailian-debug", sessionId != null ? sessionId : "unknown");
+            Files.createDirectories(dir);
+            String filename = "turn-" + turnCount + "-request-" + System.currentTimeMillis() + ".json";
+            Path file = dir.resolve(filename);
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), requestNode);
+
+            // 记录日志摘要
+            int totalChars = messages.stream().mapToInt(m -> {
+                if (m instanceof SystemMessage sm) return sm.getText().length();
+                if (m instanceof UserMessage um) return um.getText().length();
+                if (m instanceof AssistantMessage am) return am.getText() != null ? am.getText().length() : 0;
+                return 0;
+            }).sum();
+
+            log.info("【百炼 - 完整请求】turn={}, messages={}, totalChars={}, tools={}, sessionId={}, file={}",
+                    turnCount, messages.size(), totalChars,
+                    options != null && options.getToolCallbacks() != null ? options.getToolCallbacks().size() : 0,
+                    sessionId, file.toAbsolutePath());
+
+        } catch (Exception e) {
+            log.warn("记录完整请求失败：{}", e.getMessage());
+        }
+    }
+
+    /**
+     * 记录完整的模型响应体（用于百炼 Code Plan 调试）
+     */
+    private void logFullModelResponse(ChatResponse response, String sessionId, Instant start, Instant end) {
+        try {
+            ObjectNode responseNode = objectMapper.createObjectNode();
+            responseNode.put("timestamp", Instant.now().toString());
+            responseNode.put("sessionId", sessionId != null ? sessionId : "unknown");
+            responseNode.put("latencyMs", Duration.between(start, end).toMillis());
+
+            if (response.getResult() != null) {
+                var output = response.getResult().getOutput();
+                responseNode.put("content", output.getText() != null ? output.getText() : "");
+
+                if (output.getToolCalls() != null && !output.getToolCalls().isEmpty()) {
+                    ArrayNode toolCallsNode = objectMapper.createArrayNode();
+                    for (AssistantMessage.ToolCall tc : output.getToolCalls()) {
+                        ObjectNode tcNode = objectMapper.createObjectNode();
+                        tcNode.put("id", tc.id());
+                        tcNode.put("type", tc.type());
+                        tcNode.put("name", tc.name());
+                        tcNode.put("arguments", tc.arguments());
+                        toolCallsNode.add(tcNode);
+                    }
+                    responseNode.set("tool_calls", toolCallsNode);
+                }
+            }
+
+            // 提取 Token 计数
+            TokenCounts counts = extractTokenCounts(response);
+            ObjectNode tokenNode = objectMapper.createObjectNode();
+            tokenNode.put("input", counts.inputTokens());
+            tokenNode.put("output", counts.outputTokens());
+            tokenNode.put("total", counts.totalTokens());
+            responseNode.set("tokenCounts", tokenNode);
+
+            // 保存到文件
+            Path dir = Paths.get("/tmp/bailian-debug", sessionId != null ? sessionId : "unknown");
+            Files.createDirectories(dir);
+            String filename = "response-" + System.currentTimeMillis() + ".json";
+            Path file = dir.resolve(filename);
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), responseNode);
+
+            log.info("【百炼 - 完整响应】sessionId={}, latencyMs={}, inputTokens={}, outputTokens={}, file={}",
+                    sessionId, Duration.between(start, end).toMillis(),
+                    counts.inputTokens(), counts.outputTokens(),
+                    file.toAbsolutePath());
+
+        } catch (Exception e) {
+            log.warn("记录完整响应失败：{}", e.getMessage());
         }
     }
 }
