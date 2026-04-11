@@ -27,6 +27,11 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -202,8 +207,13 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         }
 
         try {
+            // 记录原始请求 JSON 到日志和文件
+            String rawJson = message.getPayload();
+            log.info("【WebSocket-RAW】收到原始消息：sessionId={}, json={}", sessionId, rawJson);
+            saveDebugLog(sessionId, "request", rawJson);
+
             // 解析客户端消息
-            ClientMessage clientMsg = objectMapper.readValue(message.getPayload(), ClientMessage.class);
+            ClientMessage clientMsg = objectMapper.readValue(rawJson, ClientMessage.class);
             log.info("【WebSocket】收到消息：sessionId={}, type={}", sessionId, clientMsg.getType());
 
             if (clientMsg instanceof UserMessage) {
@@ -463,7 +473,10 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
 
         String json = objectMapper.writeValueAsString(msg);
         session.sendMessage(new TextMessage(json));
-        log.debug("发送消息：type={}", msg.getType());
+
+        // 记录原始响应 JSON 到日志和文件
+        log.info("【WebSocket-RAW】发送原始响应：sessionId={}, type={}, json={}", session.getId(), msg.getType(), json);
+        saveDebugLog(session.getId(), "response-" + msg.getType().name(), json);
     }
 
     /**
@@ -488,5 +501,27 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
 
     private static String truncate(String s, int maxLen) {
         return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
+    }
+
+    /**
+     * 保存调试日志到本地文件（用于排查问题）
+     * 文件位置：/tmp/ws-debug/{sessionId}/{timestamp}-{type}.json
+     */
+    private void saveDebugLog(String sessionId, String type, String json) {
+        try {
+            Path dir = Paths.get("/tmp/ws-debug", sessionId);
+            Files.createDirectories(dir);
+
+            String filename = System.currentTimeMillis() + "-" + type + ".json";
+            Path file = dir.resolve(filename);
+
+            try (FileWriter writer = new FileWriter(file.toFile())) {
+                writer.write(json);
+            }
+
+            log.info("【WebSocket-DEBUG】已保存调试日志：{}", file.toAbsolutePath());
+        } catch (IOException e) {
+            log.warn("保存调试日志失败：{}", e.getMessage());
+        }
     }
 }
