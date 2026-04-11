@@ -1928,14 +1928,15 @@ public class EnhancedAgenticQueryLoop {
         AssistantMessage assistantMessage = new AssistantMessage(
                 content != null ? content : "");
 
-        // 创建 ChatResponse（使用 Generation 包装 AssistantMessage）
+        // 创建 ChatResponse（使用 List<Generation>）
         ChatResponse chatResponse = new ChatResponse(
-                new org.springframework.ai.chat.model.Generation(assistantMessage));
+                List.of(new org.springframework.ai.chat.model.Generation(assistantMessage)));
 
         // 记录指标
+        Map<String, Object> tokenMap = bailianResponse.getTokenCounts();
         TokenCounts tokenCounts = new TokenCounts(
-                bailianResponse.getTokenCounts().getOrDefault("input", 0L),
-                bailianResponse.getTokenCounts().getOrDefault("output", 0L),
+                ((Number) tokenMap.getOrDefault("input", 0L)).longValue(),
+                ((Number) tokenMap.getOrDefault("output", 0L)).longValue(),
                 0L, // cacheReadTokens
                 0L  // cacheWriteTokens
         );
