@@ -1594,7 +1594,9 @@ public class EnhancedAgenticQueryLoop {
         try {
             JsonNode root = objectMapper.readTree(toolOutputJson);
             if (root.has("metadata") && !root.get("metadata").isNull()) {
-                body.put("metadata", objectMapper.convertValue(root.get("metadata"), Map.class));
+                Map<String, Object> metadata = objectMapper.convertValue(root.get("metadata"), Map.class);
+                body.put("metadata", metadata);
+                log.info("[enrichToolArtifactBody] 提取到 metadata: {}", metadata);
             }
             if (root.has("content") && root.get("content").isTextual()) {
                 body.put("content", root.get("content").asText());
