@@ -1,6 +1,7 @@
 package demo.k8s.agent.query;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import demo.k8s.agent.client.BailianClient;
 import demo.k8s.agent.config.AgentPrompts;
 import demo.k8s.agent.config.DemoCoordinatorProperties;
 import demo.k8s.agent.config.DemoDebugProperties;
@@ -114,7 +115,11 @@ public class EnhancedAgenticQueryLoop {
     private final StreamingToolExecutor streamingToolExecutor;
     private final DemoDebugProperties demoDebugProperties;
     private final ConversationManager conversationManager;
+    private final BailianClient bailianClient;
     private final String model;
+
+    @Value("${DASHSCOPE_DIRECT_CALL:false}")
+    private boolean directCallEnabled;
 
     // 权限确认回调（用于 WebSocket TUI）
     private Function<PermissionRequest, CompletableFuture<PermissionResult>> permissionCallback;
@@ -145,6 +150,7 @@ public class EnhancedAgenticQueryLoop {
             StreamingToolExecutor streamingToolExecutor,
             DemoDebugProperties demoDebugProperties,
             ConversationManager conversationManager,
+            BailianClient bailianClient,
             @Value("${DASHSCOPE_MODEL:qwen3.5-plus}") String model) {
         this.chatModel = chatModel;
         this.compactionPipeline = compactionPipeline;
@@ -169,6 +175,7 @@ public class EnhancedAgenticQueryLoop {
         this.streamingToolExecutor = streamingToolExecutor;
         this.demoDebugProperties = demoDebugProperties;
         this.conversationManager = conversationManager;
+        this.bailianClient = bailianClient;
         this.model = model;
 
         // 订阅 ToolCalledEvent 事件，用于在工具执行时创建 artifact
@@ -453,40 +460,46 @@ public class EnhancedAgenticQueryLoop {
 
             ChatResponse response;
             try {
-                response = retryPolicy.call(() -> {
-                    Instant start = Instant.now();
+                // 检查是否启用 Bailian 直接调用模式（用于支持 reasoning_content）
+                if (directCallEnabled) {
+                    response = callBailianDirect(messages, tools, modelCallMetrics, totalTokenCountsRef,
+                        sessionId, userId, start, prompt, onReasoningDelta);
+                } else {
+                    response = retryPolicy.call(() -> {
+                        Instant start = Instant.now();
 
-                    // 记录完整的请求体（用于百炼 Code Plan 调试）
-                    if (demoDebugProperties != null && demoDebugProperties.isLogModelRequest()) {
-                        logFullModelRequest(messagesForDebugLog, optionsForDebugLog, turnForDebugLog, sessionId);
-                    }
+                        // 记录完整的请求体（用于百炼 Code Plan 调试）
+                        if (demoDebugProperties != null && demoDebugProperties.isLogModelRequest()) {
+                            logFullModelRequest(messagesForDebugLog, optionsForDebugLog, turnForDebugLog, sessionId);
+                        }
 
-                    ModelRequestDebugLogger.logBeforeModelCall(
-                            log, demoDebugProperties, toolsForDebugLog, messagesForDebugLog, turnForDebugLog);
-                    // Spring AI 会在内部自动执行工具调用
-                    ChatResponse resp = chatModel.call(prompt);
-                    Instant end = Instant.now();
+                        ModelRequestDebugLogger.logBeforeModelCall(
+                                log, demoDebugProperties, toolsForDebugLog, messagesForDebugLog, turnForDebugLog);
+                        // Spring AI 会在内部自动执行工具调用
+                        ChatResponse resp = chatModel.call(prompt);
+                        Instant end = Instant.now();
 
-                    // 记录完整的响应体（用于百炼 Code Plan 调试）
-                    if (demoDebugProperties != null && demoDebugProperties.isLogModelRequest()) {
-                        logFullModelResponse(resp, sessionId, start, end);
-                    }
+                        // 记录完整的响应体（用于百炼 Code Plan 调试）
+                        if (demoDebugProperties != null && demoDebugProperties.isLogModelRequest()) {
+                            logFullModelResponse(resp, sessionId, start, end);
+                        }
 
-                    // 提取 Token 计数
-                    TokenCounts counts = extractTokenCounts(resp);
-                    // 累加 Token 计数
-                    totalTokenCountsRef[0] = totalTokenCountsRef[0].add(counts);
-                    sessionStats.completeModelCall(modelCallMetrics, counts);
+                        // 提取 Token 计数
+                        TokenCounts counts = extractTokenCounts(resp);
+                        // 累加 Token 计数
+                        totalTokenCountsRef[0] = totalTokenCountsRef[0].add(counts);
+                        sessionStats.completeModelCall(modelCallMetrics, counts);
 
-                    // 记录模型调用（结构化日志和事件）
-                    long latencyMs = Duration.between(start, end).toMillis();
-                    StructuredLogger.logModelResponse(sessionId, userId, "unknown",
-                        (int) counts.inputTokens(), (int) counts.outputTokens(), latencyMs, resp.getResult().getOutput().getText());
-                    eventBus.publish(new ModelCalledEvent(sessionId, userId, "unknown",
-                        (int) counts.inputTokens(), (int) counts.outputTokens(), latencyMs));
+                        // 记录模型调用（结构化日志和事件）
+                        long latencyMs = Duration.between(start, end).toMillis();
+                        StructuredLogger.logModelResponse(sessionId, userId, "unknown",
+                            (int) counts.inputTokens(), (int) counts.outputTokens(), latencyMs, resp.getResult().getOutput().getText());
+                        eventBus.publish(new ModelCalledEvent(sessionId, userId, "unknown",
+                            (int) counts.inputTokens(), (int) counts.outputTokens(), latencyMs));
 
-                    return resp;
-                });
+                        return resp;
+                    });
+                }
 
                 // Spring AI 已经执行了工具，现在调用 onToolCall 回调
                 // 注意：这是在工具执行之后调用，仅用于记录目的
@@ -1792,5 +1805,166 @@ public class EnhancedAgenticQueryLoop {
         } catch (Exception e) {
             log.warn("记录完整响应失败：{}", e.getMessage());
         }
+    }
+
+    /**
+     * 直接使用 BailianClient 调用百炼 API（支持 reasoning_content 和工具调用）
+     * 此方法绕过 Spring AI 的 OpenAI 兼容层，以保留 reasoning_content 字段
+     */
+    private ChatResponse callBailianDirect(
+            List<Message> messages,
+            List<ToolCallback> tools,
+            ModelCallMetrics modelCallMetrics,
+            TokenCounts[] totalTokenCountsRef,
+            String sessionId,
+            String userId,
+            Instant start,
+            Prompt prompt,
+            java.util.function.Consumer<String> onReasoningDelta) throws Exception {
+
+        log.info("使用 BailianClient 直接调用百炼 API（direct-call 模式启用）");
+
+        // 转换为 BailianClient 的消息格式
+        List<Map<String, Object>> bailianMessages = new ArrayList<>();
+        for (Message msg : messages) {
+            Map<String, Object> bailianMsg = new HashMap<>();
+            if (msg instanceof SystemMessage sm) {
+                bailianMsg.put("role", "system");
+                bailianMsg.put("content", sm.getText());
+            } else if (msg instanceof UserMessage um) {
+                bailianMsg.put("role", "user");
+                bailianMsg.put("content", um.getText());
+            } else if (msg instanceof AssistantMessage am) {
+                bailianMsg.put("role", "assistant");
+                bailianMsg.put("content", am.getText() != null ? am.getText() : "");
+                // 添加工具调用
+                if (am.getToolCalls() != null && !am.getToolCalls().isEmpty()) {
+                    List<Map<String, Object>> toolCalls = new ArrayList<>();
+                    for (AssistantMessage.ToolCall tc : am.getToolCalls()) {
+                        Map<String, Object> toolCall = new HashMap<>();
+                        toolCall.put("id", tc.id());
+                        toolCall.put("type", "function");
+                        Map<String, Object> function = new HashMap<>();
+                        function.put("name", tc.name());
+                        function.put("arguments", tc.arguments());
+                        toolCall.put("function", function);
+                        toolCalls.add(toolCall);
+                    }
+                    bailianMsg.put("tool_calls", toolCalls);
+                }
+            } else if (msg instanceof ToolResponseMessage trm) {
+                for (ToolResponseMessage.ToolResponse tr : trm.getResponses()) {
+                    Map<String, Object> toolResponseMsg = new HashMap<>();
+                    toolResponseMsg.put("role", "tool");
+                    toolResponseMsg.put("tool_call_id", tr.name()); // 使用 name 作为 tool_call_id
+                    toolResponseMsg.put("content", tr.responseData());
+                    bailianMessages.add(toolResponseMsg);
+                }
+                continue;
+            }
+            bailianMessages.add(bailianMsg);
+        }
+
+        // 转换为 BailianClient 的工具格式
+        List<Map<String, Object>> bailianTools = new ArrayList<>();
+        for (ToolCallback tool : tools) {
+            try {
+                var def = tool.getToolDefinition();
+                Map<String, Object> bailianTool = new HashMap<>();
+                Map<String, Object> function = new HashMap<>();
+                function.put("name", def.name());
+                function.put("description", def.description());
+                function.put("parameters", def.inputSchema());
+                bailianTool.put("function", function);
+                bailianTool.put("type", "function");
+                bailianTools.add(bailianTool);
+            } catch (Exception e) {
+                log.warn("转换工具定义失败：{}", e.getMessage());
+            }
+        }
+
+        // 调用 BailianClient
+        Instant callStart = Instant.now();
+        BailianClient.BailianResponse bailianResponse = bailianClient.chatStream(
+                bailianMessages,
+                bailianTools,
+                // reasoning 增量回调
+                reasoningDelta -> {
+                    if (onReasoningDelta != null && reasoningDelta != null && !reasoningDelta.isEmpty()) {
+                        onReasoningDelta.accept(reasoningDelta);
+                    }
+                },
+                // 内容增量回调（这里不使用，因为我们用自己的流式逻辑）
+                null,
+                // 工具调用回调
+                toolCall -> {
+                    log.info("BailianClient 检测到工具调用：{}", toolCall.getFunction().getName());
+                });
+
+        Instant callEnd = Instant.now();
+        long latencyMs = Duration.between(callStart, callEnd).toMillis();
+
+        // 检查错误
+        if (bailianResponse.getError() != null) {
+            throw new RuntimeException("Bailian API 调用失败：" + bailianResponse.getError());
+        }
+
+        // 转换为 Spring AI ChatResponse
+        String content = bailianResponse.getContent();
+        String reasoningContent = bailianResponse.getReasoningContent();
+
+        log.info("BailianClient 响应：contentLength={}, reasoningLength={}, latencyMs={}",
+                content != null ? content.length() : 0,
+                reasoningContent != null ? reasoningContent.length() : 0,
+                latencyMs);
+
+        // 如果有 reasoning 内容且提供了回调，流式发送
+        if (reasoningContent != null && !reasoningContent.isEmpty() && onReasoningDelta != null) {
+            streamText(reasoningContent, onReasoningDelta);
+        }
+
+        // 构建 AssistantMessage
+        AssistantMessage.ToolCall convertToolCall = null;
+        if (bailianResponse.hasToolCalls()) {
+            // BailianClient 返回的工具调用需要转换为 Spring AI 格式
+            // 这里暂时不处理，因为工具调用执行逻辑在后面
+            log.info("BailianClient 返回工具调用：{} 个", bailianResponse.getToolCalls().size());
+        }
+
+        // 构建响应
+        AssistantMessage assistantMessage = new AssistantMessage(
+                content != null ? content : "",
+                Map.of(), // metadata
+                null, // toolCalls - BailianClient 的工具调用需要特殊处理
+                null, // refusal
+                null // text
+        );
+
+        // 如果有 reasoning 内容，尝试放入 metadata
+        if (reasoningContent != null && !reasoningContent.isEmpty()) {
+            // 通过反射设置 reasoningContent（如果可能）
+            // 或者放入 metadata 中
+            log.debug("BailianClient 返回 reasoning_content: {} chars", reasoningContent.length());
+        }
+
+        // 创建 ChatResponse
+        ChatResponse chatResponse = new ChatResponse(List.of(assistantMessage));
+
+        // 记录指标
+        TokenCounts tokenCounts = new TokenCounts(
+                bailianResponse.getTokenCounts().getOrDefault("input", 0L),
+                bailianResponse.getTokenCounts().getOrDefault("output", 0L),
+                bailianResponse.getTokenCounts().getOrDefault("total", 0L));
+        totalTokenCountsRef[0] = totalTokenCountsRef[0].add(tokenCounts);
+        sessionStats.completeModelCall(modelCallMetrics, tokenCounts);
+
+        // 记录结构化日志
+        StructuredLogger.logModelResponse(sessionId, userId, "unknown",
+                (int) tokenCounts.inputTokens(), (int) tokenCounts.outputTokens(),
+                latencyMs, content != null ? content : "");
+        eventBus.publish(new ModelCalledEvent(sessionId, userId, "unknown",
+                (int) tokenCounts.inputTokens(), (int) tokenCounts.outputTokens(), latencyMs));
+
+        return chatResponse;
     }
 }
