@@ -17,7 +17,8 @@ export type HappyEventType =
   | 'turn-start'
   | 'turn-end'
   | 'start'
-  | 'stop';
+  | 'stop'
+  | 'reasoning';
 
 export interface HappyEventBase {
   t: HappyEventType;
@@ -32,6 +33,11 @@ export interface TextEvent extends HappyEventBase {
 export interface ServiceEvent extends HappyEventBase {
   t: 'service';
   text: string;
+}
+
+export interface ReasoningEvent extends HappyEventBase {
+  t: 'reasoning';
+  delta: string;
 }
 
 export interface ToolCallStartEvent extends HappyEventBase {
@@ -81,6 +87,7 @@ export interface StopEvent extends HappyEventBase {
 export type HappyEvent =
   | TextEvent
   | ServiceEvent
+  | ReasoningEvent
   | ToolCallStartEvent
   | ToolCallEndEvent
   | FileEvent
@@ -158,7 +165,7 @@ export interface ToolCall {
 // ==================== 消息类型 (兼容 happy-app) ====================
 
 export interface Message {
-  kind: 'tool-call' | 'text' | 'service' | 'file';
+  kind: 'tool-call' | 'text' | 'service' | 'file' | 'reasoning';
   id: string;
   time: number;
   role: HappyRole;

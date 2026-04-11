@@ -113,6 +113,9 @@ export function artifactToMessage(artifact: BackendArtifact): Message | null {
     } else if (kind === 'text' && body?.content) {
         message.text = body.content;
         message.thinking = header.type === 'thinking' || header.type === 'reasoning';
+    } else if (kind === 'reasoning' && body?.content) {
+        message.text = body.content;
+        message.thinking = true;
     } else if (kind === 'service' && body?.content) {
         message.text = body.content;
     }
@@ -128,6 +131,9 @@ function getArtifactKind(header: DecryptedHeader): Message['kind'] {
 
     if (header.toolName || type === 'tool') {
         return 'tool-call';
+    }
+    if (type === 'reasoning' || header.type === 'reasoning') {
+        return 'reasoning';
     }
     if (type === 'text' || type === 'message') {
         return 'text';

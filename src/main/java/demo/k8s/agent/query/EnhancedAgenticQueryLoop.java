@@ -449,6 +449,7 @@ public class EnhancedAgenticQueryLoop {
             final int turnForDebugLog = state.turnCount();
             final List<Message> messagesForDebugLog = messages;
             final List<ToolCallback> toolsForDebugLog = tools;
+            final ToolCallingChatOptions optionsForDebugLog = options;
 
             ChatResponse response;
             try {
@@ -457,7 +458,7 @@ public class EnhancedAgenticQueryLoop {
 
                     // 记录完整的请求体（用于百炼 Code Plan 调试）
                     if (demoDebugProperties != null && demoDebugProperties.isLogModelRequest()) {
-                        logFullModelRequest(messages, options, state.turnCount(), sessionId);
+                        logFullModelRequest(messagesForDebugLog, optionsForDebugLog, turnForDebugLog, sessionId);
                     }
 
                     ModelRequestDebugLogger.logBeforeModelCall(
@@ -1773,7 +1774,7 @@ public class EnhancedAgenticQueryLoop {
             ObjectNode tokenNode = objectMapper.createObjectNode();
             tokenNode.put("input", counts.inputTokens());
             tokenNode.put("output", counts.outputTokens());
-            tokenNode.put("total", counts.totalTokens());
+            tokenNode.put("total", counts.total());
             responseNode.set("tokenCounts", tokenNode);
 
             // 保存到文件

@@ -223,6 +223,8 @@ public class WsProtocol {
         RESPONSE_START,
         /** 文本增量（流式） */
         TEXT_DELTA,
+        /** reasoning/thinking 增量（流式） */
+        REASONING_DELTA,
         /** 工具调用通知 */
         TOOL_CALL,
         /** 权限请求 */
@@ -249,6 +251,7 @@ public class WsProtocol {
         @JsonSubTypes.Type(value = ConnectedMessage.class, name = "CONNECTED"),
         @JsonSubTypes.Type(value = ResponseStartMessage.class, name = "RESPONSE_START"),
         @JsonSubTypes.Type(value = TextDeltaMessage.class, name = "TEXT_DELTA"),
+        @JsonSubTypes.Type(value = ReasoningDeltaMessage.class, name = "REASONING_DELTA"),
         @JsonSubTypes.Type(value = ToolCallMessage.class, name = "TOOL_CALL"),
         @JsonSubTypes.Type(value = PermissionRequestMessage.class, name = "PERMISSION_REQUEST"),
         @JsonSubTypes.Type(value = ResponseCompleteMessage.class, name = "RESPONSE_COMPLETE"),
@@ -318,6 +321,22 @@ public class WsProtocol {
         public TextDeltaMessage() {}
 
         public TextDeltaMessage(String delta) {
+            this.delta = delta;
+        }
+    }
+
+    /**
+     * Reasoning/thinking 增量消息（流式输出）
+     * 用于推送模型的思考过程
+     */
+    public static class ReasoningDeltaMessage extends ServerMessage {
+        public ServerMessageType getType() { return ServerMessageType.REASONING_DELTA; }
+
+        public String delta;  // reasoning 增量内容
+
+        public ReasoningDeltaMessage() {}
+
+        public ReasoningDeltaMessage(String delta) {
             this.delta = delta;
         }
     }

@@ -307,7 +307,17 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                         }
                     },
                     // reasoning/thinking 增量回调
-                    null,
+                    reasoningDelta -> {
+                        if (reasoningDelta != null && !reasoningDelta.isEmpty()) {
+                            try {
+                                ReasoningDeltaMessage deltaMsg = new ReasoningDeltaMessage(reasoningDelta);
+                                sendMessage(ctx.session, deltaMsg);
+                                log.debug("【WebSocket】已发送 REASONING_DELTA：{} chars", reasoningDelta.length());
+                            } catch (Exception e) {
+                                log.error("【WebSocket】发送 reasoning 增量失败", e);
+                            }
+                        }
+                    },
                     // 中间 assistant 文本回调
                     null,
                     // 状态变迁回调

@@ -11,6 +11,17 @@
       </div>
     </div>
 
+    <!-- Reasoning Message -->
+    <div v-else-if="message.kind === 'reasoning'" class="reasoning-message">
+      <div class="thinking-indicator">
+        <span class="thinking-icon">💭</span>
+        <span class="thinking-label">Thinking</span>
+      </div>
+      <div class="reasoning-content">
+        {{ message.text }}
+      </div>
+    </div>
+
     <!-- Service Message -->
     <div v-else-if="message.kind === 'service'" class="service-message">
       <span class="service-icon">⚙️</span>
@@ -120,6 +131,26 @@ function formatFileSize(size?: number): string {
 .text-content.is-thinking {
   color: #6b7280;
   font-style: italic;
+}
+
+/* ==================== Reasoning Message ==================== */
+.reasoning-message {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.reasoning-content {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: #9ca3af;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-style: italic;
+  background: #f9fafb;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  border-left: 3px solid #e5e7eb;
 }
 
 /* ==================== Service Message ==================== */
