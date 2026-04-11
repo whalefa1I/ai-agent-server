@@ -462,6 +462,7 @@ public class EnhancedAgenticQueryLoop {
             try {
                 // 检查是否启用 Bailian 直接调用模式（用于支持 reasoning_content）
                 if (directCallEnabled) {
+                    Instant start = Instant.now();
                     response = callBailianDirect(messages, tools, modelCallMetrics, totalTokenCountsRef,
                         sessionId, userId, start, prompt, onReasoningDelta);
                 } else {
@@ -1923,38 +1924,21 @@ public class EnhancedAgenticQueryLoop {
             streamText(reasoningContent, onReasoningDelta);
         }
 
-        // 构建 AssistantMessage
-        AssistantMessage.ToolCall convertToolCall = null;
-        if (bailianResponse.hasToolCalls()) {
-            // BailianClient 返回的工具调用需要转换为 Spring AI 格式
-            // 这里暂时不处理，因为工具调用执行逻辑在后面
-            log.info("BailianClient 返回工具调用：{} 个", bailianResponse.getToolCalls().size());
-        }
-
-        // 构建响应
+        // 构建 AssistantMessage（使用单参数构造函数）
         AssistantMessage assistantMessage = new AssistantMessage(
-                content != null ? content : "",
-                Map.of(), // metadata
-                null, // toolCalls - BailianClient 的工具调用需要特殊处理
-                null, // refusal
-                null // text
-        );
+                content != null ? content : "");
 
-        // 如果有 reasoning 内容，尝试放入 metadata
-        if (reasoningContent != null && !reasoningContent.isEmpty()) {
-            // 通过反射设置 reasoningContent（如果可能）
-            // 或者放入 metadata 中
-            log.debug("BailianClient 返回 reasoning_content: {} chars", reasoningContent.length());
-        }
-
-        // 创建 ChatResponse
-        ChatResponse chatResponse = new ChatResponse(List.of(assistantMessage));
+        // 创建 ChatResponse（使用 Generation 包装 AssistantMessage）
+        ChatResponse chatResponse = new ChatResponse(
+                new org.springframework.ai.chat.model.Generation(assistantMessage));
 
         // 记录指标
         TokenCounts tokenCounts = new TokenCounts(
                 bailianResponse.getTokenCounts().getOrDefault("input", 0L),
                 bailianResponse.getTokenCounts().getOrDefault("output", 0L),
-                bailianResponse.getTokenCounts().getOrDefault("total", 0L));
+                0L, // cacheReadTokens
+                0L  // cacheWriteTokens
+        );
         totalTokenCountsRef[0] = totalTokenCountsRef[0].add(tokenCounts);
         sessionStats.completeModelCall(modelCallMetrics, tokenCounts);
 
